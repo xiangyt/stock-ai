@@ -123,12 +123,13 @@ type ShareholderCount struct {
 
 // ShareChange 历年股本变动（对应东方财富"历年股份变动"）
 type ShareChange struct {
-	Code           string `json:"code"`             // 股票代码
-	Date           string `json:"date"`             // 变动日期 YYYY-MM-DD
-	TotalShares    int64  `json:"total_shares"`     // 总股本(万股)
-	FloatAShares   int64  `json:"float_a_shares"`   // 已上市流通A股(万股)
-	FloatShares    int64  `json:"float_shares"`     // 流通受限股份(万股)
-	ChangeReason   string `json:"change_reason"`    // 变动原因 (高管股份变动/送转/增发等)
+	Code            string `json:"code"`              // 股票代码
+	Date            string `json:"date"`              // 变动日期 YYYY-MM-DD
+	TotalShares     int64  `json:"total_shares"`      // 总股本(股)
+	LimitedShares   int64  `json:"limited_shares"`    // 流通受限股份(股)
+	UnlimitedShares int64  `json:"unlimited_shares"`  // 已流通股份(股)
+	FloatAShares    int64  `json:"float_a_shares"`    // 已上市流通A股(股)
+	ChangeReason    string `json:"change_reason"`     // 变动原因
 }
 
 // QuotaInfo 配额信息

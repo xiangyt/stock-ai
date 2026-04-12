@@ -13,6 +13,7 @@ import (
 
 	"stock-ai/internal/adapter"
 	"stock-ai/internal/adapter/helpers"
+	"stock-ai/internal/model"
 
 	"golang.org/x/time/rate"
 )
@@ -513,13 +514,13 @@ func buildTHSCode(symbol string) string {
 func detectTHSExchange(code string) (market, exchange, board string) {
 	switch {
 	case strings.HasPrefix(code, "60"), strings.HasPrefix(code, "68"):
-		return "SH", "SSE", detectBoard(code)
+		return "SH", model.ExchangeSSE, detectBoard(code)
 	case strings.HasPrefix(code, "00"), strings.HasPrefix(code, "30"),
 		strings.HasPrefix(code, "001"), strings.HasPrefix(code, "002"),
 		strings.HasPrefix(code, "003"):
-		return "SZ", "SZSE", detectBoard(code)
+		return "SZ", model.ExchangeSZSE, detectBoard(code)
 	default:
-		return "SZ", "SZSE", "bse"
+		return "SZ", model.ExchangeSZSE, model.BoardBSE
 	}
 }
 
@@ -527,13 +528,13 @@ func detectTHSExchange(code string) (market, exchange, board string) {
 func detectBoard(code string) string {
 	switch {
 	case strings.HasPrefix(code, "300"):
-		return "chinext"
+		return model.BoardChiNext
 	case strings.HasPrefix(code, "688"):
-		return "star"
+		return model.BoardStar
 	case strings.HasPrefix(code, "689"): // 北交所
-		return "bse"
+		return model.BoardBSE
 	default:
-		return "main"
+		return model.BoardMain
 	}
 }
 
@@ -543,7 +544,7 @@ func parseCode(code string) (string, string) {
 	if len(parts) == 2 {
 		return parts[0], parts[1]
 	}
-	return code, "SZSE"
+	return code, model.ExchangeSZSE
 }
 
 // parseTHSKLineResponse 解析同花顺K线响应

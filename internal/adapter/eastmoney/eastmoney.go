@@ -15,6 +15,7 @@ import (
 
 	"stock-ai/internal/adapter"
 	"stock-ai/internal/adapter/helpers"
+	"stock-ai/internal/model"
 
 	"golang.org/x/time/rate"
 )
@@ -30,14 +31,14 @@ const (
 
 // Adapter 东方财富数据源适配器
 type Adapter struct {
-	config       map[string]interface{}
-	client       *http.Client
-	parser       *helpers.KLineParser
-	limiter      *rate.Limiter
-	userAgentGen *helpers.UserAgentGenerator
-	cookieGen    *helpers.CookieGenerator
-	currentUA    string
-	currentCookie string
+	config         map[string]interface{}
+	client         *http.Client
+	parser         *helpers.KLineParser
+	limiter        *rate.Limiter
+	userAgentGen   *helpers.UserAgentGenerator
+	cookieGen      *helpers.CookieGenerator
+	currentUA      string
+	currentCookie  string
 	lastUpdateTime time.Time
 }
 
@@ -53,9 +54,9 @@ func New() *Adapter {
 	}
 }
 
-func (a *Adapter) Name() string                { return "eastmoney" }
-func (a *Adapter) DisplayName() string         { return "东方财富" }
-func (a *Adapter) Type() string                { return "web_crawl" }
+func (a *Adapter) Name() string        { return "eastmoney" }
+func (a *Adapter) DisplayName() string { return "东方财富" }
+func (a *Adapter) Type() string        { return "web_crawl" }
 
 func (a *Adapter) Init(config map[string]interface{}) error {
 	a.config = config
@@ -98,7 +99,7 @@ func (a *Adapter) GetQuotaInfo() adapter.QuotaInfo {
 type StockListResponse struct {
 	RC   int `json:"rc"`
 	Data struct {
-		Total int                        `json:"total"`
+		Total int                             `json:"total"`
 		Diff  []StockListResponseDataDiffItem `json:"diff"`
 	} `json:"data"`
 }
@@ -106,19 +107,9 @@ type StockListResponse struct {
 // StockListResponseDataDiffItem 股票列表单条数据
 // 注意: 东财API字段类型不稳定，数值字段可能返回string("-")或number
 type StockListResponseDataDiffItem struct {
-	F12  string      `json:"f12"` // 代码
-	F13  int         `json:"f13"` // 市场 0=深市 1=沪市
-	F14  string      `json:"f14"` // 名称
-	F15  interface{} `json:"f15"` // 最新价 (可能为"-")
-	F16  interface{} `json:"f16"` // 昨收价
-	F17  interface{} `json:"f17"` // 开盘价
-	F18  interface{} `json:"f18"` // 成交量
-	F19  interface{} `json:"f19"` // 成交额
-	F20  int         `json:"f20"` // 涨跌
-	F23  interface{} `json:"f23"` // 市盈率(可能为"-")
-	F116 string      `json:"f116"` // 行业
-	F117 string      `json:"f117"` // 地区
-	F162 interface{} `json:"f162"` // 换手率(可能为"-")
+	F12 string `json:"f12"` // 代码
+	F13 int    `json:"f13"` // 市场 0=深市 1=沪市
+	F14 string `json:"f14"` // 名称
 }
 
 func (a *Adapter) GetStockList(_ context.Context, cb adapter.ProgressCallback) ([]adapter.StockBasic, error) {
@@ -161,16 +152,16 @@ func (a *Adapter) GetStockList(_ context.Context, cb adapter.ProgressCallback) (
 func (a *Adapter) fetchStockListPage(page, pageSize int) (*StockListResponse, error) {
 	baseURL := "https://push2.eastmoney.com/api/qt/clist/get"
 	params := url.Values{
-		"cb":    {fmt.Sprintf("jQuery%d", time.Now().UnixMilli())},
-		"fid":   {"f12"},
-		"po":    {"0"},
-		"pz":    {strconv.Itoa(pageSize)},
-		"pn":    {strconv.Itoa(page)},
-		"np":    {"1"},
-		"fltt":  {"2"},
-		"invt":  {"2"},
-		"ut":    {"b2884a393a59ad64002292a3e90d46a5"},
-		"fs":    {"m:0+t:6+f:!2,m:0+t:13+f:!2,m:0+t:80+f:!2,m:1+t:2+f:!2,m:1+t:23+f:!2,m:0+t:7+f:!2,m:1+t:3+f:!2"},
+		"cb":     {fmt.Sprintf("jQuery%d", time.Now().UnixMilli())},
+		"fid":    {"f12"},
+		"po":     {"0"},
+		"pz":     {strconv.Itoa(pageSize)},
+		"pn":     {strconv.Itoa(page)},
+		"np":     {"1"},
+		"fltt":   {"2"},
+		"invt":   {"2"},
+		"ut":     {"b2884a393a59ad64002292a3e90d46a5"},
+		"fs":     {"m:0+t:6+f:!2,m:0+t:13+f:!2,m:0+t:80+f:!2,m:1+t:2+f:!2,m:1+t:23+f:!2,m:0+t:7+f:!2,m:1+t:3+f:!2"},
 		"fields": {"f12,f14,f15,f16,f17,f18,f19,f20,f23,f116,f117,f162,f13,f128,f164,f167,f168,f169,f170,f171,f177,f183,f184,f185,f186,f187,f188,f189,f190,f191,f192,f193,f204,f205,f206,f207,f208,f209,f210,f211,f212,f213,f214,f215"},
 	}
 
@@ -193,17 +184,10 @@ func (a *Adapter) convertToStockBasic(item StockListResponseDataDiffItem) adapte
 	exchange, listingBoard := detectExchangeAndBoard(item.F12)
 
 	return adapter.StockBasic{
-		Code:        item.F12,
-		Name:        item.F14,
-		Exchange:    exchange,
+		Code:         item.F12,
+		Name:         item.F14,
+		Exchange:     exchange,
 		ListingBoard: listingBoard,
-		Industry:    item.F116,
-		Sector:      "",
-		ListDate:    "", // 需要额外接口获取
-		IssuePrice:  0,  // 需要额外接口获取
-		IssuePE:     0,
-		IssuePB:     0,
-		IssueShares: 0,
 	}
 }
 
@@ -214,11 +198,11 @@ func (a *Adapter) GetStockDetail(ctx context.Context, code string) (*adapter.Sto
 	refer := getQuoteReferURL(code)
 
 	params := url.Values{
-		"ut":    {"fa5fd1943c7b386f172d6893dbfba10b"},
-		"invt": {"2"},
-		"fltt": {"2"},
-		"cb":    {fmt.Sprintf("jQuery%d", time.Now().UnixMilli())},
-		"secid": {secid},
+		"ut":     {"fa5fd1943c7b386f172d6893dbfba10b"},
+		"invt":   {"2"},
+		"fltt":   {"2"},
+		"cb":     {fmt.Sprintf("jQuery%d", time.Now().UnixMilli())},
+		"secid":  {secid},
 		"fields": {"f57,f58,f107,f43,f169,f170,f171,f47,f48,f60,f46,f44,f45,f168,f50,f162,f177,f803,f129,f130,f131,f132,f133,f134,f135,f136,f137,f138,f139,f140,f141,f142,f143,f144,f145,f146,f147,f148,f149,f150,f151,f152,f153,f154,f155,f156,f157,f158,f159,f160,f161,f163,f164,f165,f166,f167"},
 	}
 
@@ -264,18 +248,18 @@ func (a *Adapter) GetStockDetail(ctx context.Context, code string) (*adapter.Sto
 
 	exchange, listingBoard := detectExchangeAndBoard(result.Data.F57)
 	return &adapter.StockBasic{
-		Code:        result.Data.F57,
-		Name:        result.Data.F58,
-		FullName:    result.Data.F138,
-		Exchange:    exchange,
+		Code:         result.Data.F57,
+		Name:         result.Data.F58,
+		FullName:     result.Data.F138,
+		Exchange:     exchange,
 		ListingBoard: listingBoard,
-		ListDate:    result.Data.F129,
-		IssuePrice:  result.Data.F130,
-		IssuePE:     result.Data.F131,
-		IssuePB:     result.Data.F132,
-		IssueShares: 0,
-		Industry:    result.Data.F135,
-		Sector:      result.Data.F136,
+		ListDate:     result.Data.F129,
+		IssuePrice:   result.Data.F130,
+		IssuePE:      result.Data.F131,
+		IssuePB:      result.Data.F132,
+		IssueShares:  0,
+		Industry:     result.Data.F135,
+		Sector:       result.Data.F136,
 	}, nil
 }
 
@@ -325,16 +309,16 @@ func (a *Adapter) fetchKLines(ctx context.Context, code, startDate, endDate, kli
 	refer := "https://quote.eastmoney.com"
 
 	params := url.Values{
-		"fields1":  {"f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13"},
-		"fields2":  {"f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"},
-		"beg":      {strings.ReplaceAll(startDate, "-", "")},
-		"end":      {"20500101"},
-		"ut":       {"fa5fd1943c7b386f172d6893dbfba10b"},
-		"rtntype":  {"6"},
-		"secid":    {secid},
-		"klt":      {klineType},
-		"fqt":      {"1"},
-		"cb":       {fmt.Sprintf("jsonp%d", time.Now().UnixMilli())},
+		"fields1": {"f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13"},
+		"fields2": {"f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"},
+		"beg":     {strings.ReplaceAll(startDate, "-", "")},
+		"end":     {"20500101"},
+		"ut":      {"fa5fd1943c7b386f172d6893dbfba10b"},
+		"rtntype": {"6"},
+		"secid":   {secid},
+		"klt":     {klineType},
+		"fqt":     {"1"},
+		"cb":      {fmt.Sprintf("jsonp%d", time.Now().UnixMilli())},
 	}
 
 	url := "https://push2his.eastmoney.com/api/qt/stock/kline/get?" + params.Encode()
@@ -371,26 +355,26 @@ type RealtimeResponse struct {
 	RC   int `json:"rc"`
 	Data struct {
 		Diff []struct {
-			F12 string      `json:"f12"`  // 代码
-			F13 int         `json:"f13"`  // 市场
-			F14 string      `json:"f14"`  // 名称
-			F2  interface{} `json:"f2"`   // 最新价
-			F3  interface{} `json:"f3"`   // 涨跌幅
-			F4  interface{} `json:"f4"`   // 涨跌额
-			F5  interface{} `json:"f5"`   // 成交量
-			F6  interface{} `json:"f6"`   // 成交额
-			F7  interface{} `json:"f7"`   // 振幅
-			F15 interface{} `json:"f15"`  // 最高价
-			F16 interface{} `json:"f16"`  // 最低价
-			F17 interface{} `json:"f17"`  // 开盘价
-			F18 interface{} `json:"f18"`  // 昨收
-			F20 int         `json:"f20"`   // 涨跌
-			F22 interface{} `json:"f22"`  // 换手率
-			F23 interface{} `json:"f23"`  // 市盈率
-			F24 interface{} `json:"f24"`  // 市净率
-			F25 interface{} `json:"f25"`  // 总市值
-			F26 interface{} `json:"f26"`  // 流通市值
-			F27 interface{} `json:"f27"`  // 量比
+			F12 string      `json:"f12"` // 代码
+			F13 int         `json:"f13"` // 市场
+			F14 string      `json:"f14"` // 名称
+			F2  interface{} `json:"f2"`  // 最新价
+			F3  interface{} `json:"f3"`  // 涨跌幅
+			F4  interface{} `json:"f4"`  // 涨跌额
+			F5  interface{} `json:"f5"`  // 成交量
+			F6  interface{} `json:"f6"`  // 成交额
+			F7  interface{} `json:"f7"`  // 振幅
+			F15 interface{} `json:"f15"` // 最高价
+			F16 interface{} `json:"f16"` // 最低价
+			F17 interface{} `json:"f17"` // 开盘价
+			F18 interface{} `json:"f18"` // 昨收
+			F20 int         `json:"f20"` // 涨跌
+			F22 interface{} `json:"f22"` // 换手率
+			F23 interface{} `json:"f23"` // 市盈率
+			F24 interface{} `json:"f24"` // 市净率
+			F25 interface{} `json:"f25"` // 总市值
+			F26 interface{} `json:"f26"` // 流通市值
+			F27 interface{} `json:"f27"` // 量比
 		} `json:"diff"`
 	} `json:"data"`
 }
@@ -453,9 +437,9 @@ func (a *Adapter) fetchRealtimeBatch(codes []string, market int, ctx context.Con
 		secids = strings.TrimRight(secids, ",")
 
 		params := url.Values{
-			"ut":    {"fa5fd1943c7b386f172d6893dbfba10b"},
-			"fltt": {"2"},
-			"invt": {"2"},
+			"ut":     {"fa5fd1943c7b386f172d6893dbfba10b"},
+			"fltt":   {"2"},
+			"invt":   {"2"},
 			"fields": {"f12,f13,f14,f2,f3,f4,f5,f6,f7,f15,f16,f17,f18,f20,f22,f23,f24,f25,f26,f27"},
 			"secids": {secids},
 		}
@@ -478,13 +462,13 @@ func (a *Adapter) fetchRealtimeBatch(codes []string, market int, ctx context.Con
 			result[code] = adapter.StockPriceDaily{
 				Code:      code,
 				Date:      now,
-				Open:      toCents(parseFloatI(item.F17)),  // 元→分
+				Open:      toCents(parseFloatI(item.F17)), // 元→分
 				High:      toCents(parseFloatI(item.F15)),
 				Low:       toCents(parseFloatI(item.F16)),
 				Close:     toCents(parseFloatI(item.F2)),
 				Volume:    parseInt64I(item.F5),
-				Amount:    toCents(parseFloatI(item.F6)),    // 元→分
-				Change:    toCents(parseFloatI(item.F4)),    // 元→分
+				Amount:    toCents(parseFloatI(item.F6)), // 元→分
+				Change:    toCents(parseFloatI(item.F4)), // 元→分
 				ChangePct: parseFloatI(item.F3),
 				Turnover:  parseFloatI(item.F22),
 				Pe:        parseFloatI(item.F23),
@@ -607,31 +591,23 @@ func (a *Adapter) GetLatestShareholderCount(ctx context.Context, code string) (*
 //
 // 数据来源: datacenter.eastmoney.com/securities/api/data/v1/get
 // 报告名: RPT_F10_EH_EQUITY (HSF10)
-// 单位: 股 (内部转换为万股)
+// 单位: 股
 type equityItem struct {
-	Secucode           string   `json:"SECUCODE"`            // 全称 002404.SZ
-	SecurityCode       string   `json:"SECURITY_CODE"`       // 纯代码 002404
-	EndDate            string   `json:"END_DATE"`            // 变动日期 YYYY-MM-DD HH:mm:ss
-	TotalShares        *int64   `json:"TOTAL_SHARES"`         // 总股本(股) ← 图中灰色柱
-	LimitedShares      *int64   `json:"LIMITED_SHARES"`      // 流通受限股份(股) ← 图中浅黄柱
-	LimitedOthArs      *int64   `json:"LIMITED_OTHARS"`      // 其他限售股份
-	LimitedDomesticNat *int64   `json:"LIMITED_DOMESTIC_NATURAL"` // 国内自然人限售
-	LimitedStateLegal  *int64   `json:"LIMITED_STATE_LEGAL"` // 国有法人限售
-	UnlimitedShares    *int64   `json:"UNLIMITED_SHARES"`    // 非限售流通股
-	ListedAShares      *int64   `json:"LISTED_A_SHARES"`     // 已上市流通A股(股) ← 图中橙色柱
-	BFreeShare         *float64 `json:"B_FREE_SHARE"`        // B股流通
-	HFreeShare         *float64 `json:"H_FREE_SHARE"`        // H股流通
-	FreeShares         *int64   `json:"FREE_SHARES"`         // 自由流通股
-	LimitedAShares     *int64   `json:"LIMITED_A_SHARES"`    // A股限售
-	LockShares         *int64   `json:"LOCK_SHARES"`          // 锁定股份
-	ChangeReason       string   `json:"CHANGE_REASON"`       // 变动原因
+	Secucode        string `json:"SECUCODE"`         // 全称 600519.SH
+	SecurityCode    string `json:"SECURITY_CODE"`    // 纯代码 600519
+	EndDate         string `json:"END_DATE"`         // 变动日期 YYYY-MM-DD HH:mm:ss
+	TotalShares     int64  `json:"TOTAL_SHARES"`     // 总股本(股)
+	LimitedShares   int64  `json:"LIMITED_SHARES"`   // 流通受限股份(股)
+	UnlimitedShares int64  `json:"UNLIMITED_SHARES"` // 已流通股份(股)
+	ListedAShares   int64  `json:"LISTED_A_SHARES"`  // 已上市流通A股(股)
+	ChangeReason    string `json:"CHANGE_REASON"`    // 变动原因
 }
 
 // equityResponse 东财F10股本结构API响应
 type equityResponse struct {
 	Result struct {
-		Pages int         `json:"pages"`
-		Count int         `json:"count"`
+		Pages int          `json:"pages"`
+		Count int          `json:"count"`
 		Data  []equityItem `json:"data"`
 	} `json:"result"`
 	Success bool   `json:"success"`
@@ -677,8 +653,8 @@ func (a *Adapter) GetShareChanges(ctx context.Context, code string) ([]adapter.S
 			"filter":       {fmt.Sprintf(`(SECUCODE="%s")`, secucode)},
 			"pageNumber":   {strconv.Itoa(page)},
 			"pageSize":     {strconv.Itoa(pageSize)},
-			"sortTypes":    {"-1"},         // 降序（最新在前）
-			"sortColumns":  {"END_DATE"},   // 按结束日期排序
+			"sortTypes":    {"-1"},       // 降序（最新在前）
+			"sortColumns":  {"END_DATE"}, // 按结束日期排序
 			"source":       {"HSF10"},
 			"client":       {"PC"},
 		}
@@ -709,12 +685,13 @@ func (a *Adapter) GetShareChanges(ctx context.Context, code string) ([]adapter.S
 			}
 
 			allChanges = append(allChanges, adapter.ShareChange{
-				Code:         code,
-				Date:         dateStr,
-				TotalShares:  ptrToInt64(item.TotalShares) / 10000,    // 股 → 万股
-				FloatAShares: ptrToInt64(item.ListedAShares) / 10000,   // 股 → 万股
-				FloatShares:  ptrToInt64(item.LimitedShares) / 10000,   // 股 → 万股
-				ChangeReason: item.ChangeReason,
+				Code:            code,
+				Date:            dateStr,
+				TotalShares:     item.TotalShares,      // 股
+				LimitedShares:   item.LimitedShares,    // 股
+				UnlimitedShares: item.UnlimitedShares,  // 股
+				FloatAShares:    item.ListedAShares,    // 股
+				ChangeReason:    item.ChangeReason,
 			})
 		}
 
@@ -739,14 +716,6 @@ func buildSecucode(symbol string) string {
 	default:
 		return symbol + ".SZ"
 	}
-}
-
-// ptrToInt64 安全解引用 *int64 指针
-func ptrToInt64(v *int64) int64 {
-	if v == nil {
-		return 0
-	}
-	return *v
 }
 
 // ========== HTTP请求辅助 ==========
@@ -866,18 +835,18 @@ func detectExchangeAndBoard(code string) (exchange, board string) {
 	switch {
 	case strings.HasPrefix(code, "600"), strings.HasPrefix(code, "601"),
 		strings.HasPrefix(code, "603"), strings.HasPrefix(code, "605"):
-		return "SSE", "main"
+		return model.ExchangeSSE, model.BoardMain
 	case strings.HasPrefix(code, "688"):
-		return "SSE", "star"
+		return model.ExchangeSSE, model.BoardStar
 	case strings.HasPrefix(code, "000"), strings.HasPrefix(code, "001"),
 		strings.HasPrefix(code, "002"), strings.HasPrefix(code, "003"):
-		return "SZSE", "main"
+		return model.ExchangeSZSE, model.BoardMain
 	case strings.HasPrefix(code, "300"):
-		return "SZSE", "chinext"
+		return model.ExchangeSZSE, model.BoardChiNext
 	case strings.HasPrefix(code, "8"), strings.HasPrefix(code, "4"):
-		return "BSE", "bse"
+		return model.ExchangeBSE, model.BoardBSE
 	default:
-		return "SZSE", "main"
+		return model.ExchangeSZSE, model.BoardMain
 	}
 }
 
