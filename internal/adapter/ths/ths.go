@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -98,7 +99,7 @@ func (a *Adapter) GetStockList(_ context.Context, cb adapter.ProgressCallback) (
 
 	for page := 1; page <= maxPages; page++ {
 		if cb != nil && page%10 == 0 {
-			cb(adapter.ProgressCallback{Current: len(allStocks), Message: fmt.Sprintf("正在获取第 %d 页...", page)})
+			cb(len(allStocks), 0, fmt.Sprintf("正在获取第 %d 页...", page))
 		}
 
 		stocks, hasMore, err := a.fetchStockListPage(page)
@@ -118,8 +119,8 @@ func (a *Adapter) GetStockList(_ context.Context, cb adapter.ProgressCallback) (
 	}
 
 	if cb != nil {
-		cb(adapter.ProgressCallback{Current: len(allStocks), Total: len(allStocks), Message: "股票列表获取完成"})
-	}
+			cb(len(allStocks), len(allStocks), "股票列表获取完成")
+		}
 	return allStocks, nil
 }
 
@@ -133,7 +134,6 @@ func (a *Adapter) fetchStockListPage(page int) ([]adapter.StockBasic, bool, erro
 
 	a.setTHSHeaders(req, "https://data.10jqka.com.cn/funds/ggzjl/")
 	hexinV := generateWencaiToken()
-	ts := time.Now().Unix()
 	cookieValue := a.cookieGen.GenerateTHSCookie(hexinV)
 	req.Header.Set("Cookie", cookieValue)
 	req.Header.Set("Hexin-V", hexinV)
@@ -179,8 +179,7 @@ func (a *Adapter) parseStockListHTML(html string) ([]adapter.StockBasic, bool) {
 			continue
 		}
 
-		market, exchange, board := detectTHSExchange(code)
-		tsCode := code + "." + market
+		_, exchange, board := detectTHSExchange(code)
 
 		stocks = append(stocks, adapter.StockBasic{
 			Code:        code,
@@ -219,8 +218,8 @@ func (a *Adapter) extractNameFromLines(lines []string, idx int) string {
 
 // GetStockDetail 获取股票详情
 func (a *Adapter) GetStockDetail(ctx context.Context, code string) (*adapter.StockBasic, error) {
-	symbol, market := parseCode(code)
-	exchange, board := detectTHSExchange(symbol)
+	symbol, _ := parseCode(code)
+	_, exchange, board := detectTHSExchange(symbol)
 	return &adapter.StockBasic{
 		Code:         symbol,
 		Name:         "", // 需要额外查询
@@ -287,8 +286,8 @@ func (a *Adapter) getKLines(ctx context.Context, code, klineType, startDate, end
 	}
 
 	if cb != nil {
-		cb(adapter.ProgressCallback{Current: len(pricesResult), Total: len(dates), Message: "K线数据获取完成"})
-	}
+			cb(len(pricesResult), len(dates), "K线数据获取完成")
+		}
 	return pricesResult, nil
 }
 
