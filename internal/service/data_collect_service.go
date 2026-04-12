@@ -145,7 +145,7 @@ func (s *DataCollectService) RunStockList(sourceName string) (*model.CollectTask
 	task.StartedAt = &now
 	s.db.Save(task)
 
-	log.Printf("[采集] 开始采集股票列表, task_id=%s", source=%s, taskID)
+	log.Printf("[采集] 开始采集股票列表, task_id=%s, source=%s", task.TaskID, sourceName)
 
 	// 获取适配器
 	adp, err := s.getAdapter(sourceName)
@@ -171,21 +171,7 @@ func (s *DataCollectService) RunStockList(sourceName string) (*model.CollectTask
 		result := s.db.Where("code = ?", stock.Code).First(&existing)
 
 		if result.Error == gorm.ErrRecordNotFound {
-			newStock := model.Stock{
-				Code:        stock.Code,
-				Name:        stock.Name,
-				FullName:    stock.FullName,
-				Exchange:    stock.Exchange,
-				ListingBoard: stock.ListingBoard,
-				ListDate:    stock.ListDate,
-				IssuePrice:  stock.IssuePrice,
-				IssuePE:     stock.IssuePE,
-				IssuePB:     stock.IssuePB,
-				IssueShares: stock.IssueShares,
-				Industry:    stock.Industry,
-				Sector:      stock.Sector,
-				Status:      "normal",
-			}
+			newStock := toModelStock(stock)
 			if err := s.db.Create(&newStock).Error; err != nil {
 				s.addTaskLog(task.ID, "error", "插入失败: "+stock.Name+" - "+err.Error(), stock.Code)
 				continue
@@ -195,8 +181,14 @@ func (s *DataCollectService) RunStockList(sourceName string) (*model.CollectTask
 			s.db.Model(&existing).Updates(map[string]interface{}{
 				"name":          stock.Name,
 				"full_name":     stock.FullName,
+				"english_name":  stock.FullNameEn,
+				"exchange_name": getExchangeName(stock.Exchange),
+				"board_name":    getBoardName(stock.ListingBoard),
 				"industry":      stock.Industry,
 				"sector":        stock.Sector,
+				"issue_price":   stock.IssuePrice,
+				"issue_pe":      stock.IssuePE,
+				"issue_shares":  stock.TotalIssueNum,
 				"update_time":   time.Now().Format("2006-01-02 15:04:05"),
 			})
 		}
@@ -250,8 +242,8 @@ func (s *DataCollectService) RunSingleStockPrice(sourceName, code string) (*mode
 	today := time.Now().Format("2006-01-02")
 	startDate := time.Now().AddDate(0, 0, -120).Format("2006-01-02") // 近4个月数据
 
-	prices, err := adp.GetDailyKLine(ctx, code, startDate, today, func(progress adapter.ProgressCallback) {
-		s.updateTaskProgress(task.ID, progress)
+	prices, err := adp.GetDailyKLine(ctx, code, startDate, today, func(current, total int, msg string) {
+		s.addTaskLog(task.ID, "info", msg, "")
 	})
 	if err != nil {
 		s.markTaskFailed(task.ID, err.Error())
@@ -315,8 +307,8 @@ func (s *DataCollectService) RunAllPrices(sourceName string) (*model.CollectTask
 
 	today := time.Now().Format("2006-01-02")
 
-	pricesMap, err := adp.GetRealtimeData(ctx, codes, func(progress adapter.ProgressCallback) {
-		s.updateTaskProgress(task.ID, progress)
+	pricesMap, err := adp.GetRealtimeData(ctx, codes, func(current, total int, msg string) {
+		s.addTaskLog(task.ID, "info", msg, "")
 	})
 	if err != nil {
 		s.markTaskFailed(task.ID, err.Error())
@@ -515,12 +507,12 @@ func (s *DataCollectService) getAdapter(preferredName string) (adapter.DataSourc
 }
 
 // updateTaskProgress 更新任务进度
-func (s *DataCollectService) updateTaskProgress(taskID uint, progress adapter.ProgressCallback) {
-	if progress.Message != "" {
-		s.addTaskLog(taskID, "info", progress.Message, "")
+func (s *DataCollectService) updateTaskProgress(taskID uint, current, total int, msg string) {
+	if msg != "" {
+		s.addTaskLog(taskID, "info", msg, "")
 	}
-	if progress.Total > 0 {
-		pct := float64(progress.Current) / float64(progress.Total) * 100
+	if total > 0 {
+		pct := float64(current) / float64(total) * 100
 		s.db.Model(&model.CollectTask{}).Where("id = ?", taskID).Update("progress", pct)
 	}
 }
@@ -543,6 +535,58 @@ func (s *DataCollectService) addTaskLog(taskID uint, level, message, code string
 		Code:    code,
 	}
 	s.db.Create(&logEntry)
+}
+
+// toModelStock 将适配器的 StockBasic 转换为 GORM 模型 model.Stock
+func toModelStock(b adapter.StockBasic) model.Stock {
+	return model.Stock{
+		Code:         b.Code,
+		Name:         b.Name,
+		FullName:     b.FullName,
+		EnglishName:  b.FullNameEn,
+		Exchange:     b.Exchange,
+		ExchangeName: getExchangeName(b.Exchange),
+		ListingBoard: b.ListingBoard,
+		BoardName:    getBoardName(b.ListingBoard),
+		ListDate:     b.ListDate,
+		DelistDate:   "",
+		IssuePrice:   b.IssuePrice,
+		IssuePE:      b.IssuePE,
+		IssuePB:      0, // adapter 无此字段
+		IssueShares:  b.TotalIssueNum,
+		Industry:     b.Industry,
+		Sector:       b.Sector,
+	}
+}
+
+// getExchangeName 获取交易所中文名
+func getExchangeName(exchange string) string {
+	switch exchange {
+	case "SSE":
+		return "上海证券交易所"
+	case "SZSE":
+		return "深圳证券交易所"
+	case "BSE":
+		return "北京证券交易所"
+	default:
+		return exchange
+	}
+}
+
+// getBoardName 获取板块中文名
+func getBoardName(board string) string {
+	switch board {
+	case "main":
+		return "主板"
+	case "chinext":
+		return "创业板"
+	case "star":
+		return "科创板"
+	case "bse":
+		return "北交所"
+	default:
+		return board
+	}
 }
 
 // toModelPrice 将适配器的 StockPriceDaily 转换为 GORM 模型
