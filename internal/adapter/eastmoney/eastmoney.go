@@ -191,76 +191,226 @@ func (a *Adapter) convertToStockBasic(item StockListResponseDataDiffItem) adapte
 	}
 }
 
-// GetStockDetail 获取股票详情（含IPO信息）
+// GetStockDetail 获取股票基本资料（F10接口 RPT_F10_BASIC_ORGINFO）
+//
+// 数据来源: datacenter.eastmoney.com/securities/api/data/v1/get
+// 报告名: RPT_F10_BASIC_ORGINFO (HSF10)
 func (a *Adapter) GetStockDetail(ctx context.Context, code string) (*adapter.StockBasic, error) {
-	symbol, market := parseCode(code)
-	secid := buildSecID(symbol, market)
-	refer := getQuoteReferURL(code)
-
+	secucode := buildSecucode(code)
+	baseURL := "https://datacenter.eastmoney.com/securities/api/data/v1/get"
 	params := url.Values{
-		"ut":     {"fa5fd1943c7b386f172d6893dbfba10b"},
-		"invt":   {"2"},
-		"fltt":   {"2"},
-		"cb":     {fmt.Sprintf("jQuery%d", time.Now().UnixMilli())},
-		"secid":  {secid},
-		"fields": {"f57,f58,f107,f43,f169,f170,f171,f47,f48,f60,f46,f44,f45,f168,f50,f162,f177,f803,f129,f130,f131,f132,f133,f134,f135,f136,f137,f138,f139,f140,f141,f142,f143,f144,f145,f146,f147,f148,f149,f150,f151,f152,f153,f154,f155,f156,f157,f158,f159,f160,f161,f163,f164,f165,f166,f167"},
+		"reportName":   {"RPT_F10_BASIC_ORGINFO"},
+		"columns":      {"ALL"},
+		"quoteColumns": {""},
+		"filter":       {fmt.Sprintf(`(SECUCODE="%s")`, secucode)},
+		"pageNumber":   {"1"},
+		"pageSize":     {"1"},
+		"sortTypes":    {""},
+		"sortColumns":  {""},
+		"source":       {"HSF10"},
+		"client":       {"PC"},
 	}
 
-	url := "https://push2.eastmoney.com/api/qt/stock/get?" + params.Encode()
+	url := baseURL + "?" + params.Encode()
+	refer := "https://emweb.securities.eastmoney.com/"
 	body, err := a.makeGetRequest(url, refer)
 	if err != nil {
 		return nil, err
 	}
 
-	jsonStr := extractJSONP(body)
-	var result struct {
-		RC   int `json:"rc"`
-		Data struct {
-			F57  string  `json:"f57"`  // 代码
-			F58  string  `json:"f58"`  // 名称
-			F107 int     `json:"f107"` // 停牌
-			F43  float64 `json:"f43"`  // 现价
-			F169 float64 `json:"f169"` // 涨跌额
-			F170 float64 `json:"f170"` // PE动
-			F171 float64 `json:"f171"` // PB
-			F47  int64   `json:"f47"`  // 成交量
-			F48  float64 `json:"f48"`  // 成交额
-			F60  float64 `json:"f60"`  // 昨收
-			F177 int     `json:"f177"` // 流通股本
-			F803 string  `json:"f803"` // 板块
-			// IPO相关字段
-			F129 string  `json:"f129"` // 上市日期
-			F130 float64 `json:"f130"` // 发行价
-			F131 float64 `json:"f131"` // 发行PE
-			F132 float64 `json:"f132"` // 发行PB
-			F133 float64 `json:"f133"` // 总股本(万)
-			F134 float64 `json:"f134"` // 流通股本(万)
-			F135 string  `json:"f135"` // 所属行业
-			F136 string  `json:"f136"` // 细分行业
-			F137 string  `json:"f137"` // 地区
-			F138 string  `json:"f138"` // 公司全称
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+	var resp basicOrgInfoResponse
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		return nil, fmt.Errorf("JSON解析失败: %w", err)
 	}
+	if !resp.Success || len(resp.Result.Data) == 0 {
+		return nil, fmt.Errorf("未找到股票 %s 的基本资料信息", code)
+	}
 
-	exchange, listingBoard := detectExchangeAndBoard(result.Data.F57)
-	return &adapter.StockBasic{
-		Code:         result.Data.F57,
-		Name:         result.Data.F58,
-		FullName:     result.Data.F138,
-		Exchange:     exchange,
-		ListingBoard: listingBoard,
-		ListDate:     result.Data.F129,
-		IssuePrice:   result.Data.F130,
-		IssuePE:      result.Data.F131,
-		IssuePB:      result.Data.F132,
-		IssueShares:  0,
-		Industry:     result.Data.F135,
-		Sector:       result.Data.F136,
-	}, nil
+	item := resp.Result.Data[0]
+	exchange, listingBoard := detectExchangeAndBoard(code)
+
+	// 截取日期 "2010-09-15 00:00:00" → "2010-09-15"
+	listDate := truncateDate(item.ListingDate)
+	foundDate := truncateDate(item.FoundDate)
+
+	basic := &adapter.StockBasic{
+		Code:          item.SecurityCode,
+		Name:          item.SecurityNameAbbr,
+		FullName:      item.OrgName,
+		FullNameEn:    strOrEmpty(item.OrgNameEn),
+		FormerName:    strOrEmpty(item.FormerName),
+		Exchange:      exchange,
+		ListingBoard:  listingBoard,
+		ListDate:      listDate,
+		FoundDate:     foundDate,
+		SecurityType:  item.SecurityType,
+		Industry:      item.IndustryCSRC1,
+		Sector:        item.EM2016,
+		Province:      item.Province,
+		Address:       item.Address,
+		RegAddress:    item.RegAddress,
+		RegCapital:    item.RegCapital,
+		EmpNum:        item.EmpNum,
+		President:     item.President,
+		LegalPerson:   item.LegalPerson,
+		Secretary:     item.Secretary,
+		OrgTel:        item.OrgTel,
+		OrgEmail:      item.OrgEmail,
+		OrgWeb:        item.OrgWeb,
+		OrgProfile:    trimSpaces(item.OrgProfile),
+		BusinessScope: item.BusinessScope,
+		MainBusiness:  item.MainBusiness,
+		ActualHolder:  strOrEmpty(item.ActualHolder),
+		Currency:      item.Currency,
+	}
+
+	// 获取 IPO 发行信息 (RPT_PCF10_ORG_ISSUEINFO)
+	if err := a.fillIPOInfo(basic, code); err != nil {
+		log.Printf("[eastmoney] %s IPO信息获取失败(非致命): %v", code, err)
+	}
+
+	return basic, nil
+}
+
+// ========== F10 IPO 发行信息 (RPT_PCF10_ORG_ISSUEINFO) ==========
+
+// issueInfoItem IPO发行单条记录
+type issueInfoItem struct {
+	Secucode         string  `json:"SECUCODE"`          // 全称 002475.SZ
+	SecurityCode     string  `json:"SECURITY_CODE"`     // 纯代码 002475
+	FoundDate        string  `json:"FOUND_DATE"`        // 成立日期
+	ListingDate      string  `json:"LISTING_DATE"`      // 上市日期
+	AfterIssuePE     float64 `json:"AFTER_ISSUE_PE"`    // 发行后市盈率
+	OnlineIssueDate  string  `json:"ONLINE_ISSUE_DATE"` // 网上申购日期
+	IssueWay         string  `json:"ISSUE_WAY"`         // 发行方式
+	ParValue         float64 `json:"PAR_VALUE"`         // 每股面值(元)
+	TotalIssueNum    int64   `json:"TOTAL_ISSUE_NUM"`   // 发行数量(股)
+	IssuePrice       float64 `json:"ISSUE_PRICE"`       // 发行价(元)
+	DecSumIssueFee   float64 `json:"DEC_SUMISSUEFEE"`   // 发行费用
+	TotalFunds       float64 `json:"TOTAL_FUNDS"`       // 募资总额
+	NetRaiseFunds    float64 `json:"NET_RAISE_FUNDS"`   // 净募资金额
+	OpenPrice        float64 `json:"OPEN_PRICE"`        // 首日开盘价
+	ClosePrice       float64 `json:"CLOSE_PRICE"`       // 首日收盘价
+	TurnoverRate     float64 `json:"TURNOVERRATE"`      // 首日换手率(%)
+	HighPrice        float64 `json:"HIGH_PRICE"`        // 首日最高价
+	OfflineVapRatio  float64 `json:"OFFLINE_VAP_RATIO"` // 网下超额配售倍数
+	OnlineIssueLwr   float64 `json:"ONLINE_ISSUE_LWR"` // 网上中签率
+	SecurityType     string  `json:"SECURITY_TYPE"`     // 证券类型
+	Overalllotment   float64 `json:"OVERALLOTMENT"`     // 超额配售数量
+	Type             string  `json:"TYPE"`              // 类型
+	TradeMarketCode  string  `json:"TRADE_MARKET_CODE"` // 交易市场代码
+	StrZhuchengxiao  string  `json:"STR_ZHUCHENGXIAO"`  // 保荐机构
+	StrBaojian       string  `json:"STR_BAOJIAN"`       // 主承销商
+}
+
+// fillIPOInfo 获取并填充IPO发行信息到StockBasic（非致命错误）
+func (a *Adapter) fillIPOInfo(basic *adapter.StockBasic, code string) error {
+	secucode := buildSecucode(code)
+	baseURL := "https://datacenter.eastmoney.com/securities/api/data/v1/get"
+	params := url.Values{
+		"reportName":   {"RPT_PCF10_ORG_ISSUEINFO"},
+		"columns":      {"ALL"},
+		"quoteColumns": {""},
+		"filter":       {fmt.Sprintf(`(SECUCODE="%s")`, secucode)},
+		"pageNumber":   {"1"},
+		"pageSize":     {"1"},
+		"sortTypes":    {""},
+		"sortColumns":  {""},
+		"source":       {"HSF10"},
+		"client":       {"PC"},
+	}
+
+	url := baseURL + "?" + params.Encode()
+	refer := "https://emweb.securities.eastmoney.com/"
+	body, err := a.makeGetRequest(url, refer)
+	if err != nil {
+		return fmt.Errorf("请求失败: %w", err)
+	}
+
+	var resp struct {
+		Success bool                   `json:"success"`
+		Message string                 `json:"message"`
+		Result  struct {
+			Pages int            `json:"pages"`
+			Data []issueInfoItem `json:"data"`
+			Count int           `json:"count"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		return fmt.Errorf("JSON解析失败: %w", err)
+	}
+	if !resp.Success || len(resp.Result.Data) == 0 {
+		return fmt.Errorf("未找到 %s 的IPO信息", code)
+	}
+
+	item := resp.Result.Data[0]
+	basic.IssuePrice = item.IssuePrice
+	basic.IssuePE = item.AfterIssuePE
+	basic.ParValue = item.ParValue
+	basic.TotalIssueNum = item.TotalIssueNum
+	basic.OnlineIssueDate = truncateDate(item.OnlineIssueDate)
+	basic.IssueWay = item.IssueWay
+	basic.Sponsor = item.StrZhuchengxiao
+	basic.Underwriter = item.StrBaojian
+
+	return nil
+}
+
+type basicOrgInfoResponse struct {
+	Success bool                   `json:"success"`
+	Message string                 `json:"message"`
+	Result  basicOrgInfoResultData `json:"result"`
+}
+
+type basicOrgInfoResultData struct {
+	Pages int                `json:"pages"`
+	Data []basicOrgInfoItem  `json:"data"`
+	Count int                `json:"count"`
+}
+
+// basicOrgInfoItem F10基本资料单条记录 (RPT_F10_BASIC_ORGINFO)
+type basicOrgInfoItem struct {
+	Secucode           string   `json:"SECUCODE"`             // 全称 002475.SZ
+	SecurityCode       string   `json:"SECURITY_CODE"`        // 纯代码 002475
+	SecurityNameAbbr   string   `json:"SECURITY_NAME_ABBR"`   // 简称 立讯精密
+	OrgCode            string   `json:"ORG_CODE"`              // 组织机构代码
+	OrgName            string   `json:"ORG_NAME"`              // 全称 立讯精密工业股份有限公司
+	OrgNameEn          *string  `json:"ORG_NAME_EN"`           // 英文名称
+	FormerName         *string  `json:"FORMERNAME"`            // 曾用名
+	StrCodeA           string   `json:"STR_CODEA"`             // A股代码
+	StrNameA           string   `json:"STR_NAMEA"`             // A股简称
+	SecurityType       string   `json:"SECURITY_TYPE"`         // 证券类型 深交所主板A股
+	EM2016             string   `json:"EM2016"`                // 东财行业分类
+	TradeMarket        string   `json:"TRADE_MARKET"`          // 交易所 深圳证券交易所
+	IndustryCSRC1      string   `json:"INDUSTRYCSRC1"`         // 证监会行业分类
+	President          string   `json:"PRESIDENT"`             // 董事长
+	LegalPerson        string   `json:"LEGAL_PERSON"`          // 法人代表
+	Secretary          string   `json:"SECRETARY"`             // 董秘
+	Chairman           string   `json:"CHAIRMAN"`              // 董事长(另一字段)
+	OrgTel             string   `json:"ORG_TEL"`               // 电话
+	OrgEmail           string   `json:"ORG_EMAIL"`             // 邮箱
+	OrgFax             string   `json:"ORG_FAX"`               // 传真
+	OrgWeb             string   `json:"ORG_WEB"`               // 网站
+	Address            string   `json:"ADDRESS"`               // 地址
+	RegAddress         string   `json:"REG_ADDRESS"`           // 注册地址
+	Province           string   `json:"PROVINCE"`              // 省份
+	AddressPostcode    string   `json:"ADDRESS_POSTCODE"`      // 邮编
+	RegCapital         float64  `json:"REG_CAPITAL"`           // 注册资本(万元)
+	RegNum             string   `json:"REG_NUM"`               // 统一社会信用代码
+	EmpNum             int      `json:"EMP_NUM"`               // 员工人数
+	TatolNumber        int      `json:"TATOLNUMBER"`           // 董监高人数
+	LawFirm            string   `json:"LAW_FIRM"`              // 律师事务所
+	AccountfirmName    string   `json:"ACCOUNTFIRM_NAME"`      // 会计师事务所
+	OrgProfile         string   `json:"ORG_PROFILE"`           // 公司简介
+	BusinessScope      string   `json:"BUSINESS_SCOPE"`        // 经营范围
+	ListingDate        string   `json:"LISTING_DATE"`          // 上市日期 YYYY-MM-DD HH:mm:ss
+	FoundDate          string   `json:"FOUND_DATE"`            // 成立日期 YYYY-MM-DD HH:mm:ss
+	MainBusiness       string   `json:"MAIN_BUSINESS"`         // 主营业务
+	HostBroker         *string  `json:"HOST_BROKER"`           // 主承销商
+	TransferWay        *string  `json:"TRANSFER_WAY"`          // 转让方式
+	ActualHolder       *string  `json:"ACTUAL_HOLDER"`         // 实际控制人
+	Currency           string   `json:"CURRENCY"`              // 货币单位
+	BoardNameLevel     string   `json:"BOARD_NAME_LEVEL"`      // 板块层级分类
 }
 
 // ========== K线数据 ==========
@@ -704,6 +854,27 @@ func (a *Adapter) GetShareChanges(ctx context.Context, code string) ([]adapter.S
 
 	log.Printf("[eastmoney] %s 股本变动: %d 条记录 (%d页)", code, len(allChanges), totalPages)
 	return allChanges, nil
+}
+
+// truncateDate 截取日期 "2010-09-15 00:00:00" → "2010-09-15"
+func truncateDate(s string) string {
+	if len(s) >= 10 {
+		return s[:10]
+	}
+	return s
+}
+
+// strOrEmpty 安全解引用 *string 指针
+func strOrEmpty(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
+// trimSpaces 去除首尾空白和多余空格
+func trimSpaces(s string) string {
+	return strings.TrimSpace(s)
 }
 
 // buildSecucode 根据代码构建东财 SECUCODE 格式 (如 002404.SZ / 600000.SH)
