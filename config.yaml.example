@@ -1,0 +1,41 @@
+# AI Stock Picker 服务配置 (示例文件)
+# 使用方法: cp config.yaml.example config.yaml 并修改配置
+
+server:
+  port: 8080                    # HTTP 服务端口
+  mode: debug                   # 运行模式: debug/release
+  read_timeout: 30              # 读取超时(秒)
+  write_timeout: 30             # 写入超时(秒)
+
+database:
+  host: localhost               # MySQL 主机
+  port: 3306                    # MySQL 端口
+  user: root                    # 用户名
+  password: "your_password"     # 密码
+  dbname: stock                 # 数据库名
+  charset: utf8mb4              # 字符集
+  max_idle_conns: 10            # 最大空闲连接数
+  max_open_conns: 100           # 最大打开连接数
+  conn_max_lifetime: 3600       # 连接最大生命周期(秒)
+
+mcp:
+  enabled: true                 # 是否启用 MCP Server
+  name: "ai-stock-picker"       # MCP Server 名称
+  version: "1.0.0"              # MCP Server 版本
+  transport: stdio              # 传输方式: stdio/sse
+
+log:
+  level: info                   # 日志级别: debug/info/warn/error
+  format: json                  # 日志格式: json/text
+  output: stdout                # 日志输出: stdout/file
+  file_path: "./logs/app.log"   # 日志文件路径(当 output=file 时生效)
+  max_size: 100                 # 单个日志文件最大大小(MB)
+  max_backups: 10               # 保留旧文件的最大个数
+  max_age: 30                   # 保留旧文件的最大天数
+
+# 股票数据源配置(预留)
+data_source:
+  provider: mock                # 数据源: mock/realtime
+  api_key: ""                   # API Key(使用实时数据源时需要)
+  api_secret: ""                # API Secret
+  base_url: ""                  # 数据源基础URL

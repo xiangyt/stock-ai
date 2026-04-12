@@ -1,0 +1,44 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+
+# Go
+go.sum
+
+# Dependency directories (remove vendor/ if not needed)
+vendor/
+
+# IDE
+.idea/
+.vscode/
+.workbuddy/
+.codebuddy/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config (contains secrets)
+config.prod.yaml
+config.yaml
+.env
+
+# Logs
+*.log
+
+# Build
+/build/
+/dist/
+
+# Temp
+tmp/
