@@ -58,7 +58,7 @@ func AutoMigrate() error {
 
 	return DB.AutoMigrate(
 		&model.Stock{},
-		// &model.StockPrice{},
+		&model.DailyKline{},
 		// &model.HotTopic{},
 		// &model.FilterCondition{},
 		// &model.DataSourceConfig{},
