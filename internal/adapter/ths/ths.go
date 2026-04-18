@@ -283,11 +283,6 @@ func (a *Adapter) getKLines(ctx context.Context, code, klineType string) ([]adap
 
 // ========== 实时/当日数据 ==========
 
-func (a *Adapter) GetRealtimeData(ctx context.Context, codes []string) (map[string]adapter.StockPriceDaily, error) {
-	// TODO: 实现同花顺批量实时行情
-	return make(map[string]adapter.StockPriceDaily), nil
-}
-
 // GetTodayData 获取当日数据
 func (a *Adapter) GetTodayData(ctx context.Context, code string) (*adapter.StockPriceDaily, string, error) {
 	symbol, _ := parseCode(code)
