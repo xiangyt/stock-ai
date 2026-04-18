@@ -378,6 +378,11 @@ func (a *Adapter) GetShareChanges(ctx context.Context, code string) ([]adapter.S
 	return nil, fmt.Errorf("not implemented")
 }
 
+// GetInstitutionalHoldings 获取机构持仓数据
+func (a *Adapter) GetInstitutionalHoldings(_ context.Context, _ string) ([]adapter.InstitutionalHolding, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 // ========== HTTP请求辅助 ==========
 
 // makeTHSRequest 发送同花顺请求（带限流和反爬）
