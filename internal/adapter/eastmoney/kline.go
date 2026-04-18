@@ -64,6 +64,7 @@ func (a *Adapter) fetchKLines(ctx context.Context, code, adjType, klineType, beg
 		"fields1": {"f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13"},
 		"fields2": {"f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"},
 		"beg":     {beg},
+		"end":     {"20500101"},
 		"ut":      {"fa5fd1943c7b386f172d6893dbfba10b"},
 		"rtntype": {"6"},
 		"secid":   {secid},
