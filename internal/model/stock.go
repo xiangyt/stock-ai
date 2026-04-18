@@ -60,7 +60,25 @@ type Stock struct {
 }
 
 // TableName 表名
-func (Stock) TableName() string { return "stocks" }
+func (Stock) TableName() string { return "stocks_detail" }
+
+// BeforeCreate 创建前钩子：自动设置 Created/Updated 为当前时间
+func (s *Stock) BeforeCreate(tx *gorm.DB) error {
+	now := time.Now()
+	if s.Created.IsZero() {
+		s.Created = now
+	}
+	if s.Updated.IsZero() {
+		s.Updated = now
+	}
+	return nil
+}
+
+// BeforeUpdate 更新前钩子：自动更新 Updated 字段
+func (s *Stock) BeforeUpdate(tx *gorm.DB) error {
+	s.Updated = time.Now()
+	return nil
+}
 
 // GetExchangeDisplay 获取交易所显示名
 func (s *Stock) GetExchangeDisplay() string {

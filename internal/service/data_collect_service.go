@@ -2,26 +2,22 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
-	"sync"
-	"time"
 
 	"stock-ai/internal/adapter"
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ========== 数据采集服务 ==========
 
 // DataCollectService 数据采集服务
 type DataCollectService struct {
-	db      *gorm.DB
-	mu      sync.Mutex // 防止并发执行
+	db       *gorm.DB
 	registry *adapter.Registry // 数据源注册中心
 }
 
@@ -32,444 +28,90 @@ func NewDataCollectService() *DataCollectService {
 	}
 }
 
-// ========== 采集任务相关方法 ==========
+// ========== 采集结果 ==========
 
-type CreateTaskRequest struct {
-	Type       string                 `json:"type" binding:"required"`                // 任务类型
-	SourceName string                 `json:"source_name"`                            // 指定数据源(可选)
-	TargetCode string                 `json:"target_code"`                            // 目标股票代码
-	Params     map[string]interface{} `json:"params"`                                 // 额外参数
-	CreatedBy  string                 `json:"created_by"`
+// CollectResult 采集结果
+type CollectResult struct {
+	Total    int `json:"total"`     // 总条数
+	NewCount int `json:"new_count"` // 新增数量
+	UpdCount int `json:"upd_count"` // 更新数量
 }
 
-type TaskListQuery struct {
-	Type   string `form:"type"`
-	Status string `form:"status"`
-	Limit  int    `form:"limit,default:20"`
-	Offset int    `form:"offset,default:0"`
-}
+// ========== 采集执行 ==========
 
-type TaskResponse struct {
-	model.CollectTask
-	DurationMs int64  `json:"duration_ms"`
-	Progress   float64 `json:"progress"`
-}
-
-// CreateTask 创建采集任务
-func (s *DataCollectService) CreateTask(req CreateTaskRequest) (*model.CollectTask, error) {
-	task := model.CollectTask{
-		TaskID:     generateUUID(),
-		Type:       req.Type,
-		Status:     model.TaskPending,
-		SourceName: req.SourceName,
-		TargetCode: req.TargetCode,
-		CreatedBy:  req.CreatedBy,
-	}
-
-	if req.Params != nil {
-		paramsBytes, _ := json.Marshal(req.Params)
-		task.Params = string(paramsBytes)
-	}
-
-	if err := s.db.Create(&task).Error; err != nil {
-		return nil, fmt.Errorf("创建任务失败: %w", err)
-	}
-
-	return &task, nil
-}
-
-// ListTasks 列出采集任务
-func (s *DataCollectService) ListTasks(query TaskListQuery) ([]model.CollectTask, int64, error) {
-	var tasks []model.CollectTask
-	var total int64
-
-	tx := s.db.Model(&model.CollectTask{})
-
-	if query.Type != "" {
-		tx = tx.Where("type = ?", query.Type)
-	}
-	if query.Status != "" {
-		tx = tx.Where("status = ?", query.Status)
-	}
-
-	tx.Count(&total).Order("created_at DESC").Limit(query.Limit).Offset(query.Offset).Find(&tasks)
-
-	return tasks, total, nil
-}
-
-// GetTaskDetail 获取任务详情
-func (s *DataCollectService) GetTaskDetail(id uint) (*model.CollectTask, error) {
-	var task model.CollectTask
-	if err := s.db.Preload("Logs", func(db *gorm.DB) *gorm.DB {
-		return db.Order("id ASC")
-	}).First(&task, id).Error; err != nil {
-		return nil, fmt.Errorf("任务不存在: %w", err)
-	}
-	return &task, nil
-}
-
-// DeleteTask 删除采集任务
-func (s *DataCollectService) DeleteTask(id uint) error {
-	var task model.CollectTask
-
-	result := s.db.First(&task, id)
-	if result.Error != nil {
-		return result.Error
-	}
-
-	if task.Status == model.TaskRunning {
-		return fmt.Errorf("不能删除正在运行的任务")
-	}
-
-	s.db.Where("task_id = ?", id).Delete(&model.CollectLog{})
-	return s.db.Delete(&task).Error
-}
-
-// ========== 执行采集任务 ==========
-
-// RunStockList 运行股票列表采集
-func (s *DataCollectService) RunStockList(sourceName string) (*model.CollectTask, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	task, err := s.CreateTask(CreateTaskRequest{
-		Type:       model.TaskTypeStockList,
-		SourceName: sourceName,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	now := time.Now()
-	task.Status = model.TaskRunning
-	task.StartedAt = &now
-	s.db.Save(task)
-
-	log.Printf("[采集] 开始采集股票列表, task_id=%s, source=%s", task.TaskID, sourceName)
-
-	// 获取适配器
-	adp, err := s.getAdapter(sourceName)
-	if err != nil {
-		s.markTaskFailed(task.ID, err.Error())
-		return nil, err
-	}
-
-	// 执行采集（带进度回调）
+// CollectStockList 执行股票列表采集（外部调用入口）
+// 流程: 指定数据源 → 获取全量股票列表 → 遍历获取详情 → upsert入库
+func (s *DataCollectService) CollectStockList(sourceName string) (*CollectResult, error) {
 	ctx := context.Background()
-	stocks, err := adp.GetStockList(ctx, func(current, total int, message string) {
-		s.updateTaskProgress(task.ID, current, total, message)
+
+	// 1. 获取适配器
+	adp, err := s.getAdapter(sourceName)
+	if err != nil {
+		return nil, fmt.Errorf("获取数据源失败: %w", err)
+	}
+
+	log.Printf("[采集] 开始股票列表采集, source=%s", sourceName)
+
+	// 2. 获取全量股票列表
+	allStocks, err := adp.GetStockList(ctx, func(current, total int, msg string) {
+		log.Printf("[采集] 列表进度: %d/%d - %s", current, total, msg)
 	})
 	if err != nil {
-		s.markTaskFailed(task.ID, err.Error())
-		return nil, err
+		return nil, fmt.Errorf("获取股票列表失败: %w", err)
 	}
 
-	// 写入数据库（upsert）
-	successCount := 0
-	for _, stock := range stocks {
-		var existing model.Stock
-		result := s.db.Where("code = ?", stock.Code).First(&existing)
+	log.Printf("[采集] 股票列表获取完成, 共 %d 只", len(allStocks))
 
-		if result.Error == gorm.ErrRecordNotFound {
-			newStock := toModelStock(stock)
-			if err := s.db.Create(&newStock).Error; err != nil {
-				s.addTaskLog(task.ID, "error", "插入失败: "+stock.Name+" - "+err.Error(), stock.Code)
-				continue
-			}
-		} else if result.Error == nil {
-			// 已存在，更新可变字段
-			s.db.Model(&existing).Updates(map[string]interface{}{
-				"name":          stock.Name,
-				"full_name":     stock.FullName,
-				"english_name":  stock.FullNameEn,
-				"exchange_name": getExchangeName(stock.Exchange),
-				"board_name":    getBoardName(stock.ListingBoard),
-				"industry":      stock.Industry,
-				"sector":        stock.Sector,
-				"issue_price":   stock.IssuePrice,
-				"issue_pe":      stock.IssuePE,
-				"issue_shares":  stock.TotalIssueNum,
-				"update_time":   time.Now().Format("2006-01-02 15:04:05"),
-			})
+	// 3. 遍历每只股票获取详情并upsert入库
+	result := &CollectResult{Total: len(allStocks)}
+	for i, stock := range allStocks {
+		code := stock.Code
+
+		detail, detailErr := adp.GetStockDetail(ctx, code)
+		if detailErr != nil {
+			log.Printf("[采集] 获取详情失败 [%s]: %v", code, detailErr)
+			continue
 		}
-		successCount++
 
-		if successCount%200 == 0 {
-			s.addTaskLog(task.ID, "info", fmt.Sprintf("已处理 %d/%d 条", successCount, len(stocks)), "")
+		newStock := toModelStock(code, detail)
+		rowsAffected := s.upsertStock(newStock)
+
+		if rowsAffected == 0 {
+			result.NewCount++
+		} else {
+			result.UpdCount++
+		}
+
+		// 每100只打印一次进度
+		if (i+1)%100 == 0 || i == len(allStocks)-1 {
+			log.Printf("[采集] 详情进度: %d/%d (新增%d, 更新%d)", i+1, len(allStocks), result.NewCount, result.UpdCount)
 		}
 	}
 
-	finishedAt := time.Now()
-	s.db.Model(&model.CollectTask{}).Where("id = ?", task.ID).Updates(map[string]interface{}{
-		"status":        model.TaskCompleted,
-		"finished_at":   &finishedAt,
-		"total_count":   len(stocks),
-		"success_count": successCount,
-		"fail_count":    len(stocks) - successCount,
-	})
-
-	s.addTaskLog(task.ID, "info", fmt.Sprintf("采集完成: 总计 %d, 成功 %d, 失败 %d", len(stocks), successCount, len(stocks)-successCount), "")
-	log.Printf("[采集] 股票列表采集完成, total=%d, success=%d, source=%s", len(stocks), successCount, sourceName)
-
-	return s.GetTaskDetail(task.ID)
+	log.Printf("[采集] 完成: total=%d, new=%d, upd=%d", result.Total, result.NewCount, result.UpdCount)
+	return result, nil
 }
 
-// RunSingleStockPrice 运行单只股票价格采集
-func (s *DataCollectService) RunSingleStockPrice(sourceName, code string) (*model.CollectTask, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	task, err := s.CreateTask(CreateTaskRequest{
-		Type:       model.TaskTypeStockPrice,
-		SourceName: sourceName,
-		TargetCode: code,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	now := time.Now()
-	task.Status = model.TaskRunning
-	task.StartedAt = &now
-	s.db.Save(task)
+// CollectStockDetail 采集单只股票详情（外部调用入口）
+func (s *DataCollectService) CollectStockDetail(sourceName, code string) (*model.Stock, error) {
+	ctx := context.Background()
 
 	adp, err := s.getAdapter(sourceName)
 	if err != nil {
-		s.markTaskFailed(task.ID, err.Error())
-		return nil, err
+		return nil, fmt.Errorf("获取数据源失败: %w", err)
 	}
 
-	today := time.Now().Format("2006-01-02")
-	startDate := time.Now().AddDate(0, 0, -120).Format("2006-01-02") // 近4个月数据
-
-	prices, err := adp.GetDailyKLine(ctx, code, startDate, today, func(current, total int, msg string) {
-		s.addTaskLog(task.ID, "info", msg, "")
-	})
+	detail, err := adp.GetStockDetail(ctx, code)
 	if err != nil {
-		s.markTaskFailed(task.ID, err.Error())
-		return nil, err
+		return nil, fmt.Errorf("获取股票详情失败: %w", err)
 	}
 
-	// 写入价格数据
-	for i := range prices {
-		priceModel := toModelPrice(prices[i])
-		if err := s.db.Create(&priceModel).Error; err != nil {
-			// 忽略重复键错误
-			continue
-		}
-	}
+	// upsert (原子操作，无并发问题)
+	stock := toModelStock(code, detail)
+	s.upsertStock(stock)
 
-	finishedAt := time.Now()
-	s.db.Model(&model.CollectTask{}).Where("id = ?", task.ID).Updates(map[string]interface{}{
-		"status":        model.TaskCompleted,
-		"finished_at":   &finishedAt,
-		"total_count":   len(prices),
-		"success_count": len(prices),
-	})
-
-	return s.GetTaskDetail(task.ID)
-}
-
-// RunAllPrices 运行全量价格采集
-func (s *DataCollectService) RunAllPrices(sourceName string) (*model.CollectTask, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	task, err := s.CreateTask(CreateTaskRequest{
-		Type:       model.TaskTypeAllPrices,
-		SourceName: sourceName,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	now := time.Now()
-	task.Status = model.TaskRunning
-	task.StartedAt = &now
-	s.db.Save(task)
-
-	// 获取所有在市股票代码
-	var stocks []model.Stock
-	s.db.Where("status = ?", "normal").Select("code").Find(&stocks)
-
-	codes := make([]string, len(stocks))
-	for i, st := range stocks {
-		codes[i] = st.Code
-	}
-
-	log.Printf("[采集] 开始全量实时行情采集, 共 %d 只股票, source=%s", len(codes), sourceName)
-
-	adp, err := s.getAdapter(sourceName)
-	if err != nil {
-		s.markTaskFailed(task.ID, err.Error())
-		return nil, err
-	}
-
-	today := time.Now().Format("2006-01-02")
-
-	pricesMap, err := adp.GetRealtimeData(ctx, codes, func(current, total int, msg string) {
-		s.addTaskLog(task.ID, "info", msg, "")
-	})
-	if err != nil {
-		s.markTaskFailed(task.ID, err.Error())
-		return nil, err
-	}
-
-	totalSuccess := 0
-	for code, price := range pricesMap {
-		priceModel := toModelPrice(price)
-		if err := s.db.Where("stock_code = ? AND date = ?", code, today).
-			Assign(priceModel).FirstOrCreate(&priceModel).Error; err != nil {
-			continue
-		}
-		totalSuccess++
-	}
-
-	failed := len(codes) - totalSuccess
-	finishedAt := time.Now()
-	s.db.Model(&model.CollectTask{}).Where("id = ?", task.ID).Updates(map[string]interface{}{
-		"status":        model.TaskCompleted,
-		"finished_at":   &finishedAt,
-		"total_count":   len(codes),
-		"success_count": totalSuccess,
-		"fail_count":    failed,
-	})
-
-	log.Printf("[采集] 全量行情采集完成, total=%d, success=%d, fail=%d", len(codes), totalSuccess, failed)
-
-	return s.GetTaskDetail(task.ID)
-}
-
-// ========== 状态查询 ==========
-
-// CollectorStatus 采集器状态
-type CollectorStatus struct {
-	IsRunning  bool               `json:"is_running"`
-	Sources    []DataSourceStatus `json:"sources"`
-	LastTasks  []TaskResponse     `json:"last_tasks"`
-	StockTotal int64              `json:"stock_total"`
-	LastUpdate string             `json:"last_update"`
-}
-
-type DataSourceStatus struct {
-	Name          string `json:"name"`
-	DisplayName   string `json:"display_name"`
-	Type          string `json:"type"`
-	Status        string `json:"status"`
-	IsAvailable   bool   `json:"is_available"`
-	RateRemaining int    `json:"rate_remaining"`
-}
-
-// GetStatus 获取采集器状态
-func (s *DataCollectService) GetStatus() (*CollectorStatus, error) {
-	status := &CollectorStatus{
-		Sources:   make([]DataSourceStatus, 0),
-		LastTasks: make([]TaskResponse, 0),
-	}
-
-	// 从注册中心获取已注册的数据源
-	registeredAdapters := s.registry.List()
-	registeredNames := make(map[string]bool)
-	for _, adp := range registeredAdapters {
-		registeredNames[adp.Name()] = true
-		status.Sources = append(status.Sources, DataSourceStatus{
-			Name:        adp.Name(),
-			DisplayName: adp.DisplayName(),
-			Type:        adp.Type(),
-			Status:      "active",
-			IsAvailable: true,
-		})
-	}
-
-	// 合并数据库中的配置信息
-	var configs []model.DataSourceConfig
-	s.db.Find(&configs)
-	for _, cfg := range configs {
-		found := false
-		for i, ds := range status.Sources {
-			if ds.Name == cfg.Name {
-				status.Sources[i].Status = cfg.Status
-				status.Sources[i].IsAvailable = cfg.IsActive() && cfg.IsQuotaAvailable()
-				if cfg.DailyQuota > 0 {
-					status.Sources[i].RateRemaining = cfg.DailyQuota - cfg.UsedQuota
-				} else {
-					status.Sources[i].RateRemaining = -1
-				}
-				found = true
-				break
-			}
-		}
-		if !found && !registeredNames[cfg.Name] {
-			// 数据库有但未注册的源
-			status.Sources = append(status.Sources, DataSourceStatus{
-				Name:          cfg.Name,
-				DisplayName:   cfg.DisplayName,
-				Type:          cfg.Type,
-				Status:        cfg.Status,
-				IsAvailable:   false,
-				RateRemaining: 0,
-			})
-		}
-	}
-
-	var runningCount int64
-	s.db.Model(&model.CollectTask{}).Where("status = ?", model.TaskRunning).Count(&runningCount)
-	status.IsRunning = runningCount > 0
-
-	var tasks []model.CollectTask
-	s.db.Order("created_at DESC").Limit(5).Find(&tasks)
-	for _, t := range tasks {
-		status.LastTasks = append(status.LastTasks, TaskResponse{
-			CollectTask: t,
-			DurationMs:  t.Duration(),
-			Progress:    t.Progress(),
-		})
-	}
-
-	s.db.Model(&model.Stock{}).Where("status = ?", "normal").Count(&status.StockTotal)
-
-	var lastPrice model.StockPrice
-	s.db.Order("date DESC").First(&lastPrice)
-	if lastPrice.Date != "" {
-		status.LastUpdate = lastPrice.Date
-	}
-
-	return status, nil
-}
-
-// GetLogs 获取采集日志
-func (s *DataCollectService) GetLogs(taskID uint, limit int) ([]model.CollectLog, error) {
-	var logs []model.CollectLog
-	query := s.db.Where("task_id = ?", taskID).Order("id DESC")
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
-	query.Find(&logs)
-	return logs, nil
-}
-
-// ========== 数据源管理 ==========
-
-// ListSources 列出数据源配置
-func (s *DataCollectService) ListSources() ([]model.DataSourceConfig, error) {
-	var sources []model.DataSourceConfig
-	s.db.Order("priority ASC").Find(&sources)
-	return sources, nil
-}
-
-// UpdateSource 更新数据源配置
-func (s *DataCollectService) UpdateSource(name string, config map[string]interface{}) error {
-	var source model.DataSourceConfig
-	if err := s.db.Where("name = ?", name).First(&source).Error; err != nil {
-		return fmt.Errorf("数据源不存在: %s", name)
-	}
-
-	configBytes, _ := json.Marshal(config)
-	configStr := string(configBytes)
-
-	return s.db.Model(&source).Updates(map[string]interface{}{
-		"config": configStr,
-	}).Error
+	log.Printf("[采集] 详情采集完成 [%s]: %s", code, stock.Name)
+	return &stock, nil
 }
 
 // ========== 内部辅助函数 ==========
@@ -506,56 +148,48 @@ func (s *DataCollectService) getAdapter(preferredName string) (adapter.DataSourc
 	return nil, fmt.Errorf("无可用数据源，请先在 config.yaml 中启用并注册数据源")
 }
 
-// updateTaskProgress 更新任务进度
-func (s *DataCollectService) updateTaskProgress(taskID uint, current, total int, msg string) {
-	if msg != "" {
-		s.addTaskLog(taskID, "info", msg, "")
+// upsertStock 原子 upsert 操作 (INSERT ON DUPLICATE KEY UPDATE)
+// 返回受影响的行数: 0=新增(INSERT), >0=更新(UPDATE)
+func (s *DataCollectService) upsertStock(stock model.Stock) int64 {
+	result := s.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "code"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"name", "full_name", "english_name",
+			"exchange", "exchange_name",
+			"listing_board", "board_name",
+			"list_date", "delist_date",
+			"issue_price", "issue_pe", "issue_shares",
+			"industry", "industry_code", "sector",
+			"updated",
+		}),
+	}).Create(&stock)
+	if result.Error != nil {
+		log.Printf("[采集] upsert失败 [%s]: %v", stock.Code, result.Error)
+		return -1
 	}
-	if total > 0 {
-		pct := float64(current) / float64(total) * 100
-		s.db.Model(&model.CollectTask{}).Where("id = ?", taskID).Update("progress", pct)
-	}
-}
-
-func (s *DataCollectService) markTaskFailed(taskID uint, errorMsg string) {
-	finishedAt := time.Now()
-	s.db.Model(&model.CollectTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{
-		"status":     model.TaskFailed,
-		"finished_at": &finishedAt,
-		"error_msg":  errorMsg,
-	})
-	s.addTaskLog(taskID, "error", errorMsg, "")
-}
-
-func (s *DataCollectService) addTaskLog(taskID uint, level, message, code string) {
-	logEntry := model.CollectLog{
-		TaskID:  taskID,
-		Level:   level,
-		Message: message,
-		Code:    code,
-	}
-	s.db.Create(&logEntry)
+	return result.RowsAffected
 }
 
 // toModelStock 将适配器的 StockBasic 转换为 GORM 模型 model.Stock
-func toModelStock(b adapter.StockBasic) model.Stock {
+func toModelStock(code string, detail *adapter.StockBasic) model.Stock {
+	if detail == nil {
+		return model.Stock{Code: code}
+	}
 	return model.Stock{
-		Code:         b.Code,
-		Name:         b.Name,
-		FullName:     b.FullName,
-		EnglishName:  b.FullNameEn,
-		Exchange:     b.Exchange,
-		ExchangeName: getExchangeName(b.Exchange),
-		ListingBoard: b.ListingBoard,
-		BoardName:    getBoardName(b.ListingBoard),
-		ListDate:     b.ListDate,
-		DelistDate:   "",
-		IssuePrice:   b.IssuePrice,
-		IssuePE:      b.IssuePE,
-		IssuePB:      0, // adapter 无此字段
-		IssueShares:  b.TotalIssueNum,
-		Industry:     b.Industry,
-		Sector:       b.Sector,
+		Code:         code,
+		Name:         detail.Name,
+		FullName:     detail.FullName,
+		EnglishName:  detail.FullNameEn,
+		Exchange:     detail.Exchange,
+		ExchangeName: getExchangeName(detail.Exchange),
+		ListingBoard: detail.ListingBoard,
+		BoardName:    getBoardName(detail.ListingBoard),
+		ListDate:     detail.ListDate,
+		IssuePrice:   detail.IssuePrice,
+		IssuePE:      detail.IssuePE,
+		IssueShares:  detail.TotalIssueNum,
+		Industry:     detail.Industry,
+		Sector:       detail.Sector,
 	}
 }
 
@@ -587,36 +221,4 @@ func getBoardName(board string) string {
 	default:
 		return board
 	}
-}
-
-// toModelPrice 将适配器的 StockPriceDaily 转换为 GORM 模型
-func toModelPrice(p adapter.StockPriceDaily) model.StockPrice {
-	return model.StockPrice{
-		StockCode:  p.Code,
-		Date:       p.Date,
-		Open:       p.Open,
-		Close:      p.Close,
-		High:       p.High,
-		Low:        p.Low,
-		Volume:     p.Volume,
-		Amount:     p.Amount,
-		Turnover:   p.Turnover,
-		Amplitude:  p.Amplitude,
-		ChangePct:  p.ChangePct,
-		Change:     p.Change,
-	}
-}
-
-func generateUUID() string {
-	return fmt.Sprintf("%d%s", time.Now().UnixNano(), randomString(8))
-}
-
-func randomString(n int) string {
-	const letters = "abcdefghijklmnopqrstuvwxyz0123456789"
-	b := make([]byte, n)
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	for i := range b {
-		b[i] = letters[r.Int63()%int64(len(letters))]
-	}
-	return string(b)
 }

@@ -11,14 +11,14 @@ import (
 	"syscall"
 	"time"
 
-	"ai-stock-picker/internal/api/router"
-	"ai-stock-picker/internal/adapter/eastmoney"
-	"ai-stock-picker/internal/adapter/ths"
-	"ai-stock-picker/internal/adapter"
-	"ai-stock-picker/internal/config"
-	"ai-stock-picker/internal/db"
-	"ai-stock-picker/internal/mcp"
-	"ai-stock-picker/internal/service"
+	"stock-ai/internal/api/router"
+	"stock-ai/internal/adapter/eastmoney"
+	"stock-ai/internal/adapter/ths"
+	"stock-ai/internal/adapter"
+	"stock-ai/internal/config"
+	"stock-ai/internal/db"
+	// "stock-ai/internal/mcp" // TODO: 待升级到新版 mcpkit API 后启用
+	"stock-ai/internal/service"
 )
 
 func main() {
@@ -89,16 +89,17 @@ func main() {
 	}
 
 	// 启动 MCP Server (如果启用)
-	var mcpServer *mcp.StockMCPServer
-	if cfg.MCP.Enabled {
-		mcpServer = mcp.NewStockMCPServer(cfg.MCP.Name, cfg.MCP.Version)
-		go func() {
-			log.Printf("MCP Server 启动: %s v%s", cfg.MCP.Name, cfg.MCP.Version)
-			if err := mcpServer.Start(); err != nil {
-				log.Printf("MCP Server 错误: %v", err)
-			}
-		}()
-	}
+	// TODO: 待升级到新版 mcpkit API 后启用
+	// var mcpServer *mcp.StockMCPServer
+	// if cfg.MCP.Enabled {
+	// 	mcpServer = mcp.NewStockMCPServer(cfg.MCP.Name, cfg.MCP.Version)
+	// 	go func() {
+	// 		log.Printf("MCP Server 启动: %s v%s", cfg.MCP.Name, cfg.MCP.Version)
+	// 		if err := mcpServer.Start(); err != nil {
+	// 			log.Printf("MCP Server 错误: %v", err)
+	// 		}
+	// 	}()
+	// }
 
 	// 优雅关闭
 	go func() {
@@ -114,11 +115,12 @@ func main() {
 			log.Printf("HTTP 服务关闭错误: %v", err)
 		}
 
-		if mcpServer != nil {
-			if err := mcpServer.Stop(); err != nil {
-				log.Printf("MCP Server 关闭错误: %v", err)
-			}
-		}
+		// TODO: 待升级到新版 mcpkit API 后启用
+		// if mcpServer != nil {
+		// 	if err := mcpServer.Stop(); err != nil {
+		// 		log.Printf("MCP Server 关闭错误: %v", err)
+		// 	}
+		// }
 
 		// 关闭数据源适配器
 		log.Println("正在关闭数据源连接...")

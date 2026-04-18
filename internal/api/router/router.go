@@ -44,24 +44,11 @@ func SetupRouter() *gin.Engine {
 		dataHandler := handler.NewDataCollectorHandler()
 		collector := apiV1.Group("/collector")
 		{
-			// 采集任务管理
-			collector.POST("/tasks", dataHandler.CreateTask)
-			collector.GET("/tasks", dataHandler.ListTasks)
-			collector.GET("/tasks/:id", dataHandler.GetTask)
-			collector.DELETE("/tasks/:id", dataHandler.DeleteTask)
-			
-			// 手动触发采集
-			collector.POST("/run/stock-list", dataHandler.RunStockList)
-			collector.POST("/run/prices/:code", dataHandler.RunPriceData)
-			collector.POST("/run/all-prices", dataHandler.RunAllPrices)
-			
-			// 采集状态查询
-			collector.GET("/status", dataHandler.CollectorStatus)
-			collector.GET("/logs", dataHandler.CollectorLogs)
-			
-			// 数据源配置
-			collector.GET("/sources", dataHandler.GetDataSources)
-			collector.PUT("/sources/:name", dataHandler.UpdateDataSource)
+			// 采集股票列表（外部定时调用）
+			collector.POST("/stock-list", dataHandler.RunStockList)
+
+			// 采集单只股票详情
+			collector.POST("/stock-detail/:code", dataHandler.RunPriceData)
 		}
 	}
 

@@ -1,3 +1,6 @@
+//go:build ignore
+// TODO: 待升级到新版 mcpkit API 后移除此标签
+
 package mcp
 
 import (

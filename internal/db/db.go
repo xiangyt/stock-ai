@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"stock-ai/internal/config"
 	"stock-ai/internal/model"
@@ -41,7 +42,7 @@ func Init(cfg *config.DatabaseConfig) error {
 	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
 	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
 	if cfg.ConnMaxLifetime > 0 {
-		sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+		sqlDB.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetime) * time.Second)
 	}
 
 	DB = db
@@ -57,12 +58,12 @@ func AutoMigrate() error {
 
 	return DB.AutoMigrate(
 		&model.Stock{},
-		&model.StockPrice{},
-		&model.HotTopic{},
-		&model.FilterCondition{},
-		&model.DataSourceConfig{},
-		&model.CollectTask{},
-		&model.CollectLog{},
+		// &model.StockPrice{},
+		// &model.HotTopic{},
+		// &model.FilterCondition{},
+		// &model.DataSourceConfig{},
+		// &model.CollectTask{},
+		// &model.CollectLog{},
 	)
 }
 

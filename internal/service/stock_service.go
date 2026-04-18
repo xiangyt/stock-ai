@@ -293,7 +293,7 @@ func (s *StockService) InitMockData() error {
 	log.Println("开始初始化模拟数据...")
 
 	collector := NewDataCollectService()
-	task, err := collector.RunStockList("mock")
+	task, err := collector.CollectStockList("mock")
 	if err != nil { return fmt.Errorf("获取股票列表失败: %w", err) }
 
 	topics := []model.HotTopic{
@@ -319,7 +319,7 @@ func (s *StockService) InitMockData() error {
 		s.db.Create(&src)
 	}
 
-	log.Printf("模拟数据初始化完成: %d 只股票, %d 个题材, %d 个数据源", task.TotalCount, len(topics), len(defaultSources))
+	log.Printf("模拟数据初始化完成: %d 只股票, %d 个题材, %d 个数据源", task.Total, len(topics), len(defaultSources))
 	return nil
 }
 

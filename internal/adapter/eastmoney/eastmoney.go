@@ -48,7 +48,7 @@ func New() *Adapter {
 		config:       make(map[string]interface{}),
 		client:       &http.Client{Timeout: 10 * time.Second},
 		parser:       helpers.NewKLineParser(),
-		limiter:      rate.NewLimiter(rate.Limit(5), 5), // 5次/秒
+		limiter:      rate.NewLimiter(rate.Limit(20), 20), // 20次/秒
 		userAgentGen: helpers.NewUserAgentGenerator(),
 		cookieGen:    helpers.NewCookieGenerator(),
 	}
@@ -276,31 +276,31 @@ func (a *Adapter) GetStockDetail(ctx context.Context, code string) (*adapter.Sto
 
 // issueInfoItem IPO发行单条记录
 type issueInfoItem struct {
-	Secucode         string  `json:"SECUCODE"`          // 全称 002475.SZ
-	SecurityCode     string  `json:"SECURITY_CODE"`     // 纯代码 002475
-	FoundDate        string  `json:"FOUND_DATE"`        // 成立日期
-	ListingDate      string  `json:"LISTING_DATE"`      // 上市日期
-	AfterIssuePE     float64 `json:"AFTER_ISSUE_PE"`    // 发行后市盈率
-	OnlineIssueDate  string  `json:"ONLINE_ISSUE_DATE"` // 网上申购日期
-	IssueWay         string  `json:"ISSUE_WAY"`         // 发行方式
-	ParValue         float64 `json:"PAR_VALUE"`         // 每股面值(元)
-	TotalIssueNum    int64   `json:"TOTAL_ISSUE_NUM"`   // 发行数量(股)
-	IssuePrice       float64 `json:"ISSUE_PRICE"`       // 发行价(元)
-	DecSumIssueFee   float64 `json:"DEC_SUMISSUEFEE"`   // 发行费用
-	TotalFunds       float64 `json:"TOTAL_FUNDS"`       // 募资总额
-	NetRaiseFunds    float64 `json:"NET_RAISE_FUNDS"`   // 净募资金额
-	OpenPrice        float64 `json:"OPEN_PRICE"`        // 首日开盘价
-	ClosePrice       float64 `json:"CLOSE_PRICE"`       // 首日收盘价
-	TurnoverRate     float64 `json:"TURNOVERRATE"`      // 首日换手率(%)
-	HighPrice        float64 `json:"HIGH_PRICE"`        // 首日最高价
-	OfflineVapRatio  float64 `json:"OFFLINE_VAP_RATIO"` // 网下超额配售倍数
-	OnlineIssueLwr   float64 `json:"ONLINE_ISSUE_LWR"` // 网上中签率
-	SecurityType     string  `json:"SECURITY_TYPE"`     // 证券类型
-	Overalllotment   float64 `json:"OVERALLOTMENT"`     // 超额配售数量
-	Type             string  `json:"TYPE"`              // 类型
-	TradeMarketCode  string  `json:"TRADE_MARKET_CODE"` // 交易市场代码
-	StrZhuchengxiao  string  `json:"STR_ZHUCHENGXIAO"`  // 保荐机构
-	StrBaojian       string  `json:"STR_BAOJIAN"`       // 主承销商
+	Secucode        string  `json:"SECUCODE"`          // 全称 002475.SZ
+	SecurityCode    string  `json:"SECURITY_CODE"`     // 纯代码 002475
+	FoundDate       string  `json:"FOUND_DATE"`        // 成立日期
+	ListingDate     string  `json:"LISTING_DATE"`      // 上市日期
+	AfterIssuePE    float64 `json:"AFTER_ISSUE_PE"`    // 发行后市盈率
+	OnlineIssueDate string  `json:"ONLINE_ISSUE_DATE"` // 网上申购日期
+	IssueWay        string  `json:"ISSUE_WAY"`         // 发行方式
+	ParValue        float64 `json:"PAR_VALUE"`         // 每股面值(元)
+	TotalIssueNum   int64   `json:"TOTAL_ISSUE_NUM"`   // 发行数量(股)
+	IssuePrice      float64 `json:"ISSUE_PRICE"`       // 发行价(元)
+	DecSumIssueFee  float64 `json:"DEC_SUMISSUEFEE"`   // 发行费用
+	TotalFunds      float64 `json:"TOTAL_FUNDS"`       // 募资总额
+	NetRaiseFunds   float64 `json:"NET_RAISE_FUNDS"`   // 净募资金额
+	OpenPrice       float64 `json:"OPEN_PRICE"`        // 首日开盘价
+	ClosePrice      float64 `json:"CLOSE_PRICE"`       // 首日收盘价
+	TurnoverRate    float64 `json:"TURNOVERRATE"`      // 首日换手率(%)
+	HighPrice       float64 `json:"HIGH_PRICE"`        // 首日最高价
+	OfflineVapRatio float64 `json:"OFFLINE_VAP_RATIO"` // 网下超额配售倍数
+	OnlineIssueLwr  float64 `json:"ONLINE_ISSUE_LWR"`  // 网上中签率
+	SecurityType    string  `json:"SECURITY_TYPE"`     // 证券类型
+	Overalllotment  float64 `json:"OVERALLOTMENT"`     // 超额配售数量
+	Type            string  `json:"TYPE"`              // 类型
+	TradeMarketCode string  `json:"TRADE_MARKET_CODE"` // 交易市场代码
+	StrZhuchengxiao string  `json:"STR_ZHUCHENGXIAO"`  // 保荐机构
+	StrBaojian      string  `json:"STR_BAOJIAN"`       // 主承销商
 }
 
 // fillIPOInfo 获取并填充IPO发行信息到StockBasic（非致命错误）
@@ -328,12 +328,12 @@ func (a *Adapter) fillIPOInfo(basic *adapter.StockBasic, code string) error {
 	}
 
 	var resp struct {
-		Success bool                   `json:"success"`
-		Message string                 `json:"message"`
+		Success bool   `json:"success"`
+		Message string `json:"message"`
 		Result  struct {
-			Pages int            `json:"pages"`
-			Data []issueInfoItem `json:"data"`
-			Count int           `json:"count"`
+			Pages int             `json:"pages"`
+			Data  []issueInfoItem `json:"data"`
+			Count int             `json:"count"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
@@ -364,53 +364,53 @@ type basicOrgInfoResponse struct {
 
 type basicOrgInfoResultData struct {
 	Pages int                `json:"pages"`
-	Data []basicOrgInfoItem  `json:"data"`
+	Data  []basicOrgInfoItem `json:"data"`
 	Count int                `json:"count"`
 }
 
 // basicOrgInfoItem F10基本资料单条记录 (RPT_F10_BASIC_ORGINFO)
 type basicOrgInfoItem struct {
-	Secucode           string   `json:"SECUCODE"`             // 全称 002475.SZ
-	SecurityCode       string   `json:"SECURITY_CODE"`        // 纯代码 002475
-	SecurityNameAbbr   string   `json:"SECURITY_NAME_ABBR"`   // 简称 立讯精密
-	OrgCode            string   `json:"ORG_CODE"`              // 组织机构代码
-	OrgName            string   `json:"ORG_NAME"`              // 全称 立讯精密工业股份有限公司
-	OrgNameEn          *string  `json:"ORG_NAME_EN"`           // 英文名称
-	FormerName         *string  `json:"FORMERNAME"`            // 曾用名
-	StrCodeA           string   `json:"STR_CODEA"`             // A股代码
-	StrNameA           string   `json:"STR_NAMEA"`             // A股简称
-	SecurityType       string   `json:"SECURITY_TYPE"`         // 证券类型 深交所主板A股
-	EM2016             string   `json:"EM2016"`                // 东财行业分类
-	TradeMarket        string   `json:"TRADE_MARKET"`          // 交易所 深圳证券交易所
-	IndustryCSRC1      string   `json:"INDUSTRYCSRC1"`         // 证监会行业分类
-	President          string   `json:"PRESIDENT"`             // 董事长
-	LegalPerson        string   `json:"LEGAL_PERSON"`          // 法人代表
-	Secretary          string   `json:"SECRETARY"`             // 董秘
-	Chairman           string   `json:"CHAIRMAN"`              // 董事长(另一字段)
-	OrgTel             string   `json:"ORG_TEL"`               // 电话
-	OrgEmail           string   `json:"ORG_EMAIL"`             // 邮箱
-	OrgFax             string   `json:"ORG_FAX"`               // 传真
-	OrgWeb             string   `json:"ORG_WEB"`               // 网站
-	Address            string   `json:"ADDRESS"`               // 地址
-	RegAddress         string   `json:"REG_ADDRESS"`           // 注册地址
-	Province           string   `json:"PROVINCE"`              // 省份
-	AddressPostcode    string   `json:"ADDRESS_POSTCODE"`      // 邮编
-	RegCapital         float64  `json:"REG_CAPITAL"`           // 注册资本(万元)
-	RegNum             string   `json:"REG_NUM"`               // 统一社会信用代码
-	EmpNum             int      `json:"EMP_NUM"`               // 员工人数
-	TatolNumber        int      `json:"TATOLNUMBER"`           // 董监高人数
-	LawFirm            string   `json:"LAW_FIRM"`              // 律师事务所
-	AccountfirmName    string   `json:"ACCOUNTFIRM_NAME"`      // 会计师事务所
-	OrgProfile         string   `json:"ORG_PROFILE"`           // 公司简介
-	BusinessScope      string   `json:"BUSINESS_SCOPE"`        // 经营范围
-	ListingDate        string   `json:"LISTING_DATE"`          // 上市日期 YYYY-MM-DD HH:mm:ss
-	FoundDate          string   `json:"FOUND_DATE"`            // 成立日期 YYYY-MM-DD HH:mm:ss
-	MainBusiness       string   `json:"MAIN_BUSINESS"`         // 主营业务
-	HostBroker         *string  `json:"HOST_BROKER"`           // 主承销商
-	TransferWay        *string  `json:"TRANSFER_WAY"`          // 转让方式
-	ActualHolder       *string  `json:"ACTUAL_HOLDER"`         // 实际控制人
-	Currency           string   `json:"CURRENCY"`              // 货币单位
-	BoardNameLevel     string   `json:"BOARD_NAME_LEVEL"`      // 板块层级分类
+	Secucode         string  `json:"SECUCODE"`           // 全称 002475.SZ
+	SecurityCode     string  `json:"SECURITY_CODE"`      // 纯代码 002475
+	SecurityNameAbbr string  `json:"SECURITY_NAME_ABBR"` // 简称 立讯精密
+	OrgCode          string  `json:"ORG_CODE"`           // 组织机构代码
+	OrgName          string  `json:"ORG_NAME"`           // 全称 立讯精密工业股份有限公司
+	OrgNameEn        *string `json:"ORG_NAME_EN"`        // 英文名称
+	FormerName       *string `json:"FORMERNAME"`         // 曾用名
+	StrCodeA         string  `json:"STR_CODEA"`          // A股代码
+	StrNameA         string  `json:"STR_NAMEA"`          // A股简称
+	SecurityType     string  `json:"SECURITY_TYPE"`      // 证券类型 深交所主板A股
+	EM2016           string  `json:"EM2016"`             // 东财行业分类
+	TradeMarket      string  `json:"TRADE_MARKET"`       // 交易所 深圳证券交易所
+	IndustryCSRC1    string  `json:"INDUSTRYCSRC1"`      // 证监会行业分类
+	President        string  `json:"PRESIDENT"`          // 董事长
+	LegalPerson      string  `json:"LEGAL_PERSON"`       // 法人代表
+	Secretary        string  `json:"SECRETARY"`          // 董秘
+	Chairman         string  `json:"CHAIRMAN"`           // 董事长(另一字段)
+	OrgTel           string  `json:"ORG_TEL"`            // 电话
+	OrgEmail         string  `json:"ORG_EMAIL"`          // 邮箱
+	OrgFax           string  `json:"ORG_FAX"`            // 传真
+	OrgWeb           string  `json:"ORG_WEB"`            // 网站
+	Address          string  `json:"ADDRESS"`            // 地址
+	RegAddress       string  `json:"REG_ADDRESS"`        // 注册地址
+	Province         string  `json:"PROVINCE"`           // 省份
+	AddressPostcode  string  `json:"ADDRESS_POSTCODE"`   // 邮编
+	RegCapital       float64 `json:"REG_CAPITAL"`        // 注册资本(万元)
+	RegNum           string  `json:"REG_NUM"`            // 统一社会信用代码
+	EmpNum           int     `json:"EMP_NUM"`            // 员工人数
+	TatolNumber      int     `json:"TATOLNUMBER"`        // 董监高人数
+	LawFirm          string  `json:"LAW_FIRM"`           // 律师事务所
+	AccountfirmName  string  `json:"ACCOUNTFIRM_NAME"`   // 会计师事务所
+	OrgProfile       string  `json:"ORG_PROFILE"`        // 公司简介
+	BusinessScope    string  `json:"BUSINESS_SCOPE"`     // 经营范围
+	ListingDate      string  `json:"LISTING_DATE"`       // 上市日期 YYYY-MM-DD HH:mm:ss
+	FoundDate        string  `json:"FOUND_DATE"`         // 成立日期 YYYY-MM-DD HH:mm:ss
+	MainBusiness     string  `json:"MAIN_BUSINESS"`      // 主营业务
+	HostBroker       *string `json:"HOST_BROKER"`        // 主承销商
+	TransferWay      *string `json:"TRANSFER_WAY"`       // 转让方式
+	ActualHolder     *string `json:"ACTUAL_HOLDER"`      // 实际控制人
+	Currency         string  `json:"CURRENCY"`           // 货币单位
+	BoardNameLevel   string  `json:"BOARD_NAME_LEVEL"`   // 板块层级分类
 }
 
 // ========== K线数据 ==========
@@ -837,10 +837,10 @@ func (a *Adapter) GetShareChanges(ctx context.Context, code string) ([]adapter.S
 			allChanges = append(allChanges, adapter.ShareChange{
 				Code:            code,
 				Date:            dateStr,
-				TotalShares:     item.TotalShares,      // 股
-				LimitedShares:   item.LimitedShares,    // 股
-				UnlimitedShares: item.UnlimitedShares,  // 股
-				FloatAShares:    item.ListedAShares,    // 股
+				TotalShares:     item.TotalShares,     // 股
+				LimitedShares:   item.LimitedShares,   // 股
+				UnlimitedShares: item.UnlimitedShares, // 股
+				FloatAShares:    item.ListedAShares,   // 股
 				ChangeReason:    item.ChangeReason,
 			})
 		}
@@ -941,19 +941,26 @@ func (a *Adapter) updateHeaders() {
 
 // ========== 辅助函数 ==========
 
-// setCommonHeaders 设置公共请求头
+// setCommonHeaders 设置公共请求头（完全对标东财真实浏览器请求）
 func setCommonHeaders(req *http.Request, ua, cookie, refer string) {
 	req.Header.Set("Accept", "*/*")
+	// 不手动设置 Accept-Encoding，由 Go http.Transport 自动管理 gzip 解压
+	// 手动设置会导致收到原始压缩数据而未解压
 	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Connection", "keep-alive")
-	req.Header.Set("User-Agent", ua)
 	req.Header.Set("Cookie", cookie)
-	req.Header.Set("sec-ch-ua-mobile", "?0")
-	req.Header.Set("sec-fetch-dest", "script")
-	req.Header.Set("sec-fetch-mode", "no-cors")
-	req.Header.Set("sec-fetch-site", "same-site")
-	req.Header.Set("cache-control", "no-cache")
+	req.Header.Set("Host", req.URL.Host)                               // 自动填充
+	req.Header.Set("Origin", "https://emweb.securities.eastmoney.com") // 新增：关键反爬字段
+	req.Header.Set("Pragma", "no-cache")                               // 新增
 	req.Header.Set("Referer", refer)
+	req.Header.Set("Sec-Ch-Ua", "\"Chromium\";v=\"146\", \"Not-A.Brand\";v=\"24\", \"Google Chrome\";v=\"146\"") // 固定值
+	req.Header.Set("Sec-Ch-Ua-Mobile", "?0")
+	req.Header.Set("Sec-Ch-Ua-Platform", "\"macOS\"") // 新增
+	req.Header.Set("Sec-Fetch-Dest", "empty")         // 修正: script→empty
+	req.Header.Set("Sec-Fetch-Mode", "cors")          // 修正: no-cors→cors
+	req.Header.Set("Sec-Fetch-Site", "same-site")
+	req.Header.Set("User-Agent", ua)
 }
 
 // extractJSONP 从JSONP响应中提取JSON
