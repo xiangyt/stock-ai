@@ -93,15 +93,11 @@ func (a *Adapter) GetQuotaInfo() adapter.QuotaInfo {
 
 // ========== 股票列表 ==========
 
-func (a *Adapter) GetStockList(_ context.Context, cb adapter.ProgressCallback) ([]adapter.StockBasic, error) {
+func (a *Adapter) GetStockList(_ context.Context) ([]adapter.StockBasic, error) {
 	var allStocks []adapter.StockBasic
 	maxPages := 103
 
 	for page := 1; page <= maxPages; page++ {
-		if cb != nil && page%10 == 0 {
-			cb(len(allStocks), 0, fmt.Sprintf("正在获取第 %d 页...", page))
-		}
-
 		stocks, hasMore, err := a.fetchStockListPage(page)
 		if err != nil {
 			if page == 1 {
@@ -118,9 +114,6 @@ func (a *Adapter) GetStockList(_ context.Context, cb adapter.ProgressCallback) (
 		time.Sleep(1 * time.Second)
 	}
 
-	if cb != nil {
-			cb(len(allStocks), len(allStocks), "股票列表获取完成")
-		}
 	return allStocks, nil
 }
 
@@ -230,28 +223,28 @@ func (a *Adapter) GetStockDetail(ctx context.Context, code string) (*adapter.Sto
 
 // ========== K线数据 ==========
 
-func (a *Adapter) GetDailyKLine(ctx context.Context, code, startDate, endDate string, cb adapter.ProgressCallback) ([]adapter.StockPriceDaily, error) {
-	return a.getKLines(ctx, code, KLineTypeDaily, startDate, endDate, cb)
+func (a *Adapter) GetDailyKLine(ctx context.Context, code, adjType string) ([]adapter.StockPriceDaily, error) {
+	return a.getKLines(ctx, code, KLineTypeDaily)
 }
 
-func (a *Adapter) GetWeeklyKLine(ctx context.Context, code, startDate, endDate string, cb adapter.ProgressCallback) ([]adapter.StockPriceDaily, error) {
-	return a.getKLines(ctx, code, KLineTypeWeekly, startDate, endDate, cb)
+func (a *Adapter) GetWeeklyKLine(ctx context.Context, code, adjType string) ([]adapter.StockPriceDaily, error) {
+	return a.getKLines(ctx, code, KLineTypeWeekly)
 }
 
-func (a *Adapter) GetMonthlyKLine(ctx context.Context, code, startDate, endDate string, cb adapter.ProgressCallback) ([]adapter.StockPriceDaily, error) {
-	return a.getKLines(ctx, code, KLineTypeMonthly, startDate, endDate, cb)
+func (a *Adapter) GetMonthlyKLine(ctx context.Context, code, adjType string) ([]adapter.StockPriceDaily, error) {
+	return a.getKLines(ctx, code, KLineTypeMonthly)
 }
 
-func (a *Adapter) GetQuarterlyKLine(ctx context.Context, code, startDate, endDate string, cb adapter.ProgressCallback) ([]adapter.StockPriceDaily, error) {
-	return a.getKLines(ctx, code, KLineTypeQuarterly, startDate, endDate, cb)
+func (a *Adapter) GetQuarterlyKLine(ctx context.Context, code, adjType string) ([]adapter.StockPriceDaily, error) {
+	return a.getKLines(ctx, code, KLineTypeQuarterly)
 }
 
-func (a *Adapter) GetYearlyKLine(ctx context.Context, code, startDate, endDate string, cb adapter.ProgressCallback) ([]adapter.StockPriceDaily, error) {
-	return a.getKLines(ctx, code, KLineTypeYearly, startDate, endDate, cb)
+func (a *Adapter) GetYearlyKLine(ctx context.Context, code, adjType string) ([]adapter.StockPriceDaily, error) {
+	return a.getKLines(ctx, code, KLineTypeYearly)
 }
 
 // getKLines 通用K线获取方法 - 同花顺全量数据接口
-func (a *Adapter) getKLines(ctx context.Context, code, klineType, startDate, endDate string, cb adapter.ProgressCallback) ([]adapter.StockPriceDaily, error) {
+func (a *Adapter) getKLines(ctx context.Context, code, klineType string) ([]adapter.StockPriceDaily, error) {
 	symbol, _ := parseCode(code)
 	thsCode := buildTHSCode(symbol)
 	if thsCode == "" {
@@ -285,15 +278,12 @@ func (a *Adapter) getKLines(ctx context.Context, code, klineType, startDate, end
 		})
 	}
 
-	if cb != nil {
-			cb(len(pricesResult), len(dates), "K线数据获取完成")
-		}
 	return pricesResult, nil
 }
 
 // ========== 实时/当日数据 ==========
 
-func (a *Adapter) GetRealtimeData(ctx context.Context, codes []string, cb adapter.ProgressCallback) (map[string]adapter.StockPriceDaily, error) {
+func (a *Adapter) GetRealtimeData(ctx context.Context, codes []string) (map[string]adapter.StockPriceDaily, error) {
 	// TODO: 实现同花顺批量实时行情
 	return make(map[string]adapter.StockPriceDaily), nil
 }

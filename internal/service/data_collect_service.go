@@ -53,9 +53,7 @@ func (s *DataCollectService) CollectStockList(sourceName string) (*CollectResult
 	log.Printf("[采集] 开始股票列表采集, source=%s", sourceName)
 
 	// 2. 获取全量股票列表
-	allStocks, err := adp.GetStockList(ctx, func(current, total int, msg string) {
-		log.Printf("[采集] 列表进度: %d/%d - %s", current, total, msg)
-	})
+	allStocks, err := adp.GetStockList(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("获取股票列表失败: %w", err)
 	}

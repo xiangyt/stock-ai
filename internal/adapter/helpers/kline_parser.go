@@ -17,7 +17,8 @@ func NewKLineParser() *KLineParser {
 }
 
 // ParseDailyKline 解析东方财富日K线字符串
-// 格式: "2026-04-12,10.50,11.20,10.30,11.00,123456,678901.00"
+// 格式(11字段): "2010-05-14,3.15,2.53,3.41,2.15,285595,598452980.53,41.72,-16.23,-0.49,106.57"
+//            字段: 日期,开盘,收盘,最高,最低,成交量(手),成交额(元),...,换手率(最后1个)
 // 价格单位: 元 → 内部统一转为 分(int64)
 func (p *KLineParser) ParseDailyKline(code, kline string) (*adapter.StockPriceDaily, error) {
 	fields := strings.Split(kline, ",")
@@ -25,22 +26,26 @@ func (p *KLineParser) ParseDailyKline(code, kline string) (*adapter.StockPriceDa
 		return nil, fmt.Errorf("invalid kline format: %s", kline)
 	}
 
-	open := toCents(parseFloat(fields[1]))
-	close := toCents(parseFloat(fields[2]))
-	high := toCents(parseFloat(fields[3]))
-	low := toCents(parseFloat(fields[4]))
+	open := toCents(fields[1])
+	close := toCents(fields[2])
+	high := toCents(fields[3])
+	low := toCents(fields[4])
 	volume := parseInt64(fields[5]) * 100 // 东方财富单位是手
-	amount := toCents(parseFloat(fields[6]))
+	amount := toCents(fields[6])
+
+	// 换手率(最后1个字段)，可选字段，解析失败则默认0
+	turnover := parseFloat(fields[len(fields)-1])
 
 	return &adapter.StockPriceDaily{
-		Code:   code,
-		Date:   fields[0],
-		Open:   open,
-		High:   high,
-		Low:    low,
-		Close:  close,
-		Volume: volume,
-		Amount: amount,
+		Code:     code,
+		Date:     fields[0],
+		Open:     open,
+		High:     high,
+		Low:      low,
+		Close:    close,
+		Volume:   volume,
+		Amount:   amount,
+		Turnover: turnover,
 	}, nil
 }
 
@@ -126,7 +131,24 @@ func parseInt64(s string) int64 {
 	return i
 }
 
-// toCents 将元(float64)转换为分(int64)，四舍五入
-func toCents(yuan float64) int64 {
-	return int64(yuan*100 + 0.5)
+// toCents 将价格字符串(元)转换为分(int64)，零浮点精度损失
+// 东财价格固定2位小数，直接去掉小数点即为"分"
+//
+// 示例: "11.20"→1120  "-2.72"→-272  "3.25"→325
+func toCents(s string) int64 {
+	if s == "" || s == "-" {
+		return 0
+	}
+	dotIdx := strings.Index(s, ".")
+	if dotIdx >= 0 && len(s)-dotIdx-1 != 2 {
+		// 小数点后不是2位，说明数据格式变了，需要排查
+		fmt.Printf("WARNING: 价格小数位异常(%d位): %s\n", len(s)-dotIdx-1, s)
+		return 0
+	}
+	clean := strings.ReplaceAll(s, ".", "")
+	val, err := strconv.ParseInt(clean, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return val
 }

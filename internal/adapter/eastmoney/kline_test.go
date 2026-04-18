@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"stock-ai/internal/adapter"
 	"stock-ai/internal/adapter/helpers"
@@ -28,7 +27,7 @@ func TestGetDailyKLine(t *testing.T) {
 	defer a.Close()
 
 	ctx := context.Background()
-	klines, err := a.GetDailyKLine(ctx, testCode, "", "", nil)
+	klines, err := a.GetDailyKLine(ctx, testCode, adapter.AdjQFQ)
 	if err != nil {
 		t.Fatalf("GetDailyKLine failed: %v", err)
 	}
@@ -58,7 +57,7 @@ func TestGetWeeklyKLine(t *testing.T) {
 	defer a.Close()
 
 	ctx := context.Background()
-	klines, err := a.GetWeeklyKLine(ctx, testCode, "", "", nil)
+	klines, err := a.GetWeeklyKLine(ctx, testCode, adapter.AdjQFQ)
 	if err != nil {
 		t.Fatalf("GetWeeklyKLine failed: %v", err)
 	}
@@ -88,7 +87,7 @@ func TestGetMonthlyKLine(t *testing.T) {
 	defer a.Close()
 
 	ctx := context.Background()
-	klines, err := a.GetMonthlyKLine(ctx, testCode, "", "", nil)
+	klines, err := a.GetMonthlyKLine(ctx, testCode, adapter.AdjQFQ)
 	if err != nil {
 		t.Fatalf("GetMonthlyKLine failed: %v", err)
 	}
@@ -117,7 +116,7 @@ func TestGetYearlyKLine(t *testing.T) {
 	defer a.Close()
 
 	ctx := context.Background()
-	klines, err := a.GetYearlyKLine(ctx, testCode, "", "", nil)
+	klines, err := a.GetYearlyKLine(ctx, testCode, adapter.AdjQFQ)
 	if err != nil {
 		t.Fatalf("GetYearlyKLine failed: %v", err)
 	}
@@ -135,34 +134,40 @@ func TestGetYearlyKLine(t *testing.T) {
 	validateKLines(t, klines, "年K")
 }
 
-// ========== 日期范围查询测试 ==========
+// ========== 复权模式对比测试 ==========
 
-func TestGetDailyKLine_DateRange(t *testing.T) {
+func TestAdjTypeCompare(t *testing.T) {
 	a := newTestAdapter()
 	defer a.Close()
 
 	ctx := context.Background()
 
-	// 查询2025年全年数据
-	klines, err := a.GetDailyKLine(ctx, testCode, "2025-01-01", "2025-12-31", nil)
-	if err != nil {
-		t.Fatalf("date range query failed: %v", err)
+	qfq, _ := a.GetDailyKLine(ctx, testCode, adapter.AdjQFQ)
+	none, _ := a.GetDailyKLine(ctx, testCode, adapter.AdjNone)
+
+	if len(qfq) != len(none) {
+		t.Errorf("前复权(%d)和不复权(%d)数据量不同", len(qfq), len(none))
+		return
 	}
 
-	t.Logf("日期范围(2025年) 日K线数量: %d", len(klines))
-	if len(klines) == 0 {
-		t.Fatal("expected data for 2025")
+	// 前复权和不复权的最新价应该相同，历史价格不同
+	lastQFQ := qfq[len(qfq)-1].Close
+	lastNone := none[len(none)-1].Close
+	if lastQFQ != lastNone {
+		t.Errorf("最新收盘不一致: 前复权=%d 不复权=%d", lastQFQ, lastNone)
 	}
 
-	// 验证第一条在范围内
-	firstDate := klines[0].Date
-	if strings.Compare(firstDate, "2025-01-01") < 0 || strings.Compare(firstDate, "2026-01-01") >= 0 {
-		t.Errorf("first date %s out of expected range [2025-01-01, 2025-12-31]", firstDate)
+	firstQFQ := qfq[0].Close
+	firstNone := none[0].Close
+	if firstQFQ == firstNone {
+		t.Log("历史首条价格相同(可能该区间内无除权)")
+	} else {
+		t.Logf("历史首条价格不同(符合预期): 前复权=%d(%d元) 不复权=%d(%d元)",
+			firstQFQ, firstQFQ/100, firstNone, firstNone/100)
 	}
-	t.Log("  首条:", firstDate)
 
-	lastDate := klines[len(klines)-1].Date
-	t.Log("  尾条:", lastDate)
+	t.Logf("前复权 最新=%.2f元 首日=%.2f元", float64(lastQFQ)/100, float64(firstQFQ)/100)
+	t.Logf("不复权 最新=%.2f元 首日=%.2f元", float64(lastNone)/100, float64(firstNone)/100)
 }
 
 // ========== 多只股票批量测试 ==========
@@ -184,7 +189,7 @@ func TestGetDailyKLine_MultiStock(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.code, func(t *testing.T) {
-			klines, err := a.GetDailyKLine(ctx, tt.code, "", "", nil)
+			klines, err := a.GetDailyKLine(ctx, tt.code, adapter.AdjQFQ)
 			if err != nil {
 				t.Fatalf("%s GetDailyKLine failed: %v", tt.code, err)
 			}
@@ -219,10 +224,10 @@ func TestComparePeriodDataCounts(t *testing.T) {
 
 	ctx := context.Background()
 
-	daily, _ := a.GetDailyKLine(ctx, testCode, "", "", nil)
-	weekly, _ := a.GetWeeklyKLine(ctx, testCode, "", "", nil)
-	monthly, _ := a.GetMonthlyKLine(ctx, testCode, "", "", nil)
-	yearly, _ := a.GetYearlyKLine(ctx, testCode, "", "", nil)
+	daily, _ := a.GetDailyKLine(ctx, testCode, adapter.AdjQFQ)
+	weekly, _ := a.GetWeeklyKLine(ctx, testCode, adapter.AdjQFQ)
+	monthly, _ := a.GetMonthlyKLine(ctx, testCode, adapter.AdjQFQ)
+	yearly, _ := a.GetYearlyKLine(ctx, testCode, adapter.AdjQFQ)
 
 	t.Logf("各周期数据量对比 (%s):", testCode)
 	t.Logf("  日K:   %d 条", len(daily))
@@ -246,34 +251,38 @@ func TestComparePeriodDataCounts(t *testing.T) {
 func TestParseDailyKline(t *testing.T) {
 	parser := helpers.NewKLineParser()
 
-	// 东财K线字符串格式: 日期,开盘,收盘,最高,最低,成交量(手),成交额(元)
+	// 东财K线字符串格式(11字段): 日期,开盘,收盘,最高,最低,成交量(手),成交额(元),?,?,换手率
 	tests := []struct {
-		name       string
-		input      string
-		wantOpen   int64
-		wantClose  int64
-		wantVol    int64
+		name         string
+		input        string
+		wantOpen     int64
+		wantClose    int64
+		wantVol      int64
+		wantTurnover float64
 	}{
 		{
-			name:      "正常数据",
-			input:     "2026-04-18,10.50,11.20,11.30,10.30,123456,678901.00",
-			wantOpen:  1050,
-			wantClose: 1120,
-			wantVol:   12345600,
+			name:         "正常数据",
+			input:        "2026-04-18,10.50,11.20,11.30,10.30,123456,678901.00,-0.50,-0.05,105.20,3.25",
+			wantOpen:     1050,
+			wantClose:    1120,
+			wantVol:      12345600,
+			wantTurnover: 3.25,
 		},
 		{
-			name:      "低价股",
-			input:     "2026-04-18,3.25,3.38,3.40,3.20,50000,16500.00",
-			wantOpen:  325,
-			wantClose: 338,
-			wantVol:   5000000,
+			name:         "低价股",
+			input:        "2026-04-18,3.25,3.38,3.40,3.20,50000,16500.00,-4.00,-0.14,98.50,2.15",
+			wantOpen:     325,
+			wantClose:    338,
+			wantVol:      5000000,
+			wantTurnover: 2.15,
 		},
 		{
-			name:      "高价股",
-			input:     "2026-04-18,1500.00,1520.00,1530.00,1490.00,10000,1510000.00",
-			wantOpen:  150000,
-			wantClose: 152000,
-			wantVol:   1000000,
+			name:         "高价股",
+			input:        "2026-04-18,1500.00,1520.00,1530.00,1490.00,10000,1510000.00,1.33,0.01,102.10,0.67",
+			wantOpen:     150000,
+			wantClose:    152000,
+			wantVol:      1000000,
+			wantTurnover: 0.67,
 		},
 	}
 
@@ -291,6 +300,9 @@ func TestParseDailyKline(t *testing.T) {
 			}
 			if result.Volume != tt.wantVol {
 				t.Errorf("Volume = %d, want %d", result.Volume, tt.wantVol)
+			}
+			if result.Turnover != tt.wantTurnover {
+				t.Errorf("Turnover = %.2f, want %.2f", result.Turnover, tt.wantTurnover)
 			}
 			if result.Code != testCode {
 				t.Errorf("Code = %q, want %q", result.Code, testCode)
@@ -327,29 +339,6 @@ func TestParseTradeDate(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("ParseTradeDate(%q) = %d, want %d", tt.input, got, tt.want)
 		}
-	}
-}
-
-// ========== 进度回调测试 ==========
-
-func TestGetDailyKLine_WithCallback(t *testing.T) {
-	a := newTestAdapter()
-	defer a.Close()
-
-	ctx := context.Background()
-
-	var callbackCalled bool
-	cb := func(current, total int, message string) {
-		callbackCalled = true
-		t.Logf("  progress: %d/%d - %s", current, total, message)
-	}
-
-	_, err := a.GetDailyKLine(ctx, testCode, "2026-01-01", time.Now().Format("2006-01-02"), cb)
-	if err != nil {
-		t.Fatalf("GetDailyKLine with callback failed: %v", err)
-	}
-	if !callbackCalled {
-		t.Error("callback was not called")
 	}
 }
 

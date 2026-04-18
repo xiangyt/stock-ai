@@ -19,18 +19,19 @@ type DataSource interface {
 	Close() error                             // 关闭连接/清理资源
 
 	// 股票列表
-	GetStockList(ctx context.Context, cb ProgressCallback) ([]StockBasic, error) // 获取A股股票列表（带进度回调）
-	GetStockDetail(ctx context.Context, code string) (*StockBasic, error)        // 获取股票详情（含发行价、发行PE等）
+	GetStockList(ctx context.Context) ([]StockBasic, error) // 获取A股股票列表
+	GetStockDetail(ctx context.Context, code string) (*StockBasic, error) // 获取股票详情（含发行价、发行PE等）
 
 	// K线数据 - 多周期支持
-	GetDailyKLine(ctx context.Context, code, startDate, endDate string, cb ProgressCallback) ([]StockPriceDaily, error)     // 日K线
-	GetWeeklyKLine(ctx context.Context, code, startDate, endDate string, cb ProgressCallback) ([]StockPriceDaily, error)    // 周K线
-	GetMonthlyKLine(ctx context.Context, code, startDate, endDate string, cb ProgressCallback) ([]StockPriceDaily, error)   // 月K线
-	GetQuarterlyKLine(ctx context.Context, code, startDate, endDate string, cb ProgressCallback) ([]StockPriceDaily, error) // 季K线
-	GetYearlyKLine(ctx context.Context, code, startDate, endDate string, cb ProgressCallback) ([]StockPriceDaily, error)    // 年K线
+	// adjType: 复权类型, 使用 AdjQFQ(前复权)/AdjNone(不复权)/AdjBQQ(后复权)
+	GetDailyKLine(ctx context.Context, code, adjType string) ([]StockPriceDaily, error)     // 日K线
+	GetWeeklyKLine(ctx context.Context, code, adjType string) ([]StockPriceDaily, error)    // 周K线
+	GetMonthlyKLine(ctx context.Context, code, adjType string) ([]StockPriceDaily, error)   // 月K线
+	GetQuarterlyKLine(ctx context.Context, code, adjType string) ([]StockPriceDaily, error) // 季K线
+	GetYearlyKLine(ctx context.Context, code, adjType string) ([]StockPriceDaily, error)    // 年K线
 
 	// 实时数据
-	GetRealtimeData(ctx context.Context, codes []string, cb ProgressCallback) (map[string]StockPriceDaily, error) // 批量实时行情
+	GetRealtimeData(ctx context.Context, codes []string) (map[string]StockPriceDaily, error) // 批量实时行情
 	GetTodayData(ctx context.Context, code string) (*StockPriceDaily, string, error)                              // 当日数据(含名称)
 	GetThisWeekData(ctx context.Context, code string) (*StockPriceDaily, error)                                   // 本周数据
 	GetThisMonthData(ctx context.Context, code string) (*StockPriceDaily, error)                                  // 本月数据
@@ -169,3 +170,10 @@ type QuotaInfo struct {
 // ProgressCallback 进度回调函数
 // current: 当前进度, total: 总数(0=未知), message: 进度消息
 type ProgressCallback func(current, total int, message string)
+
+// AdjType 复权类型
+const (
+	AdjQFQ = "1" // 前复权 (forward adjustment)
+	AdjNone = "0" // 不复权 (no adjustment)
+	AdjBQQ = "2" // 后复权 (backward adjustment)
+)
