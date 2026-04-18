@@ -49,6 +49,12 @@ func SetupRouter() *gin.Engine {
 
 			// 采集单只股票详情
 			collector.POST("/stock-detail/:code", dataHandler.RunPriceData)
+
+			// 采集单只股票K线
+			collector.POST("/kline/:code", dataHandler.RunKLineData)
+
+			// 全量采集所有股票K线
+			collector.POST("/kline-batch", dataHandler.RunKLineBatch)
 		}
 	}
 

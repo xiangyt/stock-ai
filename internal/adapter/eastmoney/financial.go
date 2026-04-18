@@ -25,7 +25,7 @@ type financeResult struct {
 	Data []financeItem      `json:"data"`
 }
 
-// financeItem 东财原始财报字段（JSON tag 对应接口返回的 key）
+// financeItem 东财原始财报字段（JSON tag 对应接口返回的 key，金额单位：元）
 type financeItem struct {
 	SECUCODE             string   `json:"SECUCODE"`
 	SECURITY_CODE        string   `json:"SECURITY_CODE"`
@@ -36,17 +36,17 @@ type financeItem struct {
 	CURRENCY             string   `json:"CURRENCY"`
 	NOTICE_DATE          string   `json:"NOTICE_DATE"`
 	UPDATE_DATE          string   `json:"UPDATE_DATE"`
-	EPSJB                *float64 `json:"EPSJB"`           // 基本每股收益
-	EPSKCJB              *float64 `json:"EPSKCJB"`         // 扣非每股收益
-	EPSXS                *float64 `json:"EPSXS"`            // 摊薄每股收益
-	BPS                  *float64 `json:"BPS"`              // 每股净资产
-	MGZBGJ               *float64 `json:"MGZBGJ"`           // 每股公积金
-	MGWFPLR              *float64 `json:"MGWFPLR"`          // 每股未分配利润
-	MGJYXJJE             *float64 `json:"MGJYXJJE"`         // 每股经营现金流
-	TOTALOPERATEREVE     *float64 `json:"TOTALOPERATEREVE"` // 营业总收入
-	MLR                  *float64 `json:"MLR"`              // 毛利润
-	PARENTNETPROFIT      *float64 `json:"PARENTNETPROFIT"`  // 归属净利润
-	KCFJCXSYJLR          *float64 `json:"KCFJCXSYJLR"`      // 扣非净利润
+	EPSJB                *float64 `json:"EPSJB"`           // 基本每股收益(元)
+	EPSKCJB              *float64 `json:"EPSKCJB"`         // 扣非每股收益(元)
+	EPSXS                *float64 `json:"EPSXS"`            // 摊薄每股收益(元)
+	BPS                  *float64 `json:"BPS"`              // 每股净资产(元)
+	MGZBGJ               *float64 `json:"MGZBGJ"`           // 每股公积金(元)
+	MGWFPLR              *float64 `json:"MGWFPLR"`          // 每股未分配利润(元)
+	MGJYXJJE             *float64 `json:"MGJYXJJE"`         // 每股经营现金流(元)
+	TOTALOPERATEREVE     *float64 `json:"TOTALOPERATEREVE"` // 营业总收入(元)
+	MLR                  *float64 `json:"MLR"`              // 毛利润(元)
+	PARENTNETPROFIT      *float64 `json:"PARENTNETPROFIT"`  // 归属净利润(元)
+	KCFJCXSYJLR          *float64 `json:"KCFJCXSYJLR"`      // 扣非净利润(元)
 	TOTALOPERATEREVETZ   *float64 `json:"TOTALOPERATEREVETZ"`  // 营收同比(%)
 	PARENTNETPROFITTZ    *float64 `json:"PARENTNETPROFITTZ"`   // 归母净利同比(%)
 	KCFJCXSYJLRTZ        *float64 `json:"KCFJCXSYJLRTZ"`       // 扣非净利同比(%)
@@ -59,13 +59,13 @@ type financeItem struct {
 	XSJLL                *float64 `json:"XSJLL"`             // 销售净利率(%)
 	XSMLL                *float64 `json:"XSMLL"`             // 销售毛利率(%)
 	TAXRATE              *float64 `json:"TAXRATE"`           // 实际税率(%)
-	LD                   *float64 `json:"LD"`                // 流动比率
-	SD                   *float64 `json:"SD"`                // 速动比率
-	XJLLB                *float64 `json:"XJLLB"`             // 现金流比率
+	LD                   *float64 `json:"LD"`                // 流动比率(倍)
+	SD                   *float64 `json:"SD"`                // 速动比率(倍)
+	XJLLB                *float64 `json:"XJLLB"`             // 现金流比率(倍)
 	ZCFZL                *float64 `json:"ZCFZL"`             // 资产负债率(%)
-	QYCS                 *float64 `json:"QYCS"`              // 权益乘数
-	CQBL                 *float64 `json:"CQBL"`              // 产权比率
-	LIABILITY            *float64 `json:"LIABILITY"`         // 总负债
+	QYCS                 *float64 `json:"QYCS"`              // 权益乘数(倍)
+	CQBL                 *float64 `json:"CQBL"`              // 产权比率(倍)
+	LIABILITY            *float64 `json:"LIABILITY"`         // 总负债(元)
 	ROIC                 *float64 `json:"ROIC"`              // 投资资本回报率(%)
 	YSZKYYSR             *float64 `json:"YSZKYYSR"`          // 应收账款/营业收入
 	XSJXLYYSR            *float64 `json:"XSJXLYYSR"`         // 销售净现金流/营业收入
@@ -82,26 +82,26 @@ type financeItem struct {
 	DJD_TOI_QOQ          *float64 `json:"DJD_TOI_QOQ"`       // 营收滚动环比增长(%)
 	DJD_DPNP_QOQ         *float64 `json:"DJD_DPNP_QOQ"`      // 归属净利滚动环比增长(%)
 	DJD_DEDUCTDPNP_QOQ   *float64 `json:"DJD_DEDUCTDPNP_QOQ"` // 扣非净利滚动环比增长(%)
-	STAFF_NUM            *int     `json:"STAFF_NUM"`         // 员工人数
-	AVG_TOI              *float64 `json:"AVG_TOI"`           // 人均创收
-	AVG_NET_PROFIT       *float64 `json:"AVG_NET_PROFIT"`    // 人均创利
+	STAFF_NUM            *int     `json:"STAFF_NUM"`         // 员工人数(人)
+	AVG_TOI              *float64 `json:"AVG_TOI"`           // 人均创收(元)
+	AVG_NET_PROFIT       *float64 `json:"AVG_NET_PROFIT"`    // 人均创利(元)
 	PREPAID_ACCOUNTS_RATIO *float64 `json:"PREPAID_ACCOUNTS_RATIO"` // 预付款项/营业成本(%)
-	ACCOUNTS_PAYABLE_TR  *float64 `json:"ACCOUNTS_PAYABLE_TR"`  // 应付账款周转率
-	FIXED_ASSET_TR       *float64 `json:"FIXED_ASSET_TR"`    // 固定资产周转率
-	CURRENT_ASSET_TR     *float64 `json:"CURRENT_ASSET_TR"`  // 流动资产周转率
+	ACCOUNTS_PAYABLE_TR  *float64 `json:"ACCOUNTS_PAYABLE_TR"`  // 应付账款周转率(次)
+	FIXED_ASSET_TR       *float64 `json:"FIXED_ASSET_TR"`    // 固定资产周转率(次)
+	CURRENT_ASSET_TR     *float64 `json:"CURRENT_ASSET_TR"`  // 流动资产周转率(次)
 	PREPAID_ACCOUNTS_TDAYS *float64 `json:"PREPAID_ACCOUNTS_TDAYS"` // 预付款项周转天数(天)
 	PAYABLE_TDAYS        *float64 `json:"PAYABLE_TDAYS"`     // 应付账款周转天数(天)
 	OPERATE_CYCLE        *float64 `json:"OPERATE_CYCLE"`     // 营运周期(天)
-	GUARD_SPEED_RATIO    *float64 `json:"GUARD_SPEED_RATIO"` // 速动比率(修正)
-	CASH_RATIO           *float64 `json:"CASH_RATIO"`        // 现金比率
-	INTEREST_COVERAGE_RATIO *float64 `json:"INTEREST_COVERAGE_RATIO"` // 利息保障倍数
+	GUARD_SPEED_RATIO    *float64 `json:"GUARD_SPEED_RATIO"` // 速动比率(修正)(倍)
+	CASH_RATIO           *float64 `json:"CASH_RATIO"`        // 现金比率(倍)
+	INTEREST_COVERAGE_RATIO *float64 `json:"INTEREST_COVERAGE_RATIO"` // 利息保障倍数(倍)
 	CA_TA                *float64 `json:"CA_TA"`             // 流动资产/总资产(%)
 	NCA_TA               *float64 `json:"NCA_TA"`            // 非流动资产/总资产(%)
-	LIQUIDATION_RATIO    *float64 `json:"LIQUIDATION_RATIO"` // 清算价值比率
+	LIQUIDATION_RATIO    *float64 `json:"LIQUIDATION_RATIO"` // 清算价值比率(倍)
 	INTEREST_DEBT_RATIO  *float64 `json:"INTEREST_DEBT_RATIO"` // 有息负债率(%)
 	FC_LIABILITIES       *float64 `json:"FC_LIABILITIES"`    // 金融负债占比(%)
-	FCFF_FORWARD         *float64 `json:"FCFF_FORWARD"`     // 企业自由现金流(预测)
-	FCFF_BACK            *float64 `json:"FCFF_BACK"`        // 企业自由现金流(回溯)
+	FCFF_FORWARD         *float64 `json:"FCFF_FORWARD"`     // 企业自由现金流(预测,元)
+	FCFF_BACK            *float64 `json:"FCFF_BACK"`        // 企业自由现金流(回溯,元)
 	IS_BZ                *string `json:"IS_BZ"`             // 是否本期
 }
 
