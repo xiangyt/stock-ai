@@ -2,23 +2,11 @@ package eastmoney
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"stock-ai/internal/adapter"
 	"stock-ai/internal/adapter/helpers"
 )
-
-// 测试用股票代码
-const (
-	testCode = "000001" // 平安银行
-)
-
-func newTestAdapter() *Adapter {
-	a := New()
-	_ = a.Init(nil)
-	return a
-}
 
 // ========== 日K线测试 ==========
 
@@ -342,42 +330,4 @@ func TestParseTradeDate(t *testing.T) {
 	}
 }
 
-// ========== 通用验证函数 ==========
-
-// validateKLines 验证K线数据的完整性
-// 注意：复权后的历史早期数据价格可能为负值（前复权正常现象）
-func validateKLines(t *testing.T, klines []adapter.StockPriceDaily, period string) {
-	// 时间顺序：从早到晚排列（东方财富默认返回升序）
-	for i := 1; i < len(klines); i++ {
-		if strings.Compare(klines[i].Date, klines[i-1].Date) <= 0 {
-			t.Errorf("[%s] 时间顺序异常: [%d]=%s >= [%d]=%s",
-				period, i-1, klines[i-1].Date, i, klines[i].Date)
-		}
-	}
-
-	// OHLC逻辑校验（仅对非负价格做校验，负值/零值为复权或停牌等特殊数据）
-	for i, p := range klines {
-		isSpecialPrice := p.Open < 0 || p.Close < 0 || p.High < 0 || p.Low < 0 || p.Low == 0
-		if isSpecialPrice {
-			continue
-		}
-		if p.High < p.Low {
-			t.Errorf("[%s] 第%d条(%s) High(%d) < Low(%d)",
-				period, i, p.Date, p.High, p.Low)
-		}
-		if p.High < p.Open || p.High < p.Close {
-			t.Errorf("[%s] 第%d条(%s) 非最高价: O=%d H:%d L:%d C:%d",
-				period, i, p.Date, p.Open, p.High, p.Low, p.Close)
-		}
-		if p.Low > p.Open || p.Low > p.Close {
-			t.Errorf("[%s] 第%d条(%s) 非最低价: O=%d H:%d L:%d C:%d",
-				period, i, p.Date, p.Open, p.High, p.Low, p.Close)
-		}
-		if p.Volume < 0 {
-			t.Errorf("[%s] 第%d条(%s) Volume=%d < 0", period, i, p.Date, p.Volume)
-		}
-		if p.Amount < 0 {
-			t.Errorf("[%s] 第%d条(%s) Amount=%d < 0", period, i, p.Date, p.Amount)
-		}
-	}
-}
+// ========== 通用验证函数（已移至 test_helper.go） ==========
