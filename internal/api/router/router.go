@@ -55,6 +55,22 @@ func SetupRouter() *gin.Engine {
 
 			// 全量采集所有股票K线
 			collector.POST("/kline-batch", dataHandler.RunKLineBatch)
+
+			// --- 基本面/财务面采集 ---
+			fundamental := collector.Group("/fundamental")
+			{
+				// 单只
+				fundamental.POST("/:code/performance", dataHandler.RunPerformanceReports)
+				fundamental.POST("/:code/shareholder", dataHandler.RunShareholderCounts)
+				fundamental.POST("/:code/share-change", dataHandler.RunShareChanges)
+			}
+			fundamentalBatch := collector.Group("/fundamental-batch")
+			{
+				// 全量
+				fundamentalBatch.POST("/performance", dataHandler.RunPerformanceReportsBatch)
+				fundamentalBatch.POST("/shareholder", dataHandler.RunShareholderCountsBatch)
+				fundamentalBatch.POST("/share-change", dataHandler.RunShareChangesBatch)
+			}
 		}
 	}
 

@@ -150,6 +150,163 @@ func (h *DataCollectorHandler) RunKLineBatch(c *gin.Context) {
 	})
 }
 
+// ========== 基本面/财务面采集接口 ==========
+
+// FundamentalCollectRequest 基本面采集请求
+type FundamentalCollectRequest struct {
+	Source string `json:"source"` // 数据源名称(可选, 默认 eastmoney)
+}
+
+// RunPerformanceReports 运行单只股票财报采集
+// POST /api/v1/collector/fundamental/:code/performance
+func (h *DataCollectorHandler) RunPerformanceReports(c *gin.Context) {
+	code := c.Param("code")
+	var req FundamentalCollectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	go func() {
+		result, err := h.service.CollectPerformanceReports(req.Source, code)
+		if err != nil {
+			log.Printf("[collector] 财报采集失败 [%s]: %v", code, err)
+			return
+		}
+		log.Printf("[collector] 财报采集完成 [%s]: total=%d, new=%d, upd=%d", code, result.Total, result.NewCount, result.UpdCount)
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": fmt.Sprintf("财报采集已启动: %s (源=%s)", code, req.Source),
+	})
+}
+
+// RunPerformanceReportsBatch 运行全量股票财报采集
+// POST /api/v1/collector/fundamental-batch/performance
+func (h *DataCollectorHandler) RunPerformanceReportsBatch(c *gin.Context) {
+	var req FundamentalCollectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	go func() {
+		result, err := h.service.CollectPerformanceReportsBatch(req.Source)
+		if err != nil {
+			log.Printf("[collector] 全量财报采集失败: %v", err)
+			return
+		}
+		log.Printf("[collector] 全量财报采集完成: total=%d, new=%d, upd=%d, fail=%d",
+			result.Total, result.NewCount, result.UpdCount, result.FailCount)
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "全量财报采集已启动",
+	})
+}
+
+// RunShareholderCounts 运行单只股票股东户数采集
+// POST /api/v1/collector/fundamental/:code/shareholder
+func (h *DataCollectorHandler) RunShareholderCounts(c *gin.Context) {
+	code := c.Param("code")
+	var req FundamentalCollectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	go func() {
+		result, err := h.service.CollectShareholderCounts(req.Source, code)
+		if err != nil {
+			log.Printf("[collector] 股东户数采集失败 [%s]: %v", code, err)
+			return
+		}
+		log.Printf("[collector] 股东户数采集完成 [%s]: total=%d, new=%d, upd=%d", code, result.Total, result.NewCount, result.UpdCount)
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": fmt.Sprintf("股东户数采集已启动: %s (源=%s)", code, req.Source),
+	})
+}
+
+// RunShareholderCountsBatch 运行全量股东户数采集
+// POST /api/v1/collector/fundamental-batch/shareholder
+func (h *DataCollectorHandler) RunShareholderCountsBatch(c *gin.Context) {
+	var req FundamentalCollectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	go func() {
+		result, err := h.service.CollectShareholderCountsBatch(req.Source)
+		if err != nil {
+			log.Printf("[collector] 全量股东户数采集失败: %v", err)
+			return
+		}
+		log.Printf("[collector] 全量股东户数采集完成: total=%d, new=%d, upd=%d, fail=%d",
+			result.Total, result.NewCount, result.UpdCount, result.FailCount)
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "全量股东户数采集已启动",
+	})
+}
+
+// RunShareChanges 运行单只股票股本变动采集
+// POST /api/v1/collector/fundamental/:code/share-change
+func (h *DataCollectorHandler) RunShareChanges(c *gin.Context) {
+	code := c.Param("code")
+	var req FundamentalCollectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	go func() {
+		result, err := h.service.CollectShareChanges(req.Source, code)
+		if err != nil {
+			log.Printf("[collector] 股本变动采集失败 [%s]: %v", code, err)
+			return
+		}
+		log.Printf("[collector] 股本变动采集完成 [%s]: total=%d, new=%d, upd=%d", code, result.Total, result.NewCount, result.UpdCount)
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": fmt.Sprintf("股本变动采集已启动: %s (源=%s)", code, req.Source),
+	})
+}
+
+// RunShareChangesBatch 运行全量股本变动采集
+// POST /api/v1/collector/fundamental-batch/share-change
+func (h *DataCollectorHandler) RunShareChangesBatch(c *gin.Context) {
+	var req FundamentalCollectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	go func() {
+		result, err := h.service.CollectShareChangesBatch(req.Source)
+		if err != nil {
+			log.Printf("[collector] 全量股本变动采集失败: %v", err)
+			return
+		}
+		log.Printf("[collector] 全量股本变动采集完成: total=%d, new=%d, upd=%d, fail=%d",
+			result.Total, result.NewCount, result.UpdCount, result.FailCount)
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "全量股本变动采集已启动",
+	})
+}
+
 // HealthCheck 健康检查
 func HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
