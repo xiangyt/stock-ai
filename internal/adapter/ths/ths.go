@@ -52,7 +52,7 @@ func New() *Adapter {
 	}
 }
 
-func (a *Adapter) Name() string        { return "tonghuashun" }
+func (a *Adapter) Name() string        { return "ths" }
 func (a *Adapter) DisplayName() string { return "同花顺" }
 func (a *Adapter) Type() string        { return "web_crawl" }
 

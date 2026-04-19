@@ -72,6 +72,14 @@ func SetupRouter() *gin.Engine {
 				fundamentalBatch.POST("/share-change", dataHandler.RunShareChangesBatch)
 			}
 		}
+		// --- K线同步接口（多周期三模式） ---
+		syncHandler := handler.NewKLineSyncHandler()
+		syncKline := apiV1.Group("/sync-kline")
+		{
+			syncKline.POST("/init", syncHandler.RunInit)    // 初始化：同花顺全量骨架
+			syncKline.POST("/daily", syncHandler.RunDaily)  // 每日增量：同花顺GetToday
+			syncKline.POST("/fill", syncHandler.RunFill)    // 补全金额：东财补amount=0
+		}
 	}
 
 	return r

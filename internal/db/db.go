@@ -60,9 +60,9 @@ func AutoMigrate() error {
 		&model.Stock{},
 		&model.DailyKline{},
 		// 基本面/财务数据表
-		&model.PerformanceReport{},
-		&model.ShareholderCount{},
-		&model.ShareChange{},
+		// &model.PerformanceReport{},
+		// &model.ShareholderCount{},
+		// &model.ShareChange{},
 	)
 }
 

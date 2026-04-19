@@ -35,7 +35,7 @@ func UpsertStock(stock model.Stock) int64 {
 // LoadAllStockCodes 从数据库加载全量股票代码列表
 func LoadAllStockCodes() []model.Stock {
 	var stocks []model.Stock
-	GetDB().Select("code").Find(&stocks)
+	GetDB().Find(&stocks)
 	return stocks
 }
 
