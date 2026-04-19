@@ -29,71 +29,73 @@ func (a *Adapter) GetTodayData(ctx context.Context, code string) (*adapter.Stock
 		return nil, err
 	}
 
-	data, _, err := a.parseTodayDataResponse(code, thsCode, body)
+	data, err := a.parseTodayDataResponse(code, thsCode, body)
 	if err != nil {
 		return nil, err
 	}
 	return data, nil
 }
 
-// GetThisWeekData / GetThisMonthData / GetThisQuarterData / GetThisYearData
+// GetThisWeekData 本周数据
 func (a *Adapter) GetThisWeekData(ctx context.Context, code string) (*adapter.StockPriceDaily, error) {
-	data, _, err := a.getDataByType(code, KLineTypeWeekly)
-	return data, err
+	return a.getDataByType(code, KLineTypeWeekly)
 }
 
+// GetThisMonthData 本月数据
 func (a *Adapter) GetThisMonthData(ctx context.Context, code string) (*adapter.StockPriceDaily, error) {
-	data, _, err := a.getDataByType(code, KLineTypeMonthly)
-	return data, err
+	return a.getDataByType(code, KLineTypeMonthly)
 }
 
+// GetThisQuarterData 本季数据
 func (a *Adapter) GetThisQuarterData(ctx context.Context, code string) (*adapter.StockPriceDaily, error) {
-	data, _, err := a.getDataByType(code, KLineTypeQuarterly)
-	return data, err
+	return a.getDataByType(code, KLineTypeQuarterly)
 }
 
+// GetThisYearData 本年数据
 func (a *Adapter) GetThisYearData(ctx context.Context, code string) (*adapter.StockPriceDaily, error) {
-	data, _, err := a.getDataByType(code, KLineTypeYearly)
-	return data, err
+	return a.getDataByType(code, KLineTypeYearly)
 }
 
-func (a *Adapter) getDataByType(code, klineType string) (*adapter.StockPriceDaily, string, error) {
+func (a *Adapter) getDataByType(code, klineType string) (*adapter.StockPriceDaily, error) {
 	symbol, _, err := a.parseCode(code)
 	if err != nil {
-		return nil, "", err
+		return nil, fmt.Errorf("invalid tsCode format: %s", code)
 	}
 	thsCode := buildTHSCode(symbol)
+	if thsCode == "" {
+		return nil, fmt.Errorf("unsupported market for code: %s", code)
+	}
 	url := fmt.Sprintf("https://d.10jqka.com.cn/v6/line/%s/%s/defer/today.js", thsCode, klineType)
 	body, err := a.makeTodayDataRequest(url)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	return a.parseTodayDataResponse(code, thsCode, body)
 }
 
 // parseTodayDataResponse 解析今日/本周/本月等数据响应
-func (a *Adapter) parseTodayDataResponse(tsCode, thsCode, body string) (*adapter.StockPriceDaily, string, error) {
+func (a *Adapter) parseTodayDataResponse(tsCode, thsCode, body string) (*adapter.StockPriceDaily, error) {
 	callbackPrefix := fmt.Sprintf("quotebridge_v6_line_%s_", thsCode)
 	startIdx := strings.Index(body, callbackPrefix)
 	if startIdx == -1 {
-		return nil, "", fmt.Errorf("callback not found")
+		return nil, fmt.Errorf("callback not found")
 	}
 	parenIdx := strings.Index(body[startIdx:], "(")
 	jsonStart := startIdx + parenIdx + 1
 	jsonEnd := strings.LastIndex(body, ")")
 	if jsonEnd <= jsonStart {
-		return nil, "", fmt.Errorf("invalid format")
+		return nil, fmt.Errorf("invalid format")
 	}
 	jsonStr := body[jsonStart:jsonEnd]
 
 	var response map[string]interface{}
 	if err := json.Unmarshal([]byte(jsonStr), &response); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	dataMap, ok := response[thsCode].(map[string]interface{})
 	if !ok {
-		return nil, "", fmt.Errorf("data not found for %s", thsCode)
+		return nil, fmt.Errorf("data not found for %s", thsCode)
 	}
 
 	tradeDateStr := getString(dataMap, "1")
@@ -103,7 +105,6 @@ func (a *Adapter) parseTodayDataResponse(tsCode, thsCode, body string) (*adapter
 	closeStr := getString(dataMap, "11")
 	volStr := getString(dataMap, "13")
 	amountStr := getString(dataMap, "19")
-	name := getString(dataMap, "name")
 
 	td, _ := strconv.Atoi(tradeDateStr)
 
@@ -116,5 +117,5 @@ func (a *Adapter) parseTodayDataResponse(tsCode, thsCode, body string) (*adapter
 		Close:  yuanToCents(parseFloat(closeStr)),
 		Volume: parseInt64(volStr),
 		Amount: yuanToCents(parseFloat(amountStr)),
-	}, name, nil
+	}, nil
 }
