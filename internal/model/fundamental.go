@@ -79,7 +79,7 @@ func (ShareholderCount) TableName() string { return "shareholder_counts" }
 // ShareChange 股本变动表（对应东方财富"历年股份变动"）
 type ShareChange struct {
 	StockCode       string `gorm:"primaryKey;size:10;not null" json:"stock_code"`
-	Date            int    `gorm:"primaryKey;not null" json:"date"` // 变动日期 YYYYMMDD
+	ChangeDate      int    `gorm:"primaryKey;not null" json:"change_date"` // 变动日期 YYYYMMDD
 	ChangeReason    string `gorm:"size:200" json:"change_reason"`           // 变动原因
 	TotalShares     int64  `json:"total_shares"`                            // 总股本(股)
 	LimitedShares   int64  `json:"limited_shares"`                          // 流通受限股份(股)

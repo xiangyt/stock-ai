@@ -53,14 +53,14 @@ func UpsertShareholderCount(m model.ShareholderCount) int64 {
 // UpsertShareChange 单条股本变动 upsert (INSERT ON DUPLICATE KEY UPDATE)
 func UpsertShareChange(m model.ShareChange) int64 {
 	result := GetDB().Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "stock_code"}, {Name: "date"}},
+		Columns: []clause.Column{{Name: "stock_code"}, {Name: "change_date"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"change_reason", "total_shares", "limited_shares",
 			"unlimited_shares", "float_a_shares",
 		}),
 	}).Create(&m)
 	if result.Error != nil {
-		log.Printf("[dao-fundamental] 股本变动upsert失败 [%s/%s]: %v", m.StockCode, m.Date, result.Error)
+		log.Printf("[dao-fundamental] 股本变动upsert失败 [%s/%d]: %v", m.StockCode, m.ChangeDate, result.Error)
 		return -1
 	}
 	return result.RowsAffected
@@ -89,7 +89,7 @@ func FindLatestShareholderCount(code string) (model.ShareholderCount, error) {
 // FindShareChanges 查询股本变动记录
 func FindShareChanges(code string, limit int) ([]model.ShareChange, error) {
 	var changes []model.ShareChange
-	q := GetDB().Where("stock_code = ?", code).Order("date DESC")
+	q := GetDB().Where("stock_code = ?", code).Order("change_date DESC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}

@@ -251,7 +251,7 @@ func upsertShareChanges(code string, changes []adapter.ShareChange) *CollectResu
 	for _, c := range changes {
 		m := model.ShareChange{
 			StockCode:       code,
-			Date:            parseTradeDate(c.Date),
+			ChangeDate:      parseTradeDate(c.Date),
 			ChangeReason:    c.ChangeReason,
 			TotalShares:     c.TotalShares,
 			LimitedShares:   c.LimitedShares,

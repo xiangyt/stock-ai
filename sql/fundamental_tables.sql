@@ -71,13 +71,13 @@ CREATE TABLE IF NOT EXISTS shareholder_counts (
 -- ---------- 股本变动 ----------
 CREATE TABLE IF NOT EXISTS share_changes (
     stock_code           CHAR(10)        NOT NULL COMMENT '股票代码',
-    date                 INT(8)          NOT NULL DEFAULT 0 COMMENT '变动日期 YYYYMMDD',
+    change_date          INT(8)          NOT NULL DEFAULT 0 COMMENT '变动日期 YYYYMMDD',
     change_reason        VARCHAR(200)    NOT NULL DEFAULT '' COMMENT '变动原因',
     total_shares         BIGINT          NOT NULL DEFAULT 0 COMMENT '总股本(股)',
     limited_shares       BIGINT          NOT NULL DEFAULT 0 COMMENT '流通受限股份(股)',
     unlimited_shares     BIGINT          NOT NULL DEFAULT 0 COMMENT '已流通股份(股)',
     float_a_shares       BIGINT          NOT NULL DEFAULT 0 COMMENT '已上市流通A股(股)',
 
-    PRIMARY KEY (stock_code, date),
-    INDEX idx_date (date)
+    PRIMARY KEY (stock_code, change_date),
+    INDEX idx_change_date (change_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='股本变动数据';
