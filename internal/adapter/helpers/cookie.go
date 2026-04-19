@@ -25,16 +25,38 @@ func (g *CookieGenerator) GenerateCookie() string {
 	cookies := []string{
 		fmt.Sprintf("qgqp_b_id=%s", g.randomHex(32)),
 		fmt.Sprintf("st_nvi=%s", g.randomAlphaNum(25)),
-		fmt.Sprintf("nid=%s", g.randomHex(32)),
-		g.generateNidCreateTime(),
-		fmt.Sprintf("gvi=%s", g.randomAlphaNum(26)),
-		g.generateGviCreateTime(),
+		g.generateNid18(),
+		g.generateNid18CreateTime(),
+		g.generateGviem(),
+		g.generateGviemCreateTime(),
+		"speakVolume=100",
+		"readStatus=pointRead",
+		"batchReadIsOn=false",
+		"guidesStatus=off",
+		"highContrastMode=defaltMode",
+		"cursorStatus=off",
+		"magnifierIsOn=false",
+		"readZoom=1",
+		"percentStatus=100",
+		"PointReadIsOn=false",
+		"fontZoom=1",
+		"speakFunctionIsOn=true",
+		"textModeStatus=off",
+		"speakSpeed=0",
+		"wzaIsOn=false",
+		"readScreen=false",
+		"mtp=1",
+		g.generateCt(),
+		g.generateUt(), // cookie中的ut（区别于URL参数的ut）
+		generatePi(),
+		generateUidal(),
+		fmt.Sprintf("sid=%d", g.rand.Int63n(900000000)+100000000),
+		"vtpst=|",
 		fmt.Sprintf("st_si=%d", g.rand.Int63n(99999999999999)+10000000000000),
 		"fullscreengg=1",
 		"fullscreengg2=1",
 		g.generateWebsitepoptgApiTime(),
 		"st_asi=delete",
-		"wsc_checkuser_ok=1",
 		fmt.Sprintf("st_pvi=%d", g.rand.Int63n(99999999999999)+10000000000000),
 		g.generateStSp(),
 		g.generateStInirUrl(),
@@ -99,6 +121,88 @@ func (g *CookieGenerator) generateStPsi() string {
 	suffix1 := g.rand.Int63n(9999999999999) + 1000000000000
 	suffix2 := g.rand.Int63n(9999999999) + 1000000000
 	return fmt.Sprintf("st_psi=%s-%d-%d", dateStr, suffix1, suffix2)
+}
+
+// ========== 新增：浏览器Cookie关键字段生成 ==========
+
+func (g *CookieGenerator) generateNid18() string {
+	chars := "0123456789abcdef"
+	result := make([]byte, 32)
+	for i := range result {
+		result[i] = chars[g.rand.Intn(len(chars))]
+	}
+	return fmt.Sprintf("nid18=%s", string(result))
+}
+
+func (g *CookieGenerator) generateNid18CreateTime() string {
+	now := time.Now()
+	past := now.AddDate(0, 0, -30)
+	ts := past.Unix() + g.rand.Int63n(now.Unix()-past.Unix())
+	return fmt.Sprintf("nid18_create_time=%d", ts*1000+int64(g.rand.Intn(1000)))
+}
+
+func (g *CookieGenerator) generateGviem() string {
+	return fmt.Sprintf("gviem=%s", g.randomAlphaNum(26))
+}
+
+func (g *CookieGenerator) generateGviemCreateTime() string {
+	now := time.Now()
+	past := now.AddDate(0, 0, -30)
+	ts := past.Unix() + g.rand.Int63n(now.Unix()-past.Unix())
+	return fmt.Sprintf("gviem_create_time=%d", ts*1000+int64(g.rand.Intn(1000)))
+}
+
+func (g *CookieGenerator) generateCt() string {
+	return fmt.Sprintf("ct=%s", g.randomAlphaNum(88))
+}
+
+func (g *CookieGenerator) generateUt() string {
+	return fmt.Sprintf("ut=%s", g.randomAlphaNum(256))
+}
+
+func generatePi() string {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	uid := r.Int63n(9000000000000000) + 1000000000000000
+	name := randomChineseName(r)
+	hash := randomAlphaNumFixed(r, 16)
+	return fmt.Sprintf("pi=%d%%3Bj%d%%3B%s%%3B%s", uid, uid, name, hash)
+}
+
+func generateUidal() string {
+	r := rand.New(rand.NewSource(time.Now().UnixNano() + 1))
+	uid := r.Int63n(9000000000000000) + 1000000000000000
+	name := randomChineseName(r)
+	encodedName := urlEncodeChinese(name)
+	return fmt.Sprintf("uidal=%d%s", uid, encodedName)
+}
+
+func randomChineseName(r *rand.Rand) string {
+	surnames := []string{"张", "王", "李", "刘", "陈", "杨", "赵", "黄", "周", "吴",
+		"徐", "孙", "胡", "朱", "高", "林", "何", "郭", "马", "罗"}
+	givenNames := []string{"伟", "芳", "娜", "敏", "静", "丽", "强", "磊", "军", "洋",
+		"勇", "艳", "杰", "娟", "涛", "明", "超", "秀英", "华", "慧"}
+	return surnames[r.Intn(len(surnames))] + givenNames[r.Intn(len(givenNames))]
+}
+
+func urlEncodeChinese(s string) string {
+	var result strings.Builder
+	for _, r := range s {
+		if r >= 0x4e00 && r <= 0x9fff { // CJK统一汉字
+			result.WriteString(fmt.Sprintf("%%%X", r))
+		} else {
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
+}
+
+func randomAlphaNumFixed(r *rand.Rand, n int) string {
+	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	result := make([]byte, n)
+	for i := range result {
+		result[i] = chars[r.Intn(len(chars))]
+	}
+	return string(result)
 }
 
 func (g *CookieGenerator) randomHex(length int) string {

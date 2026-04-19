@@ -240,12 +240,26 @@ type ShareChange struct {
 	ChangeReason    string `json:"change_reason"`    // 变动原因
 }
 
-// QuotaInfo 配额信息
+// QuotaInfo 配额信息（同时作为限速器配置和运行时状态）
 type QuotaInfo struct {
 	DailyLimit    int        `json:"daily_limit"`     // 每日限制 (-1=无限制)
-	DailyUsed     int        `json:"daily_used"`      // 已使用
-	RateLimit     int        `json:"rate_limit"`      // 每秒请求限制
-	LastRequestAt *time.Time `json:"last_request_at"` // 上次请求时间
+	DailyUsed     int        `json:"daily_used"`      // 已使用（运行时累计）
+	RateLimit     int        `json:"rate_limit"`      // 每秒请求限制（=令牌桶速率）
+	Burst         int        `json:"burst"`           // 突发容量（=令牌桶大小，默认=RateLimit）
+	LastRequestAt *time.Time `json:"last_request_at"` // 上次请求时间（运行时）
+}
+
+// LimiterConfig 从 QuotaInfo 提取限速器参数
+func (q *QuotaInfo) LimiterConfig() (float64, int) {
+	if q.RateLimit <= 0 {
+		return 10, 10 // 默认 10rps
+	}
+	r := float64(q.RateLimit)
+	b := q.Burst
+	if b <= 0 {
+		b = q.RateLimit
+	}
+	return r, b
 }
 
 // ProgressCallback 进度回调函数

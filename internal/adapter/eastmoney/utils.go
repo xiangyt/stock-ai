@@ -1,6 +1,7 @@
 package eastmoney
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -45,38 +46,51 @@ func (a *Adapter) makeGetRequest(urlStr, refer string) (string, error) {
 		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	bodyReader := resp.Body
+	// 自动解压 gzip 响应（Go http.Client 默认会自动处理，但显式声明 Accept-Encoding 时需手动兜底）
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		gr, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return "", fmt.Errorf("创建gzip reader失败: %w", err)
+		}
+		defer gr.Close()
+		bodyReader = gr
+	}
+
+	body, err := io.ReadAll(bodyReader)
 	if err != nil {
 		return "", err
 	}
 	return string(body), nil
 }
 
-// updateHeaders 更新随机UA和Cookie
+// updateHeaders 更新随机UA和Cookie（仅当未从配置指定时才生成）
 func (a *Adapter) updateHeaders() {
 	a.currentUA = a.userAgentGen.GenerateUserAgent()
-	a.currentCookie = a.cookieGen.GenerateCookie()
+	if a.currentCookie == "" {
+		a.currentCookie = a.cookieGen.GenerateCookie()
+	}
 	a.lastUpdateTime = time.Now()
 }
 
 // ========== 辅助函数 ==========
 
-// setCommonHeaders 设置公共请求头
+// setCommonHeaders 设置公共请求头（对齐浏览器JSONP请求）
 func setCommonHeaders(req *http.Request, ua, cookie, refer string) {
 	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
 	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Cookie", cookie)
 	req.Header.Set("Host", req.URL.Host)
-	req.Header.Set("Origin", "https://emweb.securities.eastmoney.com")
 	req.Header.Set("Pragma", "no-cache")
 	req.Header.Set("Referer", refer)
 	req.Header.Set("Sec-Ch-Ua", "\"Chromium\";v=\"146\", \"Not-A.Brand\";v=\"24\", \"Google Chrome\";v=\"146\"")
 	req.Header.Set("Sec-Ch-Ua-Mobile", "?0")
 	req.Header.Set("Sec-Ch-Ua-Platform", "\"macOS\"")
-	req.Header.Set("Sec-Fetch-Dest", "empty")
-	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.Header.Set("Sec-Fetch-Dest", "script")   // JSONP请求用script
+	req.Header.Set("Sec-Fetch-Mode", "no-cors")    // JSONP跨域
 	req.Header.Set("Sec-Fetch-Site", "same-site")
 	req.Header.Set("User-Agent", ua)
 }

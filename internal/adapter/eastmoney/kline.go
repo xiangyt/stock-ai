@@ -54,7 +54,7 @@ func (a *Adapter) GetYearlyKLine(ctx context.Context, code, adjType string) ([]a
 func (a *Adapter) fetchKLines(ctx context.Context, code, adjType, klineType, beg string) ([]adapter.StockPriceDaily, error) {
 	symbol, market := parseCode(code)
 	secid := buildSecID(symbol, market)
-	refer := "https://quote.eastmoney.com"
+	refer := "https://quote.eastmoney.com/"
 
 	if beg == "" {
 		beg = "0"

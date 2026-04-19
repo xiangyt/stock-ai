@@ -47,22 +47,43 @@ func main() {
 	// 注册数据源适配器
 	registry := adapter.GetRegistry()
 
-	// 注册东方财富
-	emAdapter := eastmoney.New()
-	if err := emAdapter.Init(nil); err != nil {
-		log.Printf("初始化东方财富适配器失败: %v", err)
-	} else if err := registry.Register(emAdapter); err != nil {
-		log.Printf("注册东方财富失败: %v", err)
-	} else {
-		log.Println("✅ 已注册数据源: 东方财富 (eastmoney)")
-	}
+	for _, dsCfg := range cfg.DataSources {
+		if !dsCfg.Enabled {
+			log.Printf("跳过未启用的数据源: %s", dsCfg.Name)
+			continue
+		}
 
-	// 注册同花顺（骨架）
-	thsAdapter := ths.New()
-	if err := registry.Register(thsAdapter); err != nil {
-		log.Printf("注册同花顺失败: %v", err)
-	} else {
-		log.Println("✅ 已注册数据源: 同花顺 (ths) [骨架]")
+		var ds adapter.DataSource
+		switch dsCfg.Provider {
+		case "eastmoney":
+			ds = eastmoney.New()
+			initConfig := map[string]interface{}{
+				"cookie": dsCfg.Cookie,
+			}
+			// 合并 extra 参数
+			for k, v := range dsCfg.Extra {
+				initConfig[k] = v
+			}
+			if err := ds.Init(initConfig); err != nil {
+				log.Printf("初始化 %s 失败: %v", dsCfg.Name, err)
+				continue
+			}
+		case "ths":
+			ds = ths.New()
+			if err := ds.Init(nil); err != nil {
+				log.Printf("初始化 %s 失败: %v", dsCfg.Name, err)
+				continue
+			}
+		default:
+			log.Printf("未知的数据源类型: %s (provider=%s)", dsCfg.Name, dsCfg.Provider)
+			continue
+		}
+
+		if err := registry.Register(ds); err != nil {
+			log.Printf("注册数据源 %s 失败: %v", dsCfg.Name, err)
+		} else {
+			log.Printf("✅ 已注册数据源: %s (%s)", ds.DisplayName(), dsCfg.Name)
+		}
 	}
 
 	log.Printf("已注册数据源: %v", registry.Names())

@@ -34,6 +34,7 @@ type Adapter struct {
 	client       *http.Client
 	parser       *helpers.KLineParser
 	limiter      *rate.Limiter
+	quota        adapter.QuotaInfo
 	userAgentGen *helpers.UserAgentGenerator
 	cookieGen    *helpers.CookieGenerator
 	currentUA    string
@@ -42,11 +43,18 @@ type Adapter struct {
 
 // New 创建同花顺数据源适配器
 func New() *Adapter {
+	q := adapter.QuotaInfo{
+		DailyLimit: -1,
+		RateLimit:  5, // 5rps，同花顺限制较严
+		Burst:      5,
+	}
+	r, burst := q.LimiterConfig()
 	return &Adapter{
 		config:       make(map[string]interface{}),
 		client:       &http.Client{Timeout: 10 * time.Second},
 		parser:       helpers.NewKLineParser(),
-		limiter:      rate.NewLimiter(rate.Limit(5), 5), // 5次/秒
+		limiter:      rate.NewLimiter(rate.Limit(r), burst),
+		quota:        q,
 		userAgentGen: helpers.NewUserAgentGenerator(),
 		cookieGen:    helpers.NewCookieGenerator(),
 	}
@@ -85,10 +93,7 @@ func (a *Adapter) Close() error {
 }
 
 func (a *Adapter) GetQuotaInfo() adapter.QuotaInfo {
-	return adapter.QuotaInfo{
-		DailyLimit: -1,
-		RateLimit:  5,
-	}
+	return a.quota
 }
 
 // ========== 股票列表 ==========

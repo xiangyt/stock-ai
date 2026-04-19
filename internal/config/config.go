@@ -3,17 +3,37 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/viper"
 )
 
 // Config 全局配置
 type Config struct {
-	Server     ServerConfig     `mapstructure:"server"`
-	Database   DatabaseConfig   `mapstructure:"database"`
-	MCP        MCPConfig        `mapstructure:"mcp"`
-	Log        LogConfig        `mapstructure:"log"`
-	DataSource DataSourceConfig `mapstructure:"data_source"`
+	Server     ServerConfig      `mapstructure:"server"`
+	Database   DatabaseConfig    `mapstructure:"database"`
+	MCP        MCPConfig         `mapstructure:"mcp"`
+	Log        LogConfig         `mapstructure:"log"`
+	DataSources []DataSourceItem `mapstructure:"data_sources"` // 多数据源列表
+}
+
+// DataSourceItem 单个数据源配置
+type DataSourceItem struct {
+	Name     string            `mapstructure:"name"`               // 数据源名称（唯一标识）
+	Enabled  bool              `mapstructure:"enabled"`            // 是否启用
+	Provider string            `mapstructure:"provider"`           // 提供商类型: eastmoney/ths
+	Cookie   string            `mapstructure:"cookie"`            // Cookie（东方财富等需要）
+	Extra    map[string]string `mapstructure:"extra,omitempty"`   // 扩展参数（各数据源自定义）
+}
+
+// GetDataSourceByName 按名称获取数据源配置
+func (c *Config) GetDataSourceByName(name string) (*DataSourceItem, bool) {
+	for i := range c.DataSources {
+		if c.DataSources[i].Name == name {
+			return &c.DataSources[i], true
+		}
+	}
+	return nil, false
 }
 
 // ServerConfig 服务配置
@@ -56,12 +76,20 @@ type LogConfig struct {
 	MaxAge     int    `mapstructure:"max_age"`
 }
 
-// DataSourceConfig 数据源配置
-type DataSourceConfig struct {
-	Provider  string `mapstructure:"provider"`
-	APIKey    string `mapstructure:"api_key"`
-	APISecret string `mapstructure:"api_secret"`
-	BaseURL   string `mapstructure:"base_url"`
+// overrideFromEnv 从环境变量覆盖配置
+func overrideFromEnv(cfg *Config) {
+	// 数据库密码
+	if pwd := os.Getenv("DB_PASSWORD"); pwd != "" {
+		cfg.Database.Password = pwd
+	}
+
+	// 按数据源名称匹配环境变量（如 EM_COOKIE, THS_COOKIE 等）
+	for i := range cfg.DataSources {
+		name := strings.ToUpper(cfg.DataSources[i].Name)
+		if cookie := os.Getenv(name + "_COOKIE"); cookie != "" {
+			cfg.DataSources[i].Cookie = cookie
+		}
+	}
 }
 
 var GlobalConfig *Config
@@ -130,27 +158,6 @@ func setDefaults() {
 	viper.SetDefault("log.max_size", 100)
 	viper.SetDefault("log.max_backups", 10)
 	viper.SetDefault("log.max_age", 30)
-
-	// DataSource 默认值
-	viper.SetDefault("data_source.provider", "mock")
-}
-
-// overrideFromEnv 从环境变量覆盖配置
-func overrideFromEnv(cfg *Config) {
-	// 数据库密码
-	if pwd := os.Getenv("DB_PASSWORD"); pwd != "" {
-		cfg.Database.Password = pwd
-	}
-
-	// API Key
-	if key := os.Getenv("API_KEY"); key != "" {
-		cfg.DataSource.APIKey = key
-	}
-
-	// API Secret
-	if secret := os.Getenv("API_SECRET"); secret != "" {
-		cfg.DataSource.APISecret = secret
-	}
 }
 
 // Get 获取全局配置

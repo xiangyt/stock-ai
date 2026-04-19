@@ -26,7 +26,7 @@ func GetRegistry() *Registry {
 	return globalRegistry
 }
 
-// Register 注册数据源
+// Register 注册数据源（调用方需先自行调用 Init）
 func (r *Registry) Register(ds DataSource) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -34,10 +34,6 @@ func (r *Registry) Register(ds DataSource) error {
 	name := ds.Name()
 	if _, exists := r.adapters[name]; exists {
 		return fmt.Errorf("数据源已存在: %s", name)
-	}
-
-	if err := ds.Init(nil); err != nil {
-		return fmt.Errorf("初始化数据源 %s 失败: %w", name, err)
 	}
 
 	r.adapters[name] = ds
@@ -114,22 +110,5 @@ func (r *Registry) InitAll() error {
 			fmt.Printf("✅ 数据源 %s 连接正常\n", name)
 		}
 	}
-	return nil
-}
-
-// RegisterDefaults 注册默认数据源（东方财富 + 同花顺）
-// 注意：此函数需要在 cmd/server/main.go 等入口处调用
-// 调用方需 import 对应的 adapter 子包
-func RegisterDefaults(eastmoneyAdapter, thsAdapter DataSource) error {
-	r := GetRegistry()
-
-	if err := r.Register(eastmoneyAdapter); err != nil {
-		return fmt.Errorf("注册东方财富失败: %w", err)
-	}
-
-	if err := r.Register(thsAdapter); err != nil {
-		return fmt.Errorf("注册同花顺失败: %w", err)
-	}
-
 	return nil
 }

@@ -33,9 +33,15 @@ log:
   max_backups: 10               # 保留旧文件的最大个数
   max_age: 30                   # 保留旧文件的最大天数
 
-# 股票数据源配置(预留)
-data_source:
-  provider: mock                # 数据源: mock/realtime
-  api_key: ""                   # API Key(使用实时数据源时需要)
-  api_secret: ""                # API Secret
-  base_url: ""                  # 数据源基础URL
+# 数据源配置（支持多个，按需启用）
+# Cookie 可直接填写，或通过环境变量传入（如 export EM_COOKIE=xxx）
+data_sources:
+  - name: eastmoney
+    enabled: true
+    provider: eastmoney
+    cookie: ""  # 从浏览器F12复制完整Cookie字符串，或设置 EM_COOKIE 环境变量
+
+  # - name: ths
+  #   enabled: true
+  #   provider: ths
+  #   cookie: ""  # 设置 THS_COOKIE 环境变量
