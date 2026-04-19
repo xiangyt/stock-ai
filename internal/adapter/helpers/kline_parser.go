@@ -1,10 +1,11 @@
 package helpers
 
 import (
-	"stock-ai/internal/adapter"
 	"fmt"
 	"strconv"
 	"strings"
+
+	"stock-ai/internal/adapter"
 )
 
 // KLineParser 东方财富K线数据解析器
@@ -18,7 +19,9 @@ func NewKLineParser() *KLineParser {
 
 // ParseDailyKline 解析东方财富日K线字符串
 // 格式(11字段): "2010-05-14,3.15,2.53,3.41,2.15,285595,598452980.53,41.72,-16.23,-0.49,106.57"
-//            字段: 日期,开盘,收盘,最高,最低,成交量(手),成交额(元),...,换手率(最后1个)
+//
+//	字段: 日期,开盘,收盘,最高,最低,成交量(手),成交额(元),...,换手率(最后1个)
+//
 // 价格单位: 元 → 内部统一转为 分(int64)
 func (p *KLineParser) ParseDailyKline(code, kline string) (*adapter.StockPriceDaily, error) {
 	fields := strings.Split(kline, ",")
@@ -47,37 +50,6 @@ func (p *KLineParser) ParseDailyKline(code, kline string) (*adapter.StockPriceDa
 		Amount:   amount,
 		Turnover: turnover,
 	}, nil
-}
-
-// ParseTHSDailyKline 解析同花顺日K线数据
-// 同花顺格式：价格已为分单位(lowCent + offset)，无需转换
-func (p *KLineParser) ParseTHSDailyKline(code string, dates []string, prices []string, volumes []string) ([]*adapter.StockPriceDaily, error) {
-	result := make([]*adapter.StockPriceDaily, 0, len(dates))
-
-	for i := range dates {
-		if len(prices) < (i+1)*4 || len(volumes) <= i {
-			break
-		}
-
-		lowCent, _ := strconv.Atoi(prices[i*4])
-		openOffset, _ := strconv.Atoi(prices[i*4+1])
-		highOffset, _ := strconv.Atoi(prices[i*4+2])
-		closeOffset, _ := strconv.Atoi(prices[i*4+3])
-		vol, _ := strconv.ParseInt(volumes[i], 10, 64)
-
-		result = append(result, &adapter.StockPriceDaily{
-			Code:   code,
-			Date:   dates[i],
-			Open:   int64(lowCent + openOffset),
-			High:   int64(lowCent + highOffset),
-			Low:    int64(lowCent),
-			Close:  int64(lowCent + closeOffset),
-			Volume: vol,
-			Amount: int64(lowCent + closeOffset) * vol, // 分 × 股 = 分(金额)
-		})
-	}
-
-	return result, nil
 }
 
 // ParseFloat 安全解析浮点数

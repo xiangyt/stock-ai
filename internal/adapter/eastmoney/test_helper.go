@@ -17,7 +17,9 @@ const (
 
 func newTestAdapter() *Adapter {
 	a := New()
-	_ = a.Init(nil)
+	_ = a.Init(map[string]interface{}{
+		"cookie": "", // todo
+	})
 	return a
 }
 

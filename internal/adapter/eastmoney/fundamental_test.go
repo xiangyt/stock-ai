@@ -241,7 +241,6 @@ func TestParseBasicOrgInfoResponse(t *testing.T) {
 	})
 }
 
-
 // ========== IPO 发行信息 JSON 解析单元测试（无需网络） ==========
 
 func TestParseIssueInfoResponse(t *testing.T) {
@@ -349,7 +348,7 @@ func TestGetShareChanges(t *testing.T) {
 	defer a.Close()
 
 	ctx := context.Background()
-	code := "002475"
+	code := "002404"
 
 	changes, err := a.GetShareChanges(ctx, code)
 	if err != nil {
@@ -617,18 +616,18 @@ func TestParseShareholderNumResponse(t *testing.T) {
 	// 第一条：完整数据
 	t.Run("完整数据", func(t *testing.T) {
 		r := adapter.ShareholderCount{
-			Code:                 "002404",
-			SecurityCode:         items[0].SECURITY_CODE,
-			EndDate:              truncateDate(items[0].END_DATE),
-			HolderNum:            items[0].HOLDER_TOTAL_NUM,
-			HolderNumChangePct:   floatPtrOrZero(items[0].TOTAL_NUM_RATIO),
-			AvgFreeShares:        items[0].AVG_FREE_SHARES,
+			Code:                   "002404",
+			SecurityCode:           items[0].SECURITY_CODE,
+			EndDate:                truncateDate(items[0].END_DATE),
+			HolderNum:              items[0].HOLDER_TOTAL_NUM,
+			HolderNumChangePct:     floatPtrOrZero(items[0].TOTAL_NUM_RATIO),
+			AvgFreeShares:          items[0].AVG_FREE_SHARES,
 			AvgFreeSharesChangePct: floatPtrOrZero(items[0].AVG_FREESHARES_RATIO),
-			HoldFocus:            items[0].HOLD_FOCUS,
-			Price:                floatPtrOrZero(items[0].PRICE),
-			AvgHoldAmount:        floatPtrOrZero(items[0].AVG_HOLD_AMT),
-			HoldRatioTotal:       floatPtrOrZero(items[0].HOLD_RATIO_TOTAL),
-			FreeHoldRatioTotal:   floatPtrOrZero(items[0].FREEHOLD_RATIO_TOTAL),
+			HoldFocus:              items[0].HOLD_FOCUS,
+			Price:                  floatPtrOrZero(items[0].PRICE),
+			AvgHoldAmount:          floatPtrOrZero(items[0].AVG_HOLD_AMT),
+			HoldRatioTotal:         floatPtrOrZero(items[0].HOLD_RATIO_TOTAL),
+			FreeHoldRatioTotal:     floatPtrOrZero(items[0].FREEHOLD_RATIO_TOTAL),
 		}
 
 		if r.EndDate != "2024-06-30" {

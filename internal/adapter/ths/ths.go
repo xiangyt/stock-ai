@@ -15,11 +15,11 @@ import (
 
 // K线类型常量 - 同花顺采集器使用
 const (
-	KLineTypeDaily     = "01" // 日K线
-	KLineTypeWeekly    = "11" // 周K线
-	KLineTypeMonthly   = "21" // 月K线
-	KLineTypeQuarterly = "91" // 季K线
-	KLineTypeYearly    = "81" // 年K线
+	KLineTypeDaily     = "0" // 日K线
+	KLineTypeWeekly    = "1" // 周K线
+	KLineTypeMonthly   = "2" // 月K线
+	KLineTypeQuarterly = "9" // 季K线
+	KLineTypeYearly    = "8" // 年K线
 )
 
 // Adapter 同花顺数据源适配器（参考 stock 项目 tonghuashun_collector.go 重写）
