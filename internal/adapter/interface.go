@@ -276,7 +276,7 @@ const (
 // InstitutionalHolding 机构持仓（东财 RPT_F10_MAIN_ORGHOLDDETAILS，ORG_TYPE=00 合计）
 type InstitutionalHolding struct {
 	Code       string `json:"code"`        // 股票代码
-	ReportDate int    `json:"report_date"` // 报告期 YYYYMMDD
+	ReportDate string `json:"report_date"` // 报告期 YYYYMMDD
 
 	// ========== 核心指标 ==========
 	InstitutionCount int     `json:"institution_count"` // 机构总数(家)

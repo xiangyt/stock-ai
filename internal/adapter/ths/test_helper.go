@@ -12,7 +12,7 @@ import (
 
 // 测试用股票代码（同花顺支持纯代码，无需后缀）
 const (
-	testCode = "000001" // 平安银行（深市）
+	testCode = "002404" // 平安银行（深市）
 )
 
 func newTestAdapter() *Adapter {

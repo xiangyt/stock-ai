@@ -22,7 +22,8 @@ func (a *Adapter) GetTodayData(ctx context.Context, code string) (*adapter.Stock
 		return nil, "", fmt.Errorf("unsupported market for code: %s", code)
 	}
 
-	requestURL := fmt.Sprintf("https://d.10jqka.com.cn/v6/line/%s/%s/defer/today.js", thsCode, KLineTypeDaily)
+	requestURL := fmt.Sprintf("https://d.10jqka.com.cn/v6/line/%s/%s%s/defer/today.js",
+		thsCode, KLineTypeDaily, adapter.AdjQFQ)
 	body, err := a.makeTodayDataRequest(requestURL)
 	if err != nil {
 		return nil, "", err

@@ -219,7 +219,7 @@ func upsertShareholderCounts(code string, counts []adapter.ShareholderCount) *Co
 	for _, c := range counts {
 		m := model.ShareholderCount{
 			StockCode:           code,
-			EndDate:             c.EndDate,
+			EndDate:             parseTradeDate(c.EndDate),
 			SecurityName:        c.SecurityName,
 			HolderNum:           c.HolderNum,
 			HolderNumChangePct:  c.HolderNumChangePct,
@@ -251,7 +251,7 @@ func upsertShareChanges(code string, changes []adapter.ShareChange) *CollectResu
 	for _, c := range changes {
 		m := model.ShareChange{
 			StockCode:       code,
-			Date:            c.Date,
+			Date:            parseTradeDate(c.Date),
 			ChangeReason:    c.ChangeReason,
 			TotalShares:     c.TotalShares,
 			LimitedShares:   c.LimitedShares,

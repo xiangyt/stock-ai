@@ -58,7 +58,7 @@ func (PerformanceReport) TableName() string { return "performance_reports" }
 // ShareholderCount 股东户数表（东财 RPT_F10_EH_HOLDERNUM）
 type ShareholderCount struct {
 	StockCode    string `gorm:"primaryKey;size:10;not null" json:"stock_code"`
-	EndDate      string `gorm:"primaryKey;size:10;not null" json:"end_date"` // 统计截止日 YYYY-MM-DD
+	EndDate      int    `gorm:"primaryKey;not null" json:"end_date"` // 统计截止日 YYYYMMDD
 	SecurityName string `gorm:"size:50" json:"security_name"`
 
 	HolderNum           int64   `json:"holder_num"`                 // 股东人数(户)
@@ -79,7 +79,7 @@ func (ShareholderCount) TableName() string { return "shareholder_counts" }
 // ShareChange 股本变动表（对应东方财富"历年股份变动"）
 type ShareChange struct {
 	StockCode       string `gorm:"primaryKey;size:10;not null" json:"stock_code"`
-	Date            string `gorm:"primaryKey;size:10;not null" json:"date"` // 变动日期 YYYY-MM-DD
+	Date            int    `gorm:"primaryKey;not null" json:"date"` // 变动日期 YYYYMMDD
 	ChangeReason    string `gorm:"size:200" json:"change_reason"`           // 变动原因
 	TotalShares     int64  `json:"total_shares"`                            // 总股本(股)
 	LimitedShares   int64  `json:"limited_shares"`                          // 流通受限股份(股)
