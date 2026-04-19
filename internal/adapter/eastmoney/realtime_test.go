@@ -14,7 +14,7 @@ func TestGetTodayData(t *testing.T) {
 	defer a.Close()
 
 	ctx := context.Background()
-	data, name, err := a.GetTodayData(ctx, testCode)
+	data, err := a.GetTodayData(ctx, testCode)
 	if err != nil {
 		t.Fatalf("GetTodayData(%s) failed: %v", testCode, err)
 	}
@@ -22,9 +22,6 @@ func TestGetTodayData(t *testing.T) {
 		t.Fatal("GetTodayData returned nil")
 	}
 
-	if name == "" {
-		t.Error("name is empty")
-	}
 	if data.Date == "" {
 		t.Error("Date is empty")
 	}
@@ -32,8 +29,8 @@ func TestGetTodayData(t *testing.T) {
 		t.Errorf("Close = %d, want > 0", data.Close)
 	}
 
-	t.Logf("%s(%s) 今日: O:%d H:%d L:%d C:%d Vol:%d 换手:%.2f%% PE:%.1f",
-		name, testCode, data.Open, data.High, data.Low, data.Close,
+	t.Logf("%s 今日: O:%d H:%d L:%d C:%d Vol:%d 换手:%.2f%% PE:%.1f",
+		testCode, data.Open, data.High, data.Low, data.Close,
 		data.Volume, data.Turnover, data.Pe)
 }
 

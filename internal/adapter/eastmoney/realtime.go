@@ -10,19 +10,13 @@ import (
 // ========== 实时数据（复用K线接口） ==========
 
 // GetTodayData 当日数据 - 拉取近7天日K线，取最后一条(当日)
-func (a *Adapter) GetTodayData(ctx context.Context, code string) (*adapter.StockPriceDaily, string, error) {
+func (a *Adapter) GetTodayData(ctx context.Context, code string) (*adapter.StockPriceDaily, error) {
 	beg := time.Now().AddDate(0, 0, -7).Format("20060102")
 	klines, err := a.fetchKLines(ctx, code, adapter.AdjQFQ, KLineTypeDaily, beg)
 	if err != nil || len(klines) == 0 {
-		return nil, "", err
+		return nil, err
 	}
-	last := &klines[len(klines)-1]
-	detail, _ := a.GetStockDetail(ctx, code)
-	name := ""
-	if detail != nil {
-		name = detail.Name
-	}
-	return last, name, nil
+	return &klines[len(klines)-1], nil
 }
 
 // GetThisWeekData 本周数据 - beg设为本周一

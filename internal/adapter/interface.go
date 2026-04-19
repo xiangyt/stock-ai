@@ -31,7 +31,7 @@ type DataSource interface {
 	GetYearlyKLine(ctx context.Context, code, adjType string) ([]StockPriceDaily, error)    // 年K线
 
 	// 实时数据
-	GetTodayData(ctx context.Context, code string) (*StockPriceDaily, string, error) // 当日数据(含名称)
+	GetTodayData(ctx context.Context, code string) (*StockPriceDaily, error) // 当日数据
 	GetThisWeekData(ctx context.Context, code string) (*StockPriceDaily, error)      // 本周数据
 	GetThisMonthData(ctx context.Context, code string) (*StockPriceDaily, error)     // 本月数据
 	GetThisQuarterData(ctx context.Context, code string) (*StockPriceDaily, error)   // 本季数据

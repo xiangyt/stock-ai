@@ -63,14 +63,14 @@ func mustGetTodayData(t *testing.T, code string) *adapter.StockPriceDaily {
 	a := newTestAdapter()
 	defer a.Close()
 	ctx := context.Background()
-	data, name, err := a.GetTodayData(ctx, code)
+	data, err := a.GetTodayData(ctx, code)
 	if err != nil {
 		t.Fatalf("GetTodayData(%s) failed: %v", code, err)
 	}
 	if data == nil {
 		t.Fatalf("GetTodayData(%s) returned nil", code)
 	}
-	t.Logf("%s(%s) 当日数据: O:%d H:%d L:%d C:%d Vol:%d", name, code,
+	t.Logf("%s 当日数据: O:%d H:%d L:%d C:%d Vol:%d", code,
 		data.Open, data.High, data.Low, data.Close, data.Volume)
 	return data
 }

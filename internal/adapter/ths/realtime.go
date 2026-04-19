@@ -12,28 +12,28 @@ import (
 
 // ========== 实时/当日数据 ==========
 
-func (a *Adapter) GetTodayData(ctx context.Context, code string) (*adapter.StockPriceDaily, string, error) {
+func (a *Adapter) GetTodayData(ctx context.Context, code string) (*adapter.StockPriceDaily, error) {
 	symbol, _, err := a.parseCode(code)
 	if err != nil {
-		return nil, "", fmt.Errorf("invalid tsCode format: %s", code)
+		return nil, fmt.Errorf("invalid tsCode format: %s", code)
 	}
 	thsCode := buildTHSCode(symbol)
 	if thsCode == "" {
-		return nil, "", fmt.Errorf("unsupported market for code: %s", code)
+		return nil, fmt.Errorf("unsupported market for code: %s", code)
 	}
 
 	requestURL := fmt.Sprintf("https://d.10jqka.com.cn/v6/line/%s/%s%s/defer/today.js",
 		thsCode, KLineTypeDaily, adapter.AdjQFQ)
 	body, err := a.makeTodayDataRequest(requestURL)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
-	data, name, err := a.parseTodayDataResponse(code, thsCode, body)
+	data, _, err := a.parseTodayDataResponse(code, thsCode, body)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return data, name, nil
+	return data, nil
 }
 
 // GetThisWeekData / GetThisMonthData / GetThisQuarterData / GetThisYearData
