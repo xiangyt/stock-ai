@@ -56,7 +56,6 @@ func KLineLabel(p KLinePeriod) string {
 // ========== 删除（用于 daily 模式同周期更新日期） ==========
 
 // DeleteKlineByDate 按股票代码和交易日期删除一条 K 线记录
-// 用于 daily 同步时：同一周期需要用采集器的新日期替换旧日期，先删后插
 func DeleteKlineByDate(period KLinePeriod, code string, tradeDate int) error {
 	table := klineTableName(period)
 	result := GetDB().
@@ -175,6 +174,54 @@ func CountZeroAmountKlines(period KLinePeriod, code string) (int64, error) {
 		Where("stock_code = ? AND volume > 0 AND amount = 0", code).
 		Count(&count).Error
 	return count, err
+}
+
+// FindLatestNKlinesAny 查询指定周期最新 N 条记录的 trade_date（降序）
+// 用于 daily 模式：取 DB 尾部窗口，和全量采集数据做对齐找锚定日期
+// 返回值按 trade_date DESC 排序（最新的在前）
+func FindLatestNKlinesAny(period KLinePeriod, code string, n int) ([]int, error) {
+	table := klineTableName(period)
+	if n <= 0 {
+		n = 10
+	}
+	type dateRow struct {
+		TradeDate int `gorm:"column:trade_date"`
+	}
+	var rows []dateRow
+	err := GetDB().
+		Table(table).
+		Select("trade_date").
+		Where("stock_code = ?", code).
+		Order("trade_date DESC").
+		Limit(n).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	dates := make([]int, len(rows))
+	for i, r := range rows {
+		dates[i] = r.TradeDate
+	}
+	return dates, nil
+}
+
+// DeleteKlinesAfterDate 删除指定股票某周期中 trade_date > anchorDate 的所有记录
+// 用于 daily 模式：全量对齐后，截断脏数据/过期数据，再重新写入全量数据
+// 返回删除的行数
+func DeleteKlinesAfterDate(period KLinePeriod, code string, anchorDate int) (int64, error) {
+	table := klineTableName(period)
+	result := GetDB().
+		Table(table).
+		Where("stock_code = ? AND trade_date > ?", code, anchorDate).
+		Delete(nil)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("[dao-kline] 截断 %s [%s]: 删除 trade_date>%d 共 %d 条",
+			KLineLabel(period), code, anchorDate, result.RowsAffected)
+	}
+	return result.RowsAffected, nil
 }
 
 // IsSamePeriod 判断 dateA 和 dateB 是否属于同一个周期单位

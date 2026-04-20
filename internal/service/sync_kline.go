@@ -208,54 +208,88 @@ func (s *SyncKLineService) syncSingleInit(ctx context.Context, code string, peri
 }
 
 // ---------- Daily 模式 ----------
+//
+// 策略：以全量数据为基准，对齐截断重写 + 当期精刷
+//   ① 同花顺全量采集 → 完整数据集 A
+//   ② DB 最新 N 条      → 本地窗口 W（默认取尾部10条做匹配）
+//   ③ A ∩ W 匹配找锚定日期 D（W 中能在 A 里找到对应的那条）
+//   ④ DELETE trade_date > D 的所有记录（清除脏/过期数据）
+//   ⑤ A 全量 upsert（补齐缺口 + 覆盖旧值）
+//   ⑥ GetToday/ThisWeek... 精刷当期（拿到含 Amount 的完整当日数据）
+//
+// 这样每天都能自愈：即使前几天失败了，全量对齐也能自动修复
 
-// syncSingleDaily 每日增量：同花顺 GetToday/ThisWeek/ThisMonth/ThisYear
+const dailyAlignWindow = 10 // 对齐窗口大小：DB 取最新 N 条和全量数据匹配
+
+// syncSingleDaily 每日增量：全量对齐截断 + 当期精刷
 func (s *SyncKLineService) syncSingleDaily(ctx context.Context, code string, period db.KLinePeriod, result *SyncResult) SyncResult {
-	// 获取当前周期数据（1条记录）
-	item, fetchErr := s.fetchCurrentPeriodData(ctx, "ths", code, period)
+	// Step ①: 同花顺全量采集
+	fullData, fetchErr := s.fetchFullKLines(ctx, "ths", code, period, "")
 	if fetchErr != nil {
-		result.Error = fetchErr
+		result.Error = fmt.Errorf("同花顺全量采集失败: %w", fetchErr)
 		return *result
 	}
 
-	tradeDate := parseTradeDate(item.Date)
+	// Step ②: DB 最新 N 条
+	dbDates, dbErr := db.FindLatestNKlinesAny(period, code, dailyAlignWindow)
 
-	// 查 DB 该周期最后一条记录
-	dbLastDate, err := db.FindLatestKlineAny(period, code)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		result.Error = fmt.Errorf("查询失败: %w", err)
+	// Step ③: 找锚定日期 — DB 尾部数据在 fullData 中能找到的最近一条
+	//
+	// 双指针优化：两个数组均按日期有序
+	//   dbDates:     DESC [最新, ..., 最旧]          (SQL ORDER BY trade_date DESC)
+	//   fullDates:   ASC  [..., 较旧, 最新]           (API 返回通常升序)
+	//
+	// 从两端向中间扫描：i 指向 fullDates 最新端，j 指向 dbDates 最新端
+	// 找到第一个相等的日期即为锚定点。O(len(dbDates)+len(fullData)), O(1) 额外空间
+	var anchorDate int
+	if dbErr == nil && len(dbDates) > 0 && len(fullData) > 0 {
+		anchorDate = s.findAnchorDate(fullData, dbDates)
+		result.LatestDate = db.FormatTradeDate(anchorDate)
+		log.Printf("  [%s][%s] 锚定日期: %s (DB尾部%d条中匹配)", code, db.KLineLabel(period), result.LatestDate, len(dbDates))
+	} else if errors.Is(dbErr, gorm.ErrRecordNotFound) || len(dbDates) == 0 {
+		// 无历史数据，不需要截断，直接写入全量即可
+		log.Printf("  [%s][%s] 无历史数据，直接写入全量", code, db.KLineLabel(period))
+	} else {
+		result.Error = fmt.Errorf("查询DB最新数据失败: %w", dbErr)
 		return *result
 	}
 
-	// 判断是否同一周期
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		result.LatestDate = db.FormatTradeDate(dbLastDate)
-		if db.IsSamePeriod(period, tradeDate, dbLastDate) {
-			if period == db.KLinePeriodDaily {
-				// 日K：日期相同 → 直接 upsert 覆盖即可
-				log.Printf("  [%s][%s] 更新当日数据 (trade_date=%d)",
-					code, db.KLineLabel(period), tradeDate)
-			} else {
-				// 周/月/年K：同周期但日期可能不同 → 先删旧记录避免脏数据
-				log.Printf("  [%s][%s] 同周期更新: 旧日期=%d → 新日期=%d",
-					code, db.KLineLabel(period), dbLastDate, tradeDate)
-				if delErr := db.DeleteKlineByDate(period, code, dbLastDate); delErr != nil {
-					result.Error = fmt.Errorf("删除旧记录失败: %w", delErr)
-					return *result
-				}
-			}
-		} else {
-			// 不同周期 → INSERT 新行
-			log.Printf("  [%s][%s] 新增新周期数据 (%s)", code, db.KLineLabel(period), item.Date)
+	// Step ④: 截断脏数据（删除锚定之后的所有记录）
+	if anchorDate > 0 {
+		_, delErr := db.DeleteKlinesAfterDate(period, code, anchorDate)
+		if delErr != nil {
+			result.Error = fmt.Errorf("截断脏数据失败: %w", delErr)
+			return *result
+		}
+		log.Printf("  [%s][%s] 截断完成，清除锚定日期之后的数据", code, db.KLineLabel(period))
+	}
+
+	// Step ⑤: 只插入锚定日期 D 之后的数据（增量）
+	anchorDateStr := ""
+	if anchorDate > 0 {
+		anchorDateStr = db.FormatTradeDate(anchorDate)
+	}
+	incrementalData := filterAfter(fullData, anchorDateStr)
+	success, failed := s.upsertByPeriod(code, period, incrementalData)
+	result.UpsertCount = success
+	result.SourceUsed = "ths"
+	if failed > 0 {
+		log.Printf("  [%s][%s] 增量upsert: 成功%d 失败%d", code, db.KLineLabel(period), success, failed)
+	}
+
+	// Step ⑥: 精刷当期（GetToday/ThisWeek/ThisMonth/ThisYear）— 获取含 Amount 的精确当期数据
+	currentItem, currErr := s.fetchCurrentPeriodData(ctx, "ths", code, period)
+	if currErr != nil {
+		// 当期精刷失败不阻塞主流程，全量数据已经写入了
+		log.Printf("  [%s][%s] ⚠️ 当期精刷失败(不影响全量): %v", code, db.KLineLabel(period), currErr)
+	} else if currentItem != nil {
+		currSuccess, _ := s.upsertByPeriod(code, period, []adapter.StockPriceDaily{*currentItem})
+		if currSuccess > 0 {
+			log.Printf("  [%s][%s] 当期精刷完成 (trade_date=%s)", code, db.KLineLabel(period), currentItem.Date)
 		}
 	}
 
-	// Upsert 这一条（始终使用采集器返回的日期）
-	success, _ := s.upsertByPeriod(code, period, []adapter.StockPriceDaily{*item})
-	result.UpsertCount = success
-	result.SourceUsed = "ths"
-
-	log.Printf("  [%s][%s] ✅ %s 完成", code, db.KLineLabel(period), result.SourceUsed)
+	log.Printf("  [%s][%s] ✅ daily 完成: upsert=%d (源=%s)", code, db.KLineLabel(period), result.UpsertCount, result.SourceUsed)
 	return *result
 }
 
@@ -384,6 +418,8 @@ func (s *SyncKLineService) callKLineAPI(ctx context.Context, ds adapter.DataSour
 // ========== 内部方法：数据转换与写入 ==========
 
 // upsertByPeriod 根据周期选择对应的 DAO 进行批量写入
+// 遇到第一条写入失败立即停止，后续全部标记为失败，等待下次同步刷入
+// 这样保证已写入的数据是连续的，不会产生数据空洞
 func (s *SyncKLineService) upsertByPeriod(code string, period db.KLinePeriod, data []adapter.StockPriceDaily) (int, int) {
 	success, failed := 0, 0
 
@@ -397,9 +433,15 @@ func (s *SyncKLineService) upsertByPeriod(code string, period db.KLinePeriod, da
 		rows := s.upsertOne(code, period, td, item)
 		if rows < 0 {
 			failed++
-		} else {
-			success++
+			break // 首次失败立即停止，后续数据留待下次同步
 		}
+		success++
+	}
+
+	// 如果中途失败，剩余未处理的全算作待重试
+	if len(data) > success+failed {
+		pending := len(data) - success - failed
+		failed += pending
 	}
 
 	return success, failed
@@ -446,6 +488,45 @@ func (s *SyncKLineService) upsertOne(code string, period db.KLinePeriod, tradeDa
 	default:
 		return -1
 	}
+}
+
+// findAnchorDate 双指针找锚定日期（有序数组匹配）
+//
+// fullData: API 返回的全量数据，按 trade_date ASC 排列
+// dbDates: DB 最新 N 条，按 trade_date DESC 排列
+//
+// 算法：
+//   i 从 fullData 末尾(最新)向左扫描
+//   j 从 dbDates 头部(最新)向右扫描
+//   因为两者都指向最新端，找到第一个相等的日期即为锚定点
+//   如果 fullData[i] > dbDates[j] → 说明 API 比 DB 更新，j++ 尝试更早的 DB 记录
+//   如果 fullData[i] < dbDates[j] → 不可能发生(DB最新不可能比API全量最新还新)，i--
+//   相等 → 找到锚定！
+func (s *SyncKLineService) findAnchorDate(fullData []adapter.StockPriceDaily, dbDates []int) int {
+	// 预解析 fullData 的日期为整数数组，避免循环内重复 parse
+	n := len(fullData)
+	fullDates := make([]int, n)
+	for idx, item := range fullData {
+		fullDates[idx] = parseTradeDate(item.Date)
+	}
+
+	i := n - 1 // fullDates 末端(最新)
+	j := 0     // dbDates 头端(最新)
+
+	for i >= 0 && j < len(dbDates) {
+		if fullDates[i] == dbDates[j] {
+			return fullDates[i] // 锚定命中
+		}
+		if fullDates[i] > dbDates[j] {
+			// API 数据比 DB 这条更新 → 看 DB 更早的记录能否匹配
+			j++
+		} else {
+			// API 数据比 DB 这条更旧 → 看 API 更早的记录
+			i--
+		}
+	}
+
+	return 0 // 无匹配
 }
 
 // ========== 内部辅助函数 ==========
