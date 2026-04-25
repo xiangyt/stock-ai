@@ -235,26 +235,26 @@ type basicOrgInfoItem struct {
 
 // shareholderNumItem 东财股东户数原始字段（RPT_F10_EH_HOLDERNUM）
 type shareholderNumItem struct {
-	SECUCODE              string   `json:"SECUCODE"`
-	SECURITY_CODE         string   `json:"SECURITY_CODE"`
-	END_DATE              string   `json:"END_DATE"`               // 统计截止日
-	HOLDER_TOTAL_NUM      int64    `json:"HOLDER_TOTAL_NUM"`       // 股东人数(户)
-	TOTAL_NUM_RATIO       *float64 `json:"TOTAL_NUM_RATIO"`        // 较上期变化(%)
-	AVG_FREE_SHARES       int64    `json:"AVG_FREE_SHARES"`        // 人均流通股(股)
-	AVG_FREESHARES_RATIO  *float64 `json:"AVG_FREESHARES_RATIO"`   // 人均流通股较上期变化(%)
-	HOLD_FOCUS            string   `json:"HOLD_FOCUS"`             // 筹码集中度
-	PRICE                 *float64 `json:"PRICE"`                  // 股价(元)
-	AVG_HOLD_AMT          *float64 `json:"AVG_HOLD_AMT"`           // 人均持股市值(元)
-	HOLD_RATIO_TOTAL      *float64 `json:"HOLD_RATIO_TOTAL"`       // 十大股东持股合计(%)
-	FREEHOLD_RATIO_TOTAL  *float64 `json:"FREEHOLD_RATIO_TOTAL"`   // 十大流通股东持股合计(%)
+	SECUCODE             string   `json:"SECUCODE"`
+	SECURITY_CODE        string   `json:"SECURITY_CODE"`
+	END_DATE             string   `json:"END_DATE"`             // 统计截止日
+	HOLDER_TOTAL_NUM     int64    `json:"HOLDER_TOTAL_NUM"`     // 股东人数(户)
+	TOTAL_NUM_RATIO      *float64 `json:"TOTAL_NUM_RATIO"`      // 较上期变化(%)
+	AVG_FREE_SHARES      int64    `json:"AVG_FREE_SHARES"`      // 人均流通股(股)
+	AVG_FREESHARES_RATIO *float64 `json:"AVG_FREESHARES_RATIO"` // 人均流通股较上期变化(%)
+	HOLD_FOCUS           string   `json:"HOLD_FOCUS"`           // 筹码集中度
+	PRICE                *float64 `json:"PRICE"`                // 股价(元)
+	AVG_HOLD_AMT         *float64 `json:"AVG_HOLD_AMT"`         // 人均持股市值(元)
+	HOLD_RATIO_TOTAL     *float64 `json:"HOLD_RATIO_TOTAL"`     // 十大股东持股合计(%)
+	FREEHOLD_RATIO_TOTAL *float64 `json:"FREEHOLD_RATIO_TOTAL"` // 十大流通股东持股合计(%)
 }
 
 type shareholderNumResponse struct {
-	Version string                `json:"version"`
-	Result  shareholderNumResult  `json:"result"`
-	Success bool                  `json:"success"`
-	Message string                `json:"message"`
-	Code    int                   `json:"code"`
+	Version string               `json:"version"`
+	Result  shareholderNumResult `json:"result"`
+	Success bool                 `json:"success"`
+	Message string               `json:"message"`
+	Code    int                  `json:"code"`
 }
 
 type shareholderNumResult struct {
@@ -300,7 +300,7 @@ func (a *Adapter) GetShareholderCounts(ctx context.Context, code string) ([]adap
 		}
 
 		urlStr := "https://datacenter.eastmoney.com/securities/api/data/v1/get?" + params.Encode()
-		body, err := a.makeGetRequest(urlStr, "https://emweb.securities.eastmoney.com/")
+		body, err := a.makeGetRequestRaw(urlStr, "https://emweb.securities.eastmoney.com/")
 		if err != nil {
 			return nil, fmt.Errorf("请求股东户数第%d页失败: %w", page, err)
 		}
@@ -319,18 +319,18 @@ func (a *Adapter) GetShareholderCounts(ctx context.Context, code string) ([]adap
 
 		for _, item := range resp.Result.Data {
 			allCounts = append(allCounts, adapter.ShareholderCount{
-				Code:                 code,
-				SecurityCode:         item.SECURITY_CODE,
-				EndDate:              truncateDate(item.END_DATE),
-				HolderNum:            item.HOLDER_TOTAL_NUM,
-				HolderNumChangePct:   floatPtrOrZero(item.TOTAL_NUM_RATIO),
-				AvgFreeShares:        item.AVG_FREE_SHARES,
+				Code:                   code,
+				SecurityCode:           item.SECURITY_CODE,
+				EndDate:                truncateDate(item.END_DATE),
+				HolderNum:              item.HOLDER_TOTAL_NUM,
+				HolderNumChangePct:     floatPtrOrZero(item.TOTAL_NUM_RATIO),
+				AvgFreeShares:          item.AVG_FREE_SHARES,
 				AvgFreeSharesChangePct: floatPtrOrZero(item.AVG_FREESHARES_RATIO),
-				HoldFocus:            item.HOLD_FOCUS,
-				Price:                floatPtrOrZero(item.PRICE),
-				AvgHoldAmount:        floatPtrOrZero(item.AVG_HOLD_AMT),
-				HoldRatioTotal:       floatPtrOrZero(item.HOLD_RATIO_TOTAL),
-				FreeHoldRatioTotal:   floatPtrOrZero(item.FREEHOLD_RATIO_TOTAL),
+				HoldFocus:              item.HOLD_FOCUS,
+				Price:                  floatPtrOrZero(item.PRICE),
+				AvgHoldAmount:          floatPtrOrZero(item.AVG_HOLD_AMT),
+				HoldRatioTotal:         floatPtrOrZero(item.HOLD_RATIO_TOTAL),
+				FreeHoldRatioTotal:     floatPtrOrZero(item.FREEHOLD_RATIO_TOTAL),
 			})
 		}
 
@@ -420,7 +420,7 @@ func (a *Adapter) GetShareChanges(ctx context.Context, code string) ([]adapter.S
 		}
 
 		urlStr := "https://datacenter.eastmoney.com/securities/api/data/v1/get?" + params.Encode()
-		body, err := a.makeGetRequest(urlStr, "https://emweb.securities.eastmoney.com/")
+		body, err := a.makeGetRequestRaw(urlStr, "https://emweb.securities.eastmoney.com/")
 		if err != nil {
 			return nil, fmt.Errorf("请求股本变动第%d页失败: %w", page, err)
 		}
@@ -469,38 +469,38 @@ func (a *Adapter) GetShareChanges(ctx context.Context, code string) ([]adapter.S
 
 // institutionalHoldItem 东财机构持仓原始字段（RPT_F10_MAIN_ORGHOLDDETAILS）
 type institutionalHoldItem struct {
-	SECURITY_INNER_CODE string   `json:"SECURITY_INNER_CODE"`
-	REPORT_DATE         string   `json:"REPORT_DATE"`
-	ORG_TYPE            string   `json:"ORG_TYPE"`             // "00"=合计
-	TOTAL_ORG_NUM       int      `json:"TOTAL_ORG_NUM"`        // 机构总数(家)
-	TOTAL_FREE_SHARES   int64    `json:"TOTAL_FREE_SHARES"`    // 合计持股(股)
-	TOTAL_MARKET_CAP    *float64 `json:"TOTAL_MARKET_CAP"`     // 合计市值(元)
-	TOTAL_SHARES_RATIO  *float64 `json:"TOTAL_SHARES_RATIO"`   // 占流通股比(%)
-	SECUCODE            string   `json:"SECUCODE"`
-	IS_INCREASE         string   `json:"IS_INCREASE"`          // 1=增加 -1=减少
-	IS_COMPLETE         string   `json:"IS_COMPLETE"`
-	SECURITY_CODE       string   `json:"SECURITY_CODE"`
-	FREE_SHARES_CHANGE  *float64 `json:"FREE_SHARES_CHANGE"`   // 较上期变化(%)
-	CHANGE_RATIO        *float64 `json:"CHANGE_RATIO"`         // 持股变动幅度(%)
-	ORG_NAME_TYPE       string   `json:"ORG_NAME_TYPE"`        // "合计"
-	ALL_SHARES_RATIO    *float64 `json:"ALL_SHARES_RATIO"`     // 占总股本比例(%)
-	TOTAL_SHARES        int64    `json:"TOTAL_SHARES"`
-	TOTAL_FREE_SHARES_CHANGE int64  `json:"TOTAL_FREE_SHARES_CHANGE"` // 持仓变动数量(股)
-	CLOSE_PRICE         *float64 `json:"CLOSE_PRICE"`          // 报告期末收盘价
+	SECURITY_INNER_CODE      string   `json:"SECURITY_INNER_CODE"`
+	REPORT_DATE              string   `json:"REPORT_DATE"`
+	ORG_TYPE                 string   `json:"ORG_TYPE"`           // "00"=合计
+	TOTAL_ORG_NUM            int      `json:"TOTAL_ORG_NUM"`      // 机构总数(家)
+	TOTAL_FREE_SHARES        int64    `json:"TOTAL_FREE_SHARES"`  // 合计持股(股)
+	TOTAL_MARKET_CAP         *float64 `json:"TOTAL_MARKET_CAP"`   // 合计市值(元)
+	TOTAL_SHARES_RATIO       *float64 `json:"TOTAL_SHARES_RATIO"` // 占流通股比(%)
+	SECUCODE                 string   `json:"SECUCODE"`
+	IS_INCREASE              string   `json:"IS_INCREASE"` // 1=增加 -1=减少
+	IS_COMPLETE              string   `json:"IS_COMPLETE"`
+	SECURITY_CODE            string   `json:"SECURITY_CODE"`
+	FREE_SHARES_CHANGE       *float64 `json:"FREE_SHARES_CHANGE"` // 较上期变化(%)
+	CHANGE_RATIO             *float64 `json:"CHANGE_RATIO"`       // 持股变动幅度(%)
+	ORG_NAME_TYPE            string   `json:"ORG_NAME_TYPE"`      // "合计"
+	ALL_SHARES_RATIO         *float64 `json:"ALL_SHARES_RATIO"`   // 占总股本比例(%)
+	TOTAL_SHARES             int64    `json:"TOTAL_SHARES"`
+	TOTAL_FREE_SHARES_CHANGE int64    `json:"TOTAL_FREE_SHARES_CHANGE"` // 持仓变动数量(股)
+	CLOSE_PRICE              *float64 `json:"CLOSE_PRICE"`              // 报告期末收盘价
 }
 
 type institutionalHoldResponse struct {
-	Version string                     `json:"version"`
-	Result  institutionalHoldResult    `json:"result"`
-	Success bool                       `json:"success"`
-	Message string                     `json:"message"`
-	Code    int                        `json:"code"`
+	Version string                  `json:"version"`
+	Result  institutionalHoldResult `json:"result"`
+	Success bool                    `json:"success"`
+	Message string                  `json:"message"`
+	Code    int                     `json:"code"`
 }
 
 type institutionalHoldResult struct {
-	Pages int                       `json:"pages"`
-	Data  []institutionalHoldItem  `json:"data"`
-	Count int                       `json:"count"`
+	Pages int                     `json:"pages"`
+	Data  []institutionalHoldItem `json:"data"`
+	Count int                     `json:"count"`
 }
 
 // GetInstitutionalHoldings 获取机构持仓历史数据
@@ -536,7 +536,7 @@ func (a *Adapter) GetInstitutionalHoldings(ctx context.Context, code string) ([]
 		}
 
 		urlStr := "https://datacenter.eastmoney.com/securities/api/data/v1/get?" + params.Encode()
-		body, err := a.makeGetRequest(urlStr, "https://emweb.securities.eastmoney.com/")
+		body, err := a.makeGetRequestRaw(urlStr, "https://emweb.securities.eastmoney.com/")
 		if err != nil {
 			return nil, fmt.Errorf("请求机构持仓第%d页失败: %w", page, err)
 		}

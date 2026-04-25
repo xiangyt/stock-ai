@@ -164,6 +164,29 @@ func (s *DataCollectService) CollectShareChangesBatch(sourceName string) (*Colle
 
 // ========== 基本面批量写入辅助函数（包级函数）==========
 
+// clampDecimal 将浮点值钳制到 DECIMAL(p,s) 的合法范围
+// p=总精度位数, s=小数位位数 → 范围 [-10^(p-s), 10^(p-s)]
+// 例如 DECIMAL(10,4) → 范围 [-99999.9999, 99999.9999]
+func clampDecimal(v float64, precision, scale int) float64 {
+	maxIntPart := float64(intPow10(precision - scale))
+	if v > maxIntPart {
+		return maxIntPart
+	}
+	if v < -maxIntPart {
+		return -maxIntPart
+	}
+	return v
+}
+
+// intPow10 计算 10^n
+func intPow10(n int) int64 {
+	r := int64(1)
+	for i := 0; i < n; i++ {
+		r *= 10
+	}
+	return r
+}
+
 // upsertPerformanceReports 批量写入财报数据
 func upsertPerformanceReports(code string, reports []adapter.PerformanceReport) *CollectResult {
 	result := &CollectResult{Total: len(reports)}
@@ -186,18 +209,18 @@ func upsertPerformanceReports(code string, reports []adapter.PerformanceReport) 
 			GrossProfit:        r.GrossProfit,
 			ParentNetProfit:    r.ParentNetProfit,
 			DeductNetProfit:    r.DeductNetProfit,
-			RevenueYoY:         r.RevenueYoY,
-			ParentNetProfitYoY: r.ParentNetProfitYoY,
-			DeductNetProfitYoY: r.DeductNetProfitYoY,
-			ROEW:               r.ROEW,
-			ROEDW:              r.ROEDW,
-			ROA:                r.ROA,
-			GrossMargin:        r.GrossMargin,
-			NetMargin:          r.NetMargin,
-			CurrentRatio:       r.CurrentRatio,
-			QuickRatio:         r.QuickRatio,
-			DebtRatio:          r.DebtRatio,
-			OCFToRevenue:       r.OCFToRevenue,
+			RevenueYoY:         clampDecimal(r.RevenueYoY, 10, 4),
+			ParentNetProfitYoY: clampDecimal(r.ParentNetProfitYoY, 10, 4),
+			DeductNetProfitYoY: clampDecimal(r.DeductNetProfitYoY, 10, 4),
+			ROEW:               clampDecimal(r.ROEW, 10, 4),
+			ROEDW:              clampDecimal(r.ROEDW, 10, 4),
+			ROA:                clampDecimal(r.ROA, 10, 4),
+			GrossMargin:        clampDecimal(r.GrossMargin, 10, 4),
+			NetMargin:          clampDecimal(r.NetMargin, 10, 4),
+			CurrentRatio:       clampDecimal(r.CurrentRatio, 10, 4),
+			QuickRatio:         clampDecimal(r.QuickRatio, 10, 4),
+			DebtRatio:          clampDecimal(r.DebtRatio, 10, 4),
+			OCFToRevenue:       clampDecimal(r.OCFToRevenue, 10, 4),
 		}
 		rowsAffected := db.UpsertPerformanceReport(m)
 		if rowsAffected == -1 {
@@ -222,14 +245,14 @@ func upsertShareholderCounts(code string, counts []adapter.ShareholderCount) *Co
 			EndDate:             parseTradeDate(c.EndDate),
 			SecurityName:        c.SecurityName,
 			HolderNum:           c.HolderNum,
-			HolderNumChangePct:  c.HolderNumChangePct,
+			HolderNumChangePct:  clampDecimal(c.HolderNumChangePct, 10, 4),
 			AvgFreeShares:       c.AvgFreeShares,
-			AvgFreeSharesChgPct: c.AvgFreeSharesChangePct,
+			AvgFreeSharesChgPct: clampDecimal(c.AvgFreeSharesChangePct, 10, 4),
 			HoldFocus:           c.HoldFocus,
-			Price:               c.Price,
-			AvgHoldAmount:       c.AvgHoldAmount,
-			HoldRatioTotal:      c.HoldRatioTotal,
-			FreeHoldRatioTotal:  c.FreeHoldRatioTotal,
+			Price:               clampDecimal(c.Price, 10, 4),
+			AvgHoldAmount:       clampDecimal(c.AvgHoldAmount, 20, 4),
+			HoldRatioTotal:      clampDecimal(c.HoldRatioTotal, 10, 4),
+			FreeHoldRatioTotal:  clampDecimal(c.FreeHoldRatioTotal, 10, 4),
 		}
 		rowsAffected := db.UpsertShareholderCount(m)
 		if rowsAffected == -1 {

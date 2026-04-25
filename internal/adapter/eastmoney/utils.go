@@ -27,13 +27,24 @@ func (a *Adapter) makeGetRequest(urlStr, refer string) (string, error) {
 		a.updateHeaders()
 	}
 
+	return a.makeGetRequestRaw(urlStr, refer)
+}
+
+// makeGetRequestRaw 发送GET请求（不限流），保留反爬头和gzip解压
+func (a *Adapter) makeGetRequestRaw(urlStr, refer string) (string, error) {
+	ctx := context.Background()
+
+	// 确保headers已初始化
+	if a.currentUA == "" || (a.currentCookie == "" && time.Since(a.lastUpdateTime) > 1*time.Minute) {
+		a.updateHeaders()
+	}
+
 	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
 		return "", err
 	}
 
 	setCommonHeaders(req, a.currentUA, a.currentCookie, refer)
-	req.Header.Set("Referer", refer)
 
 	resp, err := a.client.Do(req)
 	if err != nil {
@@ -47,7 +58,6 @@ func (a *Adapter) makeGetRequest(urlStr, refer string) (string, error) {
 	}
 
 	bodyReader := resp.Body
-	// 自动解压 gzip 响应（Go http.Client 默认会自动处理，但显式声明 Accept-Encoding 时需手动兜底）
 	if resp.Header.Get("Content-Encoding") == "gzip" {
 		gr, err := gzip.NewReader(resp.Body)
 		if err != nil {

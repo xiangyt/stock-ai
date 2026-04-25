@@ -114,7 +114,7 @@ func (a *Adapter) GetPerformanceReports(ctx context.Context, code string) ([]ada
 			"&p=1&ps=200&sr=-1&st=REPORT_DATE&source=HSF10&client=PC",
 		secucode)
 
-	body, err := a.makeGetRequest(urlStr, "https://emweb.securities.eastmoney.com/")
+	body, err := a.makeGetRequestRaw(urlStr, "https://emweb.securities.eastmoney.com/")
 	if err != nil {
 		return nil, fmt.Errorf("fetch finance reports: %w", err)
 	}
