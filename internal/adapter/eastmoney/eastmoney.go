@@ -40,8 +40,8 @@ type Adapter struct {
 func New() *Adapter {
 	q := adapter.QuotaInfo{
 		DailyLimit: -1,
-		RateLimit:  3, // 3rps，东财push2his实际可承受更高
-		Burst:      300,
+		RateLimit:  1, // 2rps，东财push2his实际可承受更高
+		Burst:      100,
 	}
 	r, burst := q.LimiterConfig()
 	return &Adapter{

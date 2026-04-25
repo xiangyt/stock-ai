@@ -38,8 +38,8 @@ type Adapter struct {
 func New() *Adapter {
 	q := adapter.QuotaInfo{
 		DailyLimit: -1,
-		RateLimit:  100,
-		Burst:      200,
+		RateLimit:  200,
+		Burst:      400,
 	}
 	r, burst := q.LimiterConfig()
 	return &Adapter{

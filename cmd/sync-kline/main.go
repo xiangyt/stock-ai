@@ -89,8 +89,10 @@ func main() {
 		strings.ToUpper(modeStr), strings.Join(periodLabels, ","))
 
 	// 初始化
-	initAll(*configPath)
-
+	if err := initAll(*configPath); err != nil {
+		return
+	}
+	defer db.Close()
 	ctx := context.Background()
 	svc := service.NewSyncKLineService()
 
@@ -113,22 +115,24 @@ func main() {
 
 // ========== 初始化 ==========
 
-func initAll(configPath string) {
+func initAll(configPath string) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		log.Fatalf("加载配置失败: %v", err)
+		return err
 	}
 
 	if err := db.Init(&cfg.Database); err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
+		return err
 	}
-	defer db.Close()
 
-	if err := db.AutoMigrate(); err != nil {
-		log.Fatalf("数据库迁移失败: %v", err)
-	}
+	// if err := db.AutoMigrate(); err != nil {
+	// 	log.Fatalf("数据库迁移失败: %v", err)
+	// }
 
 	registerAdapters(cfg.DataSources)
+	return nil
 }
 
 // registerAdapters 参考 server/main.go 注册所有采集器

@@ -78,7 +78,7 @@ func (a *Adapter) updateHeaders() {
 // setCommonHeaders 设置公共请求头（对齐浏览器JSONP请求）
 func setCommonHeaders(req *http.Request, ua, cookie, refer string) {
 	req.Header.Set("Accept", "*/*")
-	req.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
+	req.Header.Set("Accept-Encoding", "gzip")
 	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Connection", "keep-alive")
@@ -89,8 +89,8 @@ func setCommonHeaders(req *http.Request, ua, cookie, refer string) {
 	req.Header.Set("Sec-Ch-Ua", "\"Chromium\";v=\"146\", \"Not-A.Brand\";v=\"24\", \"Google Chrome\";v=\"146\"")
 	req.Header.Set("Sec-Ch-Ua-Mobile", "?0")
 	req.Header.Set("Sec-Ch-Ua-Platform", "\"macOS\"")
-	req.Header.Set("Sec-Fetch-Dest", "script")   // JSONP请求用script
-	req.Header.Set("Sec-Fetch-Mode", "no-cors")    // JSONP跨域
+	req.Header.Set("Sec-Fetch-Dest", "script")  // JSONP请求用script
+	req.Header.Set("Sec-Fetch-Mode", "no-cors") // JSONP跨域
 	req.Header.Set("Sec-Fetch-Site", "same-site")
 	req.Header.Set("User-Agent", ua)
 }

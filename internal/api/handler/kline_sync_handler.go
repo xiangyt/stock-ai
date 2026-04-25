@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"stock-ai/internal/db"
 	"stock-ai/internal/service"
@@ -26,6 +27,8 @@ func NewKLineSyncHandler() *KLineSyncHandler {
 // SyncKLineRequest K线同步请求
 type SyncKLineRequest struct {
 	Periods string `json:"periods"` // 逗号分隔: daily,weekly,monthly,yearly（默认全部）
+	Mode    string `json:"mode"`    // 执行类型
+	Code    string `json:"code"`    // 股票代码
 }
 
 // parsePeriods 解析 periods 参数，返回周期列表
@@ -105,6 +108,13 @@ func (h *KLineSyncHandler) RunFill(c *gin.Context) {
 	}
 	periods := parsePeriods(req.Periods)
 
+	if time.Now().Hour() > 6 && time.Now().Hour() < 16 {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "补全金额任务仅在16点-第二天6点执行",
+		})
+		return
+	}
 	go func() {
 		results := h.service.FillMissingAmount(c.Request.Context(), periods)
 		logSyncResults("fill", results)
@@ -113,6 +123,28 @@ func (h *KLineSyncHandler) RunFill(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "金额补全已启动",
+	})
+}
+
+// Debug 调试接口
+// POST /api/v1/sync-kline/debug
+func (h *KLineSyncHandler) Debug(c *gin.Context) {
+	var req SyncKLineRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	periods := parsePeriods(req.Periods)
+
+	err := h.service.DebugSyncSingle(c.Request.Context(), periods, req.Code, req.Mode)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "调试同步已启动",
 	})
 }
 

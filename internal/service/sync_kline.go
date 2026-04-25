@@ -20,9 +20,9 @@ import (
 type SyncMode string
 
 const (
-	SyncModeInit  SyncMode = "init" // 初始化：同花顺全量拉取骨架
+	SyncModeInit  SyncMode = "init"  // 初始化：同花顺全量拉取骨架
 	SyncModeDaily SyncMode = "daily" // 每日增量：同花顺 GetToday 等当日/当周/当月/当年
-	SyncModeFill  SyncMode = "fill" // 补全金额：东财全量拉取补 amount=0 的记录
+	SyncModeFill  SyncMode = "fill"  // 补全金额：东财全量拉取补 amount=0 的记录
 )
 
 // AllPeriods 所有支持的周期
@@ -37,23 +37,23 @@ var AllPeriods = []db.KLinePeriod{
 
 // SyncResult 单只股票同步结果
 type SyncResult struct {
-	Code          string       `json:"code"`
-	Period        db.KLinePeriod `json:"period"`
-	Mode          SyncMode     `json:"mode"`
-	LatestDate    string       `json:"latest_date"`    // DB中最新日期（init/fill用）
-	SourceUsed    string       `json:"source_used"`    // ths / eastmoney / none
-	UpsertCount   int          `json:"upsert_count"`   // 实际写入条数
-	SkipNoDelta   bool         `json:"skip_no_delta"`  // 无需更新
-	Error         error        `json:"error,omitempty"`
+	Code        string         `json:"code"`
+	Period      db.KLinePeriod `json:"period"`
+	Mode        SyncMode       `json:"mode"`
+	LatestDate  string         `json:"latest_date"`   // DB中最新日期（init/fill用）
+	SourceUsed  string         `json:"source_used"`   // ths / eastmoney / none
+	UpsertCount int            `json:"upsert_count"`  // 实际写入条数
+	SkipNoDelta bool           `json:"skip_no_delta"` // 无需更新
+	Error       error          `json:"error,omitempty"`
 }
 
 // SyncBatchResult 批量同步汇总
 type SyncBatchResult struct {
-	Total       int         `json:"total"`
-	Success     int         `json:"success"`
-	SkipNoDelta int         `json:"skip_no_delta"`
-	Fail        int         `json:"fail"`
-	CostSeconds float64     `json:"cost_seconds"`
+	Total       int          `json:"total"`
+	Success     int          `json:"success"`
+	SkipNoDelta int          `json:"skip_no_delta"`
+	Fail        int          `json:"fail"`
+	CostSeconds float64      `json:"cost_seconds"`
 	Details     []SyncResult `json:"details,omitempty"`
 }
 
@@ -83,8 +83,10 @@ func (s *SyncKLineService) InitAllStocks(ctx context.Context, periods []db.KLine
 }
 
 // SyncDailyForAll 每日增量模式：
-//   日K → 同花顺 GetToday 获取当天完整数据（含Amount）
-//   周K/月K/年K → 对应当期聚合数据，同周期则UPDATE否则INSERT
+//
+//	日K → 同花顺 GetToday 获取当天完整数据（含Amount）
+//	周K/月K/年K → 对应当期聚合数据，同周期则UPDATE否则INSERT
+//
 // 适用场景：每天定时跑一次
 func (s *SyncKLineService) SyncDailyForAll(ctx context.Context, periods []db.KLinePeriod) []SyncBatchResult {
 	var results []SyncBatchResult
@@ -95,8 +97,10 @@ func (s *SyncKLineService) SyncDailyForAll(ctx context.Context, periods []db.KLi
 }
 
 // FillMissingAmount 补全金额模式：
-//   东财全量拉取，仅覆盖 DB 中 amount=0 的记录
-//   东财不稳定，应低频调用（如每周一次），每次可限制处理数量
+//
+//	东财全量拉取，仅覆盖 DB 中 amount=0 的记录
+//	东财不稳定，应低频调用（如每周一次），每次可限制处理数量
+//
 // 适用场景：逐步将同花顺骨架数据的空金额补齐
 func (s *SyncKLineService) FillMissingAmount(ctx context.Context, periods []db.KLinePeriod) []SyncBatchResult {
 	var results []SyncBatchResult
@@ -106,7 +110,27 @@ func (s *SyncKLineService) FillMissingAmount(ctx context.Context, periods []db.K
 	return results
 }
 
+// DebugSyncSingle 调试同步单只股票的逻辑
+func (s *SyncKLineService) DebugSyncSingle(ctx context.Context, periods []db.KLinePeriod, code string, mode string) error {
+	if len(periods) == 0 || code == "" || mode == "" {
+		return nil
+	}
+
+	stock, err := db.FindStockByCode(code)
+	if err != nil {
+		return err
+	}
+
+	sr := s.syncSingle(ctx, stock.Code, periods[0], SyncMode(mode))
+	if sr.Error != nil {
+		return sr.Error
+	}
+	return nil
+}
+
 // runBatch 遍历所有股票执行指定周期和模式的同步
+// fill 模式下：单只失败立即终止（东财不稳定，连续失败无意义）
+// init/daily 模式下：单只失败不影响其他
 func (s *SyncKLineService) runBatch(ctx context.Context, period db.KLinePeriod, mode SyncMode) SyncBatchResult {
 	label := db.KLineLabel(period)
 	stocks := db.LoadAllStockCodes()
@@ -124,13 +148,31 @@ func (s *SyncKLineService) runBatch(ctx context.Context, period db.KLinePeriod, 
 		sr := s.syncSingle(ctx, stock.Code, period, mode)
 		if sr.Error != nil {
 			batch.Fail++
+			batch.Details = append(batch.Details, sr)
 			log.Printf("  [%d/%d] ❌ %s (%s): %v", i+1, len(stocks), stock.Code, stock.Name, sr.Error)
-		} else if sr.SkipNoDelta {
+
+			if mode == SyncModeFill {
+				// fill 模式：东财不稳定，单只失败即终止整个批次
+				batch.CostSeconds = time.Since(start).Seconds()
+				log.Printf("[%s-%s] ⛔ 单只失败终止! 已处理=%d/%d, 成功=%d 跳过=%d 失败=%d",
+					mode, label, i+1, len(stocks), batch.Success, batch.SkipNoDelta, batch.Fail)
+				return batch
+			}
+			continue // init/daily: 继续处理下一只
+		}
+
+		batch.Details = append(batch.Details, sr)
+		if sr.SkipNoDelta {
 			batch.SkipNoDelta++
 		} else {
 			batch.Success++
 		}
-		batch.Details = append(batch.Details, sr)
+		if batch.Success > 50 && mode == SyncModeFill { // fill 模式：单次只处理50只，防止反爬
+			batch.CostSeconds = time.Since(start).Seconds()
+			log.Printf("[%s-%s] 完成前50只! 成功=%d 跳过=%d 失败=%d 耗时=%.1fs",
+				mode, label, batch.Success, batch.SkipNoDelta, batch.Fail, batch.CostSeconds)
+			return batch
+		}
 	}
 
 	batch.CostSeconds = time.Since(start).Seconds()
@@ -211,7 +253,7 @@ func (s *SyncKLineService) syncSingleInit(ctx context.Context, code string, peri
 //
 // 策略：以全量数据为基准，对齐截断重写 + 当期精刷
 //   ① 同花顺全量采集 → 完整数据集 A
-//   ② DB 最新 N 条      → 本地窗口 W（默认取尾部10条做匹配）
+//   ② DB 最新 N 条      → 本地窗口 W（默认取尾部5条做匹配）
 //   ③ A ∩ W 匹配找锚定日期 D（W 中能在 A 里找到对应的那条）
 //   ④ DELETE trade_date > D 的所有记录（清除脏/过期数据）
 //   ⑤ A 全量 upsert（补齐缺口 + 覆盖旧值）
@@ -219,7 +261,7 @@ func (s *SyncKLineService) syncSingleInit(ctx context.Context, code string, peri
 //
 // 这样每天都能自愈：即使前几天失败了，全量对齐也能自动修复
 
-const dailyAlignWindow = 10 // 对齐窗口大小：DB 取最新 N 条和全量数据匹配
+const dailyAlignWindow = 5 // 对齐窗口大小：DB 取最新 N 条和全量数据匹配
 
 // syncSingleDaily 每日增量：全量对齐截断 + 当期精刷
 func (s *SyncKLineService) syncSingleDaily(ctx context.Context, code string, period db.KLinePeriod, result *SyncResult) SyncResult {
@@ -228,10 +270,30 @@ func (s *SyncKLineService) syncSingleDaily(ctx context.Context, code string, per
 	if fetchErr != nil {
 		result.Error = fmt.Errorf("同花顺全量采集失败: %w", fetchErr)
 		return *result
+	} else if len(fullData) == 0 {
+		result.Error = fmt.Errorf("同花顺全量采集结果为空")
+		return *result
+	}
+	currentItem, currErr := s.fetchCurrentPeriodData(ctx, "ths", code, period)
+	if currErr != nil {
+		result.Error = fmt.Errorf("同花顺当期采集失败: %w", currErr)
+		return *result
+	}
+	// 同花顺有时候最后一条数据有问题,日k追加，其他覆盖
+	if period == db.KLinePeriodDaily && fullData[len(fullData)-1].Date != currentItem.Date {
+		fullData = append(fullData, *currentItem)
+	} else {
+		fullData[len(fullData)-1] = *currentItem
 	}
 
 	// Step ②: DB 最新 N 条
 	dbDates, dbErr := db.FindLatestNKlinesAny(period, code, dailyAlignWindow)
+	if dbErr != nil {
+		if !errors.Is(dbErr, gorm.ErrRecordNotFound) {
+			result.Error = fmt.Errorf("查询DB最新数据失败: %w", dbErr)
+			return *result
+		}
+	}
 
 	// Step ③: 找锚定日期 — DB 尾部数据在 fullData 中能找到的最近一条
 	//
@@ -242,27 +304,22 @@ func (s *SyncKLineService) syncSingleDaily(ctx context.Context, code string, per
 	// 从两端向中间扫描：i 指向 fullDates 最新端，j 指向 dbDates 最新端
 	// 找到第一个相等的日期即为锚定点。O(len(dbDates)+len(fullData)), O(1) 额外空间
 	var anchorDate int
-	if dbErr == nil && len(dbDates) > 0 && len(fullData) > 0 {
-		anchorDate = s.findAnchorDate(fullData, dbDates)
-		result.LatestDate = db.FormatTradeDate(anchorDate)
-		log.Printf("  [%s][%s] 锚定日期: %s (DB尾部%d条中匹配)", code, db.KLineLabel(period), result.LatestDate, len(dbDates))
-	} else if errors.Is(dbErr, gorm.ErrRecordNotFound) || len(dbDates) == 0 {
+	if len(dbDates) == 0 {
 		// 无历史数据，不需要截断，直接写入全量即可
 		log.Printf("  [%s][%s] 无历史数据，直接写入全量", code, db.KLineLabel(period))
 	} else {
-		result.Error = fmt.Errorf("查询DB最新数据失败: %w", dbErr)
-		return *result
+		anchorDate = s.findAnchorDate(fullData, dbDates)
+		result.LatestDate = db.FormatTradeDate(anchorDate)
+		log.Printf("  [%s][%s] 锚定日期: %s (DB尾部%d条中匹配)", code, db.KLineLabel(period), result.LatestDate, len(dbDates))
 	}
 
 	// Step ④: 截断脏数据（删除锚定之后的所有记录）
-	if anchorDate > 0 {
-		_, delErr := db.DeleteKlinesAfterDate(period, code, anchorDate)
-		if delErr != nil {
-			result.Error = fmt.Errorf("截断脏数据失败: %w", delErr)
-			return *result
-		}
-		log.Printf("  [%s][%s] 截断完成，清除锚定日期之后的数据", code, db.KLineLabel(period))
+	_, delErr := db.DeleteKlinesAfterDate(period, code, anchorDate)
+	if delErr != nil {
+		result.Error = fmt.Errorf("截断脏数据失败: %w", delErr)
+		return *result
 	}
+	log.Printf("  [%s][%s] 截断完成，清除锚定日期之后的数据", code, db.KLineLabel(period))
 
 	// Step ⑤: 只插入锚定日期 D 之后的数据（增量）
 	anchorDateStr := ""
@@ -275,18 +332,6 @@ func (s *SyncKLineService) syncSingleDaily(ctx context.Context, code string, per
 	result.SourceUsed = "ths"
 	if failed > 0 {
 		log.Printf("  [%s][%s] 增量upsert: 成功%d 失败%d", code, db.KLineLabel(period), success, failed)
-	}
-
-	// Step ⑥: 精刷当期（GetToday/ThisWeek/ThisMonth/ThisYear）— 获取含 Amount 的精确当期数据
-	currentItem, currErr := s.fetchCurrentPeriodData(ctx, "ths", code, period)
-	if currErr != nil {
-		// 当期精刷失败不阻塞主流程，全量数据已经写入了
-		log.Printf("  [%s][%s] ⚠️ 当期精刷失败(不影响全量): %v", code, db.KLineLabel(period), currErr)
-	} else if currentItem != nil {
-		currSuccess, _ := s.upsertByPeriod(code, period, []adapter.StockPriceDaily{*currentItem})
-		if currSuccess > 0 {
-			log.Printf("  [%s][%s] 当期精刷完成 (trade_date=%s)", code, db.KLineLabel(period), currentItem.Date)
-		}
 	}
 
 	log.Printf("  [%s][%s] ✅ daily 完成: upsert=%d (源=%s)", code, db.KLineLabel(period), result.UpsertCount, result.SourceUsed)
@@ -496,12 +541,10 @@ func (s *SyncKLineService) upsertOne(code string, period db.KLinePeriod, tradeDa
 // dbDates: DB 最新 N 条，按 trade_date DESC 排列
 //
 // 算法：
-//   i 从 fullData 末尾(最新)向左扫描
-//   j 从 dbDates 头部(最新)向右扫描
-//   因为两者都指向最新端，找到第一个相等的日期即为锚定点
-//   如果 fullData[i] > dbDates[j] → 说明 API 比 DB 更新，j++ 尝试更早的 DB 记录
-//   如果 fullData[i] < dbDates[j] → 不可能发生(DB最新不可能比API全量最新还新)，i--
-//   相等 → 找到锚定！
+//
+//	i 从 fullData 末尾(最新)向左扫描
+//	j 从 dbDates 头部(最新)向右扫描
+//	因为两者都指向最新端，找到第一个相等的日期即为锚定点
 func (s *SyncKLineService) findAnchorDate(fullData []adapter.StockPriceDaily, dbDates []int) int {
 	// 预解析 fullData 的日期为整数数组，避免循环内重复 parse
 	n := len(fullData)
@@ -518,11 +561,11 @@ func (s *SyncKLineService) findAnchorDate(fullData []adapter.StockPriceDaily, db
 			return fullDates[i] // 锚定命中
 		}
 		if fullDates[i] > dbDates[j] {
-			// API 数据比 DB 这条更新 → 看 DB 更早的记录能否匹配
-			j++
-		} else {
-			// API 数据比 DB 这条更旧 → 看 API 更早的记录
+			// API 数据比 DB 这条更新 → 看 API 更早的记录能否匹配
 			i--
+		} else {
+			// API 数据比 DB 这条更旧 → 看 DB 更早的记录
+			j++
 		}
 	}
 
