@@ -275,17 +275,17 @@ func (s *SnapshotService) buildSnapshotFromTHSKline(code string, tradeDate int, 
 	}
 
 	// --- 估值指标：从预处理分组中查找当日有效财报 ---
-	report := groups.findLatestEffectiveReport(tradeDate)
+	report := groups.findLatest(tradeDate)
 	if report != nil && snap.TotalMarketCap > 0 {
 		marketCap := snap.TotalMarketCap
 
-		// 每股净资产 & 市净率
+		// 每股净资产 & 市净率（取混合组最新财报的 BVPS）
 		snap.BVPS = report.BVPS
 		if report.BVPS > 0 {
 			snap.PB = closePriceYuan / report.BVPS
 		}
 
-		// 盈利能力指标：直接取财报原始值
+		// 盈利能力指标：直接取混合组最新财报原始值
 		snap.ROE = report.ROEW           // 净资产收益率-加权(%)
 		snap.ROA = report.ROA            // 总资产收益率(%)
 		snap.GrossMargin = report.GrossMargin // 销售毛利率(%)
@@ -294,7 +294,7 @@ func (s *SnapshotService) buildSnapshotFromTHSKline(code string, tradeDate int, 
 		// 每股指标
 		snap.BasicEPS = report.BasicEPS       // 基本每股收益(元)
 
-		// 财报当期数据：直接取最新一期财报值
+		// 财报当期数据：取混合组最新一期财报值
 		snap.ParentNetProfit = report.ParentNetProfit // 归母净利润
 		snap.DeductNetProfit = report.DeductNetProfit // 扣非净利润
 		snap.TotalRevenue = report.TotalRevenue        // 营业总收入
@@ -302,30 +302,26 @@ func (s *SnapshotService) buildSnapshotFromTHSKline(code string, tradeDate int, 
 		// 偿债能力指标
 		snap.DebtRatio = report.DebtRatio              // 资产负债率(%)
 
-		// 市盈率(动态): 总市值 / (最近一期季报归母净利润 × 年化系数)
-		//   一季报 → ×4, 中报 → ×2, 三季报 → ÷3×4, 年报 → 跳过
+		// 市盈率(动态): 总市值 / (最新财报归母净利润 × 年化系数)
+		//   季报 → 按类型年化（一季报×4 / 中报×2 / 三季报÷3×4）
+		//   年报 → 直接用全年利润（无需年化，此时三种 PE 一致）
 		snap.PEDynamic = s.calcDynamicPE(marketCap, report)
 
-		// 市盈率(静态): 总市值 / 最近一期年报归母净利润（从年报组查找）
-		snap.PEStatic = s.calcStaticPE(marketCap, groups)
+		// 市盈率(静态): 总市值 / tradeDate 之前最新年报的归母净利润
+		snap.PEStatic = s.calcStaticPE(marketCap, groups, tradeDate)
 
-		// 市盈率(TTM): 总市值 / 最近四个单季度归母净利润之和（差值法）
-		snap.PETTM = s.calcTTMPE(marketCap, groups)
+		// TTM 值（利润+营收）：只计算一次，PETTM 和 PSTTM 共用
+		// 公式: 最新累计 + (上年年报 - 上年同期)
+		ttm := s.calcTTMValues(report, groups)
 
-		// 市销率(TTM): 总市值 / 最近4个季度营业总收入之和（差值法推导）
-		qProfits := s.calcQuarterlyProfits(groups)
-		if len(qProfits) > 0 {
-			startIdx := len(qProfits) - 4
-			if startIdx < 0 {
-				startIdx = 0
-			}
-			var ttmRevenue float64
-			for i := startIdx; i < len(qProfits); i++ {
-				ttmRevenue += qProfits[i].Revenue
-			}
-			if ttmRevenue > 0 {
-				snap.PSTTM = marketCap / ttmRevenue
-			}
+		// 市盈率(TTM): 总市值 / TTM 归母净利润
+		if ttm.Profit != 0 {
+			snap.PETTM = marketCap / ttm.Profit // 允许负值 → 负PE
+		}
+
+		// 市销率(TTM): 总市值 / TTM 营业总收入（与 TTM PE 同规则）
+		if ttm.Revenue > 0 {
+			snap.PSTTM = marketCap / ttm.Revenue
 		}
 	}
 
@@ -345,7 +341,10 @@ func (s *SnapshotService) buildSnapshotFromTHSKline(code string, tradeDate int, 
 //   - 年报:   跳过不计算（年报与一季报通常同日公告，用一季报数据）
 //
 // 允许净利润为负 → PE 为负值（亏损公司）。
-// 返回 0 表示无法计算（年报类型或年化利润恰好为 0）。
+// 返回 0 表示年化利润恰好为 0（无法定义PE）。
+//
+// 注意：年报本身就是全年利润，不需要年化。当最新有效财报是年报
+// （通常意味着一季报尚未发布）时，动态PE与静态PE、TTM PE 一致。
 func (s *SnapshotService) calcDynamicPE(marketCap float64, r *model.PerformanceReport) float64 {
 	var annualizedProfit float64
 	switch r.ReportType {
@@ -356,7 +355,7 @@ func (s *SnapshotService) calcDynamicPE(marketCap float64, r *model.PerformanceR
 	case "三季报":
 		annualizedProfit = r.ParentNetProfit / 3.0 * 4
 	case "年报":
-		return 0 // 跳过：年报和一季报公告日期通常相同，应使用一季报数据做动态预估
+		annualizedProfit = r.ParentNetProfit // 年报 = 全年利润，无需年化
 	default:
 		annualizedProfit = r.ParentNetProfit * 4 // 未识别的 ReportType，默认按一季报处理
 	}
@@ -369,52 +368,85 @@ func (s *SnapshotService) calcDynamicPE(marketCap float64, r *model.PerformanceR
 
 // calcStaticPE 计算市盈率(静态)
 //
-// 规则：从年报组(按 notice_date 降序)取最近一期年报，
+// 规则：从年报组中查找 notice_date <= tradeDate 的最新一期年报，
 //
 //	用其归母净利润作为"全年净利润"，总市值 ÷ 该值。
-//	如果没有可用的年报（如新股上市不足一年），返回 0。
-func (s *SnapshotService) calcStaticPE(marketCap float64, groups *reportGroups) float64 {
-	// 年报组已按 notice_date 升序，从末尾往前找
-	for i := len(groups.Annual) - 1; i >= 0; i-- {
-		if groups.Annual[i].ParentNetProfit == 0 {
-			return 0
-		}
-		return marketCap / groups.Annual[i].ParentNetProfit // 允许负值 → 负PE
-	}
-	return 0
-}
-
-// calcTTMPE 计算市盈率(TTM) —— 基于单季度利润差值法
-//
-// 规则：通过财报数据的差值推导各单季度归母净利润：
-//
-//	Q1 = 一季报.ParentNetProfit
-//	Q2 = 中报.ParentNetProfit − 一季报.ParentNetProfit
-//	Q3 = 三季报.ParentNetProfit − 中报.ParentNetProfit
-//	Q4 = 年报.ParentNetProfit − 三季报.ParentNetProfit
-//
-// 取最近4个可用单季度利润求和 → 总市值 ÷ TTM利润之和。
-func (s *SnapshotService) calcTTMPE(marketCap float64, groups *reportGroups) float64 {
-	qProfits := s.calcQuarterlyProfits(groups)
-	if len(qProfits) == 0 {
+//	如果当日之前无可用的年报（如新股上市不足一年），返回 0。
+func (s *SnapshotService) calcStaticPE(marketCap float64, groups *reportGroups, tradeDate int) float64 {
+	annual := groups.findLatestAnnual(tradeDate)
+	if annual == nil || annual.ParentNetProfit == 0 {
 		return 0
 	}
+	return marketCap / annual.ParentNetProfit // 允许负值 → 负PE
+}
 
-	// 取最近4个单季度（列表已按年份+季度升序）
-	startIdx := len(qProfits) - 4
-	if startIdx < 0 {
-		startIdx = 0
+// ttmValues TTM 计算结果（利润 + 营收）
+type ttmValues struct {
+	Profit  float64 // TTM 归母净利润
+	Revenue float64 // TTM 营业总收入
+}
+
+// calcTTMValues 计算 TTM（滚动四季）的归母净利润和营业总收入
+//
+// 核心公式：TTM = 最新财报累计值 + (上年年报累计值 - 上年同期财报累计值)
+//
+// 等价于"最近4个单季度之和"，但不需要逐季拆分，只需3个数据点：
+//   - 最新一期财报（一季报/中报/三季报/年报）
+//   - 上一年年报
+//   - 上一年同期类型财报
+//
+// 示例（最新=2025一季报时）:
+//
+//	TTM = Q1_2025利润 + (Full_2024利润 − Q1_2024利润)
+//	    = 2025Q1 + (2024全年 − 2024Q1)
+//	    = 2025Q1 + 2024Q2 + 2024Q3 + 2024Q4   ← 正好是最近4个季度
+//
+// 各场景:
+//
+//	最新=一季报 → TTM = 本年一季报   + (上年年报 - 上年一季报)
+//	最新=中报   → TTM = 本年中报     + (上年年报 - 上年中报)
+//	最新=三季报 → TTM = 本年三季报   + (上年年报 - 上年三季报)
+//	最新=年报   → TTM = 年报(=全年)                    ← 四种 PE 一致
+//
+// 返回零值表示数据不足无法计算。
+func (s *SnapshotService) calcTTMValues(latest *model.PerformanceReport, groups *reportGroups) ttmValues {
+	if latest == nil {
+		return ttmValues{}
 	}
 
-	var ttmSum float64
-	for i := startIdx; i < len(qProfits); i++ {
-		ttmSum += qProfits[i].SingleProfit
-	}
+	switch latest.ReportType {
+	case "年报":
+		// 年报本身就是全年数据，无需补齐
+		return ttmValues{Profit: latest.ParentNetProfit, Revenue: latest.TotalRevenue}
 
-	if ttmSum == 0 {
-		return 0 // 除零保护，允许负值但不允许恰好为0
+	case "一季报", "中报", "三季报":
+		prevAnnual := s.findReportByYearAndType(groups, latest.ReportDate/10000-1, "年报")
+		prevSame := s.findReportByYearAndType(groups, latest.ReportDate/10000-1, latest.ReportType)
+
+		if prevAnnual == nil || prevSame == nil {
+			return ttmValues{} // 缺上年数据，无法计算
+		}
+
+		return ttmValues{
+			Profit:  latest.ParentNetProfit + (prevAnnual.ParentNetProfit - prevSame.ParentNetProfit),
+			Revenue: latest.TotalRevenue + (prevAnnual.TotalRevenue - prevSame.TotalRevenue),
+		}
+
+	default:
+		return ttmValues{}
 	}
-	return marketCap / ttmSum // 允许负值 → 负PE（亏损公司）
+}
+
+// findReportByYearAndType 从混合组中按报告期年份+报表类型查找指定财报
+//
+// 用于 TTM 计算中定位"上年年报"和"上年同期季报"。
+func (s *SnapshotService) findReportByYearAndType(groups *reportGroups, year int, reportType string) *model.PerformanceReport {
+	for i := range groups.All {
+		if groups.All[i].ReportDate/10000 == year && groups.All[i].ReportType == reportType {
+			return &groups.All[i]
+		}
+	}
+	return nil
 }
 
 // ================================================================
@@ -519,154 +551,74 @@ func (s *SnapshotService) loadAllReports(code string) ([]model.PerformanceReport
 
 // reportGroups 预处理后的财报分组
 //
-// 将原始财报列表拆分为两组，用于后续 PE 精确计算：
-//   - Quarterly: 一季报 / 中报 / 三季报（按 notice_date 升序）
-//   - Annual:    年报（按 notice_date 升序）
+// 将原始财报列表拆分为三组，分别用于三种 PE 及其他指标的精确计算：
+//   - Quarterly: 一季报 / 中报 / 三季报（按 notice_date 升序）→ 动态 PE
+//   - Annual:    年报（按 notice_date 升序）                     → 静态 PE
+//   - All:       季报 + 年报合并（按 notice_date 升序）          → TTM PE / PB / ROE 等
 //   - 其他类型（如盈报、快报等）舍弃
 type reportGroups struct {
 	Quarterly []model.PerformanceReport // 季度财报
 	Annual    []model.PerformanceReport // 年报
+	All       []model.PerformanceReport // 混合（季报+年报）
 }
 
-// preprocessReports 预处理财报：按类型分为季度组和年报组
+// preprocessReports 预处理财报：按类型分为季度组、年报组和混合组
 func preprocessReports(reports []model.PerformanceReport) reportGroups {
 	var g reportGroups
 	for i := range reports {
 		switch reports[i].ReportType {
 		case "一季报", "中报", "三季报":
 			g.Quarterly = append(g.Quarterly, reports[i])
+			g.All = append(g.All, reports[i])
 		case "年报":
 			g.Annual = append(g.Annual, reports[i])
+			g.All = append(g.All, reports[i])
 		}
 		// 其他类型静默舍弃
 	}
+
+	// 三组均按 notice_date 升序排列，保证二分/线性查找的一致性
+	sort.Slice(g.Quarterly, func(i, j int) bool { return g.Quarterly[i].NoticeDate < g.Quarterly[j].NoticeDate })
+	sort.Slice(g.Annual, func(i, j int) bool { return g.Annual[i].NoticeDate < g.Annual[j].NoticeDate })
+	sort.Slice(g.All, func(i, j int) bool { return g.All[i].NoticeDate < g.All[j].NoticeDate })
+
 	return g
 }
 
-// findLatestEffectiveReport 从预处理后的财报分组中查找 notice_date <= trade_date 的最新一期财报
+// findLatestFromList 从给定报表切片中查找 notice_date <= tradeDate 的最新一条
 //
-// 查找优先级：季度组(一季报/中报/三季报) 和 年报组合并后，取 notice_date 最大且 <= trade_date 的那条。
-// 用于动态 PE（判断最新季报类型）、PB（BVPS）、PS（TotalRevenue）。
-//
-// 返回 nil 表示当天无可用财报。
-func (g *reportGroups) findLatestEffectiveReport(tradeDate int) *model.PerformanceReport {
+// 通用底层方法，要求列表已按 notice_date 升序排列。
+// 返回 nil 表示无匹配记录。
+func findLatestFromList(list []model.PerformanceReport, tradeDate int) *model.PerformanceReport {
 	var latest *model.PerformanceReport
-	latestNoticeDate := 0
-
-	// 遍历两组，找 notice_date 最大且不超过 trade_date 的记录
-	for i := range g.Quarterly {
-		if g.Quarterly[i].NoticeDate <= tradeDate && g.Quarterly[i].NoticeDate > latestNoticeDate {
-			latest = &g.Quarterly[i]
-			latestNoticeDate = g.Quarterly[i].NoticeDate
+	for i := range list {
+		if list[i].NoticeDate <= tradeDate {
+			latest = &list[i]
+		} else {
+			break // 升序排列，后续日期更大无需继续
 		}
 	}
-	for i := range g.Annual {
-		if g.Annual[i].NoticeDate <= tradeDate && g.Annual[i].NoticeDate > latestNoticeDate {
-			latest = &g.Annual[i]
-			latestNoticeDate = g.Annual[i].NoticeDate
-		}
-	}
-
 	return latest
 }
 
-// quarterSingleProfit 单季度利润+营收条目（用于 TTM 计算）
-type quarterSingleProfit struct {
-	Year         int     // 年份
-	Quarter      int     // 季度 1~4
-	SingleProfit float64 // 该季度归母净利润（差值法推导）
-	Revenue      float64 // 该季度营业总收入（差值法推导）
+// findLatestQuarterly 从季报组中查找最新一期季报
+//
+// 用于动态 PE：用最近一期季报归母净利润 × 年化系数。
+func (g *reportGroups) findLatestQuarterly(tradeDate int) *model.PerformanceReport {
+	return findLatestFromList(g.Quarterly, tradeDate)
 }
 
-// calcQuarterlyProfits 从预处理的财报分组中推导各单季度归母净利润
+// findLatestAnnual 从年报组中查找最新一期年报
 //
-// 差值公式：
+// 用于静态 PE：用最近一期年报归母净利润作为全年利润。
+func (g *reportGroups) findLatestAnnual(tradeDate int) *model.PerformanceReport {
+	return findLatestFromList(g.Annual, tradeDate)
+}
+
+// findLatest 从混合组中查找最新一期任意类型财报
 //
-//	Q1 = 一季报.ParentNetProfit
-//	Q2 = 中报.ParentNetProfit − 一季报.ParentNetProfit
-//	Q3 = 三季报.ParentNetProfit − 中报.ParentNetProfit
-//	Q4 = 年报.ParentNetProfit − 三季报.ParentNetProfit
-//
-// 返回按(年份,季度)升序排列的单季度利润列表。
-func (s *SnapshotService) calcQuarterlyProfits(groups *reportGroups) []quarterSingleProfit {
-
-	// 按报告期合并排序（年报和季报都参与排序，保证时间顺序）
-	type taggedReport struct {
-		r          *model.PerformanceReport
-		reportDate int
-		isAnnual   bool
-	}
-	var merged []taggedReport
-	for i := range groups.Quarterly {
-		merged = append(merged, taggedReport{r: &groups.Quarterly[i], reportDate: groups.Quarterly[i].ReportDate})
-	}
-	for i := range groups.Annual {
-		merged = append(merged, taggedReport{r: &groups.Annual[i], reportDate: groups.Annual[i].ReportDate, isAnnual: true})
-	}
-	sort.Slice(merged, func(i, j int) bool { return merged[i].reportDate < merged[j].reportDate })
-
-	// 逐年维护累计利润+营收状态，用差值推算单季度值
-	type yearState struct {
-		q1                           float64 // 一季报累计 (=Q1单季)
-		h1                           float64 // 中报累计   (=Q1+Q2)
-		q3                           float64 // 三季报累计 (=Q1+Q2+Q3)
-		full                         float64 // 年报累计   (=Q1+Q2+Q3+Q4)
-		rq1                          float64 // 一季报营收累计 (=Q1单季营收)
-		rh1                          float64 // 中报营收累计   (=Q1+Q2营收)
-		rq3                          float64 // 三季报营收累计 (=Q1+Q2+Q3营收)
-		rfull                        float64 // 年报营收累计   (=Q1+Q2+Q3+Q4营收)
-		hasQ1, hasH1, hasQ3, hasFull bool
-	}
-	states := make(map[int]*yearState)
-
-	var result []quarterSingleProfit
-
-	for _, item := range merged {
-		year := item.r.ReportDate / 10000
-		st, ok := states[year]
-		if !ok {
-			st = &yearState{}
-			states[year] = st
-		}
-
-		switch item.r.ReportType {
-		case "一季报":
-			st.q1 = item.r.ParentNetProfit
-			st.rq1 = item.r.TotalRevenue
-			st.hasQ1 = true
-			result = append(result, quarterSingleProfit{Year: year, Quarter: 1, SingleProfit: item.r.ParentNetProfit, Revenue: item.r.TotalRevenue})
-
-		case "中报":
-			st.h1 = item.r.ParentNetProfit
-			st.rh1 = item.r.TotalRevenue
-			st.hasH1 = true
-			if st.hasQ1 {
-				q2 := item.r.ParentNetProfit - st.q1
-				r2 := item.r.TotalRevenue - st.rq1
-				result = append(result, quarterSingleProfit{Year: year, Quarter: 2, SingleProfit: q2, Revenue: r2})
-			}
-
-		case "三季报":
-			st.q3 = item.r.ParentNetProfit
-			st.rq3 = item.r.TotalRevenue
-			st.hasQ3 = true
-			if st.hasH1 {
-				q3 := item.r.ParentNetProfit - st.h1
-				r3 := item.r.TotalRevenue - st.rh1
-				result = append(result, quarterSingleProfit{Year: year, Quarter: 3, SingleProfit: q3, Revenue: r3})
-			}
-
-		case "年报":
-			st.full = item.r.ParentNetProfit
-			st.rfull = item.r.TotalRevenue
-			st.hasFull = true
-			if st.hasQ3 {
-				q4 := item.r.ParentNetProfit - st.q3
-				r4 := item.r.TotalRevenue - st.rq3
-				result = append(result, quarterSingleProfit{Year: year, Quarter: 4, SingleProfit: q4, Revenue: r4})
-			}
-		}
-	}
-
-	return result
+// 用于 PB（BVPS）、ROE、营收等基本面指标：取公告日最近的财报数据，
+// 不区分季报/年报。
+func (g *reportGroups) findLatest(tradeDate int) *model.PerformanceReport {
+	return findLatestFromList(g.All, tradeDate)
 }
