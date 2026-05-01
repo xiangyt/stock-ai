@@ -198,6 +198,7 @@ func upsertPerformanceReports(code string, reports []adapter.PerformanceReport) 
 			ReportType:         r.ReportType,
 			ReportName:         r.ReportDateName,
 			Currency:           r.Currency,
+			NoticeDate:         parseTradeDate(r.NoticeDate),
 			BasicEPS:           r.BasicEPS,
 			DeductedEPS:        r.DeductedEPS,
 			DilutedEPS:         r.DilutedEPS,

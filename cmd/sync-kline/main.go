@@ -147,7 +147,7 @@ func registerAdapters(dataSources []config.DataSourceItem) {
 
 		var ds adapter.DataSource
 		switch dsCfg.Provider {
-		case "eastmoney":
+		case eastmoney.AdapterName:
 			ds = eastmoney.New()
 			initConfig := map[string]interface{}{"cookie": dsCfg.Cookie}
 			for k, v := range dsCfg.Extra {

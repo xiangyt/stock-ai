@@ -52,7 +52,10 @@ func New() *Adapter {
 	}
 }
 
-func (a *Adapter) Name() string        { return "ths" }
+// AdapterName 采集器注册名称（registry key）
+const AdapterName = "ths"
+
+func (a *Adapter) Name() string        { return AdapterName }
 func (a *Adapter) DisplayName() string { return "同花顺" }
 func (a *Adapter) Type() string        { return "web_crawl" }
 

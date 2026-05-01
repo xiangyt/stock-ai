@@ -16,6 +16,7 @@ func UpsertPerformanceReport(m model.PerformanceReport) int64 {
 		Columns: []clause.Column{{Name: "stock_code"}, {Name: "report_date"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"report_type", "report_name", "currency",
+			"notice_date",
 			"basic_eps", "deducted_eps", "diluted_eps", "bvps",
 			"equity_reserve", "undistributed_profit", "ocfps",
 			"total_revenue", "gross_profit", "parent_net_profit", "deduct_net_profit",

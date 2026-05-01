@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"stock-ai/internal/adapter"
+	"stock-ai/internal/adapter/eastmoney"
+	"stock-ai/internal/adapter/ths"
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
 
@@ -225,7 +227,7 @@ func (s *SyncKLineService) syncSingleInit(ctx context.Context, code string, peri
 	}
 
 	// 同花顺全量获取
-	data, fetchErr := s.fetchFullKLines(ctx, "ths", code, period, lastDateStr)
+	data, fetchErr := s.fetchFullKLines(ctx, ths.AdapterName, code, period, lastDateStr)
 	if fetchErr != nil {
 		result.Error = fetchErr
 		return *result
@@ -266,7 +268,7 @@ const dailyAlignWindow = 5 // 对齐窗口大小：DB 取最新 N 条和全量�
 // syncSingleDaily 每日增量：全量对齐截断 + 当期精刷
 func (s *SyncKLineService) syncSingleDaily(ctx context.Context, code string, period db.KLinePeriod, result *SyncResult) SyncResult {
 	// Step ①: 同花顺全量采集
-	fullData, fetchErr := s.fetchFullKLines(ctx, "ths", code, period, "")
+	fullData, fetchErr := s.fetchFullKLines(ctx, ths.AdapterName, code, period, "")
 	if fetchErr != nil {
 		result.Error = fmt.Errorf("同花顺全量采集失败: %w", fetchErr)
 		return *result
@@ -274,7 +276,7 @@ func (s *SyncKLineService) syncSingleDaily(ctx context.Context, code string, per
 		result.Error = fmt.Errorf("同花顺全量采集结果为空")
 		return *result
 	}
-	currentItem, currErr := s.fetchCurrentPeriodData(ctx, "ths", code, period)
+	currentItem, currErr := s.fetchCurrentPeriodData(ctx, ths.AdapterName, code, period)
 	if currErr != nil {
 		result.Error = fmt.Errorf("同花顺当期采集失败: %w", currErr)
 		return *result
@@ -357,7 +359,7 @@ func (s *SyncKLineService) syncSingleFill(ctx context.Context, code string, peri
 	log.Printf("  [%s][%s] 发现 %d 条缺额数据，开始补全...", code, db.KLineLabel(period), zeroCount)
 
 	// 东财全量拉取
-	emData, fetchErr := s.fetchFullKLines(ctx, "eastmoney", code, period, "")
+	emData, fetchErr := s.fetchFullKLines(ctx, eastmoney.AdapterName, code, period, "")
 	if fetchErr != nil {
 		result.Error = fetchErr
 		return *result
@@ -377,7 +379,7 @@ func (s *SyncKLineService) syncSingleFill(ctx context.Context, code string, peri
 
 	success, failed := s.upsertByPeriod(code, period, validData)
 	result.UpsertCount = success
-	result.SourceUsed = "eastmoney"
+	result.SourceUsed = eastmoney.AdapterName
 
 	log.Printf("  [%s][%s] ✅ 补全完成: 有效数据%d, upsert成功%d, 失败%d",
 		code, db.KLineLabel(period), len(validData), success, failed)

@@ -17,6 +17,7 @@ type PerformanceReport struct {
 	ReportType string `gorm:"size:20;column:report_type" json:"report_type"`             // 年报/一季报/中报/三季报
 	ReportName string `gorm:"size:50;column:report_name" json:"report_name"`             // 2025年报
 	Currency   string `gorm:"size:10;column:currency" json:"currency"`                   // CNY
+	NoticeDate int    `gorm:"column:notice_date" json:"notice_date"`                     // 公告日期 YYYYMMDD
 
 	// 每股指标
 	BasicEPS      float64 `gorm:"column:basic_eps" json:"basic_eps"`                              // 基本每股收益(元)

@@ -13,6 +13,9 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// 采集器注册名称（registry key）
+const AdapterName = "eastmoney"
+
 // K线类型常量
 const (
 	KLineTypeDaily     = "101"
@@ -55,7 +58,7 @@ func New() *Adapter {
 	}
 }
 
-func (a *Adapter) Name() string        { return "eastmoney" }
+func (a *Adapter) Name() string        { return AdapterName }
 func (a *Adapter) DisplayName() string { return "东方财富" }
 func (a *Adapter) Type() string        { return "web_crawl" }
 

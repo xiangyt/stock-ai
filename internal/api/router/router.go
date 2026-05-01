@@ -1,12 +1,19 @@
 package router
 
 import (
+	"stock-ai/internal/adapter/ths"
 	"stock-ai/internal/api/handler"
 
 	"github.com/gin-gonic/gin"
 )
 
+// SetupRouter 创建路由（无THS适配器，快照全日期路径不可用）
 func SetupRouter() *gin.Engine {
+	return SetupRouterWithTHS(nil)
+}
+
+// SetupRouterWithTHS 创建路由并注入 THS 适配器
+func SetupRouterWithTHS(thsAdapter *ths.Adapter) *gin.Engine {
 	r := gin.Default()
 
 	// CORS 中间件
@@ -81,6 +88,10 @@ func SetupRouter() *gin.Engine {
 			syncKline.POST("/fill", syncHandler.RunFill)   // 补全金额：东财补amount=0
 			syncKline.POST("/debug", syncHandler.Debug)    // 调试
 		}
+
+		// --- 每日估值快照接口（统一入口） ---
+		snapHandler := handler.NewSnapshotHandler()
+		apiV1.POST("/snapshot/calc", snapHandler.Calc) // code/date 为空=全部
 	}
 
 	return r

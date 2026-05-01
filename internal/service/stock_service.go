@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"stock-ai/internal/adapter/eastmoney"
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
 
@@ -311,7 +312,7 @@ func (s *StockService) InitMockData() error {
 	defaultSources := []model.DataSourceConfig{
 		{Name: "mock", DisplayName: "模拟数据(开发测试)", Type: "sdk", Status: "active", Priority: 100, Config: `{}`, Description: "用于开发和测试的模拟数据源"},
 		{Name: "tushare", DisplayName: "Tushare Pro", Type: "api", Status: "disabled", Priority: 1, DailyQuota: 5000, Description: "Tushare Pro金融数据接口"},
-		{Name: "eastmoney", DisplayName: "东方财富", Type: "web_crawl", Status: "disabled", Priority: 2, Description: "东方财富网数据爬取"},
+		{Name: eastmoney.AdapterName, DisplayName: "东方财富", Type: "web_crawl", Status: "disabled", Priority: 2, Description: "东方财富网数据爬取"},
 		{Name: "akshare", DisplayName: "AKShare", Type: "sdk", Status: "disabled", Priority: 3, Description: "开源金融数据接口库"},
 	}
 

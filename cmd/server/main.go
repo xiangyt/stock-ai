@@ -46,6 +46,7 @@ func main() {
 
 	// 注册数据源适配器
 	registry := adapter.GetRegistry()
+	var thsInstance *ths.Adapter // 保留THS引用，用于注入快照服务
 
 	for _, dsCfg := range cfg.DataSources {
 		if !dsCfg.Enabled {
@@ -55,7 +56,7 @@ func main() {
 
 		var ds adapter.DataSource
 		switch dsCfg.Provider {
-		case "eastmoney":
+		case eastmoney.AdapterName:
 			ds = eastmoney.New()
 			initConfig := map[string]interface{}{
 				"cookie": dsCfg.Cookie,
@@ -69,9 +70,11 @@ func main() {
 				continue
 			}
 		case "ths":
-			ds = ths.New()
+			thsInstance = ths.New()
+			ds = thsInstance
 			if err := ds.Init(nil); err != nil {
 				log.Printf("初始化 %s 失败: %v", dsCfg.Name, err)
+				thsInstance = nil // 初始化失败则清空
 				continue
 			}
 		default:
@@ -98,8 +101,8 @@ func main() {
 		return
 	}
 
-	// 创建 HTTP 路由
-	r := router.SetupRouter()
+	// 创建 HTTP 路由（注入THS适配器以支持快照全日期实时采集）
+	r := router.SetupRouterWithTHS(thsInstance)
 
 	// 启动 HTTP 服务
 	srv := &http.Server{

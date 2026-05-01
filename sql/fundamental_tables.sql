@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS performance_reports (
     report_type           VARCHAR(20)     NOT NULL DEFAULT '' COMMENT '报告类型(年报/一季报/中报/三季报)',
     report_name           VARCHAR(50)     NOT NULL DEFAULT '' COMMENT '报告期名称(2025年报)',
     currency              CHAR(10)        NOT NULL DEFAULT 'CNY' COMMENT '货币单位',
+    notice_date           INT(8)          NOT NULL DEFAULT 0 COMMENT '公告日期 YYYYMMDD',
 
     -- 每股指标
     basic_eps             DECIMAL(20,4)   NOT NULL DEFAULT 0 COMMENT '基本每股收益(元)',

@@ -7,6 +7,12 @@
 # Test binary
 *.test
 
+# Go debug binary & compiled output
+__debug_bin*
+/sync-snapshot
+/sync-kline
+/server
+
 # Output of go coverage
 *.out
 
