@@ -57,8 +57,10 @@ func AutoMigrate() error {
 	}
 
 	return DB.AutoMigrate(
+		&model.User{},
 		&model.Stock{},
 		&model.DailyKline{},
+		&model.Strategy{},
 	// 基本面/财务数据表
 	// &model.PerformanceReport{},
 	// &model.ShareholderCount{},

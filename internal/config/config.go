@@ -12,6 +12,7 @@ import (
 type Config struct {
 	Server     ServerConfig      `mapstructure:"server"`
 	Database   DatabaseConfig    `mapstructure:"database"`
+	Auth       AuthConfig        `mapstructure:"auth"`
 	MCP        MCPConfig         `mapstructure:"mcp"`
 	Log        LogConfig         `mapstructure:"log"`
 	DataSources []DataSourceItem `mapstructure:"data_sources"` // 多数据源列表
@@ -74,6 +75,12 @@ type LogConfig struct {
 	MaxSize    int    `mapstructure:"max_size"`
 	MaxBackups int    `mapstructure:"max_backups"`
 	MaxAge     int    `mapstructure:"max_age"`
+}
+
+// AuthConfig 认证配置
+type AuthConfig struct {
+	JWTSecret     string `mapstructure:"jwt_secret"`      // JWT 签名密钥
+	JWTExpireDays int    `mapstructure:"jwt_expire_days"` // Token 过期天数
 }
 
 // overrideFromEnv 从环境变量覆盖配置
@@ -158,6 +165,10 @@ func setDefaults() {
 	viper.SetDefault("log.max_size", 100)
 	viper.SetDefault("log.max_backups", 10)
 	viper.SetDefault("log.max_age", 30)
+
+	// Auth 默认值
+	viper.SetDefault("auth.jwt_secret", "ai-stock-picker-default-secret-change-me")
+	viper.SetDefault("auth.jwt_expire_days", 7)
 }
 
 // Get 获取全局配置

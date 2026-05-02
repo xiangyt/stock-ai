@@ -45,3 +45,7 @@ data_sources:
   #   enabled: true
   #   provider: ths
   #   cookie: ""  # 设置 THS_COOKIE 环境变量
+
+auth:
+  jwt_secret: "change-me-to-a-random-secret"   # JWT 签名密钥（生产环境务必修改）
+  jwt_expire_days: 7                           # Token 有效期（天）

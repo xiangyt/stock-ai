@@ -3,6 +3,9 @@ package router
 import (
 	"stock-ai/internal/adapter/ths"
 	"stock-ai/internal/api/handler"
+	"stock-ai/internal/config"
+	"stock-ai/internal/middleware"
+	"stock-ai/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -33,9 +36,37 @@ func SetupRouterWithTHS(thsAdapter *ths.Adapter) *gin.Engine {
 	// 健康检查
 	r.GET("/health", handler.HealthCheck)
 
+	// ========== 初始化认证服务和中间件 ==========
+	cfg := config.Get()
+	authSvc := service.NewAuthService(cfg.Auth.JWTSecret)
+	authHandler := handler.NewAuthHandler(authSvc)
+	authMiddleware := middleware.AuthRequired(authSvc)
+
 	// ========== API v1 路由组 ==========
 	apiV1 := r.Group("/api/v1")
 	{
+		// --- 认证接口（无需登录） ---
+		auth := apiV1.Group("/auth")
+		{
+			auth.POST("/login", authHandler.Login)
+			auth.POST("/register", authHandler.Register)
+			// 需要登录的 auth 接口
+			me := auth.Group("")
+			me.Use(authMiddleware)
+			{
+				me.GET("/me", authHandler.GetMe)
+				me.PUT("/account", authHandler.UpdateAccount)
+			}
+			// 管理员接口（需登录 + admin 角色）
+			adminAuth := auth.Group("/admin")
+			adminAuth.Use(authMiddleware)
+			{
+				adminAuth.GET("/users", authHandler.ListUsers)
+				adminAuth.PUT("/users/:id/status", authHandler.ToggleUserStatus)
+				adminAuth.PUT("/users/:id/password", authHandler.ResetUserPassword)
+			}
+		}
+
 		// --- 股票选股相关接口 ---
 		stockHandler := handler.NewStockHandler()
 		stocks := apiV1.Group("/stocks")
@@ -92,6 +123,20 @@ func SetupRouterWithTHS(thsAdapter *ths.Adapter) *gin.Engine {
 		// --- 每日估值快照接口（统一入口） ---
 		snapHandler := handler.NewSnapshotHandler()
 		apiV1.POST("/snapshot/calc", snapHandler.Calc) // code/date 为空=全部
+
+		// --- 策略管理接口（需要登录） ---
+		strategyHandler := handler.NewStrategyHandler()
+		strategies := apiV1.Group("/strategies")
+		strategies.Use(authMiddleware)
+		{
+			strategies.GET("", strategyHandler.List)          // 列表（搜索+分页）
+			strategies.POST("", strategyHandler.Create)       // 创建
+			strategies.GET("/:id", strategyHandler.GetByID)    // 详情
+			strategies.PUT("/:id", strategyHandler.Update)     // 更新
+			strategies.DELETE("/:id", strategyHandler.Delete)  // 删除单个
+			strategies.PUT("/:id/rename", strategyHandler.Rename) // 重命名
+			strategies.DELETE("/batch", strategyHandler.BatchDelete) // 批量删除
+		}
 	}
 
 	return r

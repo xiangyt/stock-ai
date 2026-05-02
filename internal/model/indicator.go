@@ -378,32 +378,25 @@ const (
 
 // Strategy 选股策略 — 一组有序信号的组合
 type Strategy struct {
-	ID          uint           `gorm:"primarykey" json:"id"`
-	UserID      uint           `gorm:"index" json:"user_id"`
-	Name        string         `gorm:"size:100;not null" json:"name"`                    // 策略名称
-	Description string         `gorm:"size:500" json:"description"`                     // 描述
-	Status      StrategyStatus `gorm:"size:20;default:draft" json:"status"`             // 状态
-	LogicalOp   LogicalOp      `gorm:"size:10;default:and" json:"logical_op"`           // 条件间逻辑关系
+	ID            uint       `gorm:"primarykey" json:"id"`
+	UID           uint       `gorm:"index;comment:用户ID(预留)" json:"uid"`         // 用户ID(预留)
+	Name          string     `gorm:"size:100;not null" json:"name"`                       // 策略名称
+	Description   string     `gorm:"size:500" json:"description"`                        // 描述
+	LogicalOp     LogicalOp  `gorm:"size:10;default:and" json:"logical_op"`              // 条件间逻辑关系
 
 	// 信号条件（JSON 存储 Signal 数组）
-	Conditions  string         `gorm:"type:text;not null" json:"conditions_raw"`         // JSON: []Signal
+	Conditions    string     `gorm:"type:text;not null" json:"conditions_raw"`            // JSON: []Signal
 
 	// 回测相关
-	BacktestConfig string      `gorm:"type:text" json:"backtest_config,omitempty"`      // 回测参数(JSON)
-	BacktestResult string      `gorm:"type:text" json:"backtest_result,omitempty"`      // 回测结果摘要(JSON)
-
-	// 统计
-	RunCount    int           `gorm:"default:0" json:"run_count"`                      // 运行次数
-	LastRunAt   *time.Time    `json:"last_run_at"`                                    // 最后运行时间
-	AvgResultCount int        `gorm:"default:0" json:"avg_result_count"`               // 平均命中数
+	BacktestCount int        `gorm:"default:0" json:"backtest_count"`                    // 回测次数
+	LastRunAt     *time.Time `json:"last_run_at"`                                       // 最后运行时间
 
 	// 元数据
-	Tags        string         `gorm:"size:200" json:"tags,omitempty"`                 // 标签, 逗号分隔
-	IsPublic    bool           `gorm:"default:false" json:"is_public"`                 // 是否公开
-	StarCount   int            `gorm:"default:0" json:"star_count"`                    // 收藏数
+	IsPublic      bool       `gorm:"default:false" json:"is_public"`                     // 是否公开
+	StarCount     int        `gorm:"default:0" json:"star_count"`                        // 收藏数
 
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 func (Strategy) TableName() string { return "strategies" }
