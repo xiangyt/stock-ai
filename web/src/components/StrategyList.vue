@@ -23,6 +23,7 @@
             type="text"
             placeholder="策略名称"
             class="search-input"
+            @keyup.enter="onSearch"
           />
           <button class="search-btn" @click="onSearch">🔍</button>
         </div>
@@ -61,7 +62,7 @@
         </thead>
         <tbody>
           <tr
-            v-for="s in pagedStrategies"
+            v-for="s in displayStrategies"
             :key="s.id"
             :class="{ selected: selectedIds.has(s.id) }"
             @click="toggleSelect(s.id)"
@@ -99,13 +100,31 @@
         </tbody>
       </table>
 
-      <div v-if="strategies.length > pageSize" class="pagination-bar">
-        <select v-model.number="pageSize" class="page-size-select">
-          <option :value="10">展示 10 行</option>
-          <option :value="20">展示 20 行</option>
-          <option :value="50">展示 50 行</option>
-          <option :value="100">展示 100 行</option>
-        </select>
+      <!-- 分页（始终显示） -->
+      <div class="pagination-bar">
+        <div class="pag-left">
+          <span class="pag-info">共 {{ total }} 条</span>
+          <select :value="localPageSize" @change="onPageSizeChange" class="page-size-select">
+            <option :value="10">10 条/页</option>
+            <option :value="20">20 条/页</option>
+            <option :value="50">50 条/页</option>
+            <option :value="100">100 条/页</option>
+          </select>
+        </div>
+        <div class="pag-center">
+          <button class="pag-btn" :disabled="localPage === 1" @click="goPage(localPage - 1)">‹ 上一页</button>
+          <template v-for="p in pageNumbers" :key="p">
+            <span v-if="p === '...'" class="pag-ellipsis">...</span>
+            <button v-else :class="['pag-btn', 'pag-num', { active: p === localPage }]" @click="goPage(p)">{{ p }}</button>
+          </template>
+          <button class="pag-btn" :disabled="localPage === totalPages" @click="goPage(localPage + 1)">下一页 ›</button>
+        </div>
+        <div class="pag-right">
+          <span>跳至</span>
+          <input v-model.number="jumpPageInput" type="number" class="pag-jump-input" min="1" :max="totalPages" @keyup.enter="doJump" />
+          <span>页</span>
+          <button class="pag-btn pag-go-btn" @click="doJump">GO</button>
+        </div>
       </div>
     </div>
 
@@ -113,7 +132,7 @@
     <div v-else class="card-grid-area">
       <transition-group name="card-list" tag="div" class="card-grid">
         <div
-          v-for="s in pagedStrategies"
+          v-for="s in displayStrategies"
           :key="s.id"
           class="strategy-card"
           :class="{ selected: selectedIds.has(s.id) }"
@@ -160,13 +179,31 @@
         </div>
       </transition-group>
 
-      <!-- 分页 -->
-      <div v-if="strategies.length > pageSize" class="pagination-bar">
-        <select v-model.number="pageSize" class="page-size-select">
-          <option :value="6">每页 6 个</option>
-          <option :value="12">每页 12 个</option>
-          <option :value="24">每页 24 个</option>
-        </select>
+      <!-- 分页（与表格视图统一） -->
+      <div class="pagination-bar">
+        <div class="pag-left">
+          <span class="pag-info">共 {{ total }} 条</span>
+          <select :value="localPageSize" @change="onPageSizeChange" class="page-size-select">
+            <option :value="10">10 条/页</option>
+            <option :value="20">20 条/页</option>
+            <option :value="50">50 条/页</option>
+            <option :value="100">100 条/页</option>
+          </select>
+        </div>
+        <div class="pag-center">
+          <button class="pag-btn" :disabled="localPage === 1" @click="goPage(localPage - 1)">‹ 上一页</button>
+          <template v-for="p in pageNumbers" :key="p">
+            <span v-if="p === '...'" class="pag-ellipsis">...</span>
+            <button v-else :class="['pag-btn', 'pag-num', { active: p === localPage }]" @click="goPage(p)">{{ p }}</button>
+          </template>
+          <button class="pag-btn" :disabled="localPage === totalPages" @click="goPage(localPage + 1)">下一页 ›</button>
+        </div>
+        <div class="pag-right">
+          <span>跳至</span>
+          <input v-model.number="jumpPageInput" type="number" class="pag-jump-input" min="1" :max="totalPages" @keyup.enter="doJump" />
+          <span>页</span>
+          <button class="pag-btn pag-go-btn" @click="doJump">GO</button>
+        </div>
       </div>
     </div>
 
@@ -189,7 +226,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 
 export interface SavedStrategy {
   id: number
@@ -199,10 +236,15 @@ export interface SavedStrategy {
   isPublic: boolean
   createdAt: string
   updatedAt: string
+  logicalOp?: string            // "and" | "or"
+  signals?: any[]              // 策略信号列表（从后端加载）
 }
 
 const props = defineProps<{
   strategies: SavedStrategy[]
+  total: number
+  page: number
+  pageSize: number
 }>()
 
 const emit = defineEmits<{
@@ -211,6 +253,7 @@ const emit = defineEmits<{
   deleted: [ids: number[]]
   rename: [id: number, newName: string]
   search: [keyword: string]
+  pageChange: [page: number, pageSize: number]
 }>()
 
 // ========== 视图模式 ==========
@@ -221,14 +264,18 @@ const searchQuery = ref('')
 
 function onSearch() {
   emit('search', searchQuery.value.trim())
+  emit('pageChange', 1, localPageSize.value)
 }
 
-// ========== 排序（按更新时间倒序，数据由后端搜索返回） ==========
+// ========== 排序（按更新时间倒序，数据由后端返回） ==========
 const sortedStrategies = computed(() => {
   return [...props.strategies].sort((a, b) =>
     new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   )
 })
+
+// 后端已分页排序，直接使用 props 数据（不再前端切片）
+const displayStrategies = computed(() => sortedStrategies.value)
 
 // ========== 选择 ==========
 const selectedIds = reactive(new Set<number>())
@@ -301,11 +348,51 @@ function confirmBatchDelete() {
   deleteConfirm.show = false
 }
 
-// ========== 分页 ==========
-const pageSize = ref(10)
-const pagedStrategies = computed(() => {
-  return sortedStrategies.value.slice(0, pageSize.value)
+// ========== 分页（后端分页，UI 控制后通知父组件请求） ==========
+const localPage = ref(props.page)
+const localPageSize = ref(props.pageSize)
+const jumpPageInput = ref<number | string>('')
+
+// 同步外部 props 变化（如搜索后重置为第1页）
+watch(() => props.page, (v) => { localPage.value = v })
+watch(() => props.pageSize, (v) => { localPageSize.value = v })
+
+const totalPages = computed(() => Math.max(1, Math.ceil(props.total / localPageSize.value)))
+
+// 生成页码数组（带省略号）
+const pageNumbers = computed<(number | '...')[]>(() => {
+  const total = totalPages.value
+  const cur = localPage.value
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+
+  const result: (number | '...')[] = [1]
+  if (cur > 3) result.push('...')
+  const start = Math.max(2, cur - 1)
+  const end = Math.min(total - 1, cur + 1)
+  for (let i = start; i <= end; i++) result.push(i)
+  if (cur < total - 2) result.push('...')
+  result.push(total)
+  return result
 })
+
+function goPage(p: number) {
+  if (p < 1 || p > totalPages.value) return
+  emit('pageChange', p, localPageSize.value)
+}
+
+function onPageSizeChange(e: Event) {
+  const size = Number((e.target as HTMLSelectElement).value)
+  localPageSize.value = size
+  emit('pageChange', 1, size)
+}
+
+function doJump() {
+  const val = Number(jumpPageInput.value)
+  if (val >= 1 && val <= totalPages.value) {
+    emit('pageChange', val, localPageSize.value)
+    jumpPageInput.value = ''
+  }
+}
 
 // ========== 工具函数 ==========
 function formatTimeFull(iso: string): string {
@@ -441,13 +528,12 @@ function getCategoryLabel(s: SavedStrategy): string {
 .strategy-table tbody tr.selected { background: #e6f4ff; }
 .strategy-table tbody td { padding: 8px 10px; vertical-align: middle; color: #333; }
 
-.col-check { width: 32px; text-align: center; }
-.col-check input[type="checkbox"] { accent-color: #1677ff; cursor: pointer; width: 14px; height: 14px; }
-.col-name { min-width: auto; }
-.col-backtest { min-width: auto; text-align: center; }
-.col-last-run { min-width: 140px; }
-.col-public { min-width: 80px; text-align: center; }
-.col-created { min-width: 150px; }
+.col-check { width: 44px; }
+.strategy-table .col-check, .strategy-table th.col-check, .strategy-table td.col-check { text-align: center; padding-left: 12px !important; padding-right: 8px !important; }
+.col-check input[type="checkbox"] { accent-color: #1677ff; cursor: pointer; width: 14px; height: 14px; vertical-align: middle; }
+.col-name { width: 400px; }
+/* 回测/运行时间/是否公开/创建时间：4 列等分剩余空间，统一左对齐 */
+.col-backtest, .col-last-run, .col-public, .col-created { }
 
 /* 名称单元格 */
 .name-cell { display: flex; align-items: center; gap: 8px; }
@@ -477,7 +563,7 @@ function getCategoryLabel(s: SavedStrategy): string {
   font-size: 12px; font-weight: 600; color: #0958d9;
   background: #e6f4ff; border: 1px solid #bae0ff;
 }
-.col-backtest { font-family: 'SF Mono', Monaco, monospace; font-size: 13px; color: #666; text-align: center; }
+.col-backtest { font-family: 'SF Mono', Monaco, monospace; font-size: 13px; color: #666; }
 
 /* 是否公开 tag */
 .public-tag {
@@ -489,14 +575,41 @@ function getCategoryLabel(s: SavedStrategy): string {
 
 /* 分页 */
 .pagination-bar {
-  display: flex; justify-content: center; padding: 12px 16px;
-  border-top: 1px solid #f0f0f0;
+  display: flex; justify-content: flex-end; align-items: center;
+  padding: 10px 16px; gap: 12px; border-top: 1px solid #f0f0f0;
 }
+.pag-left { display: flex; align-items: center; gap: 8px; margin-right: auto; }
+.pag-info { font-size: 12.5px; color: #999; white-space: nowrap; }
 .page-size-select {
-  padding: 4px 10px; border: 1px solid #d9d9d9; border-radius: 4px;
+  padding: 3px 8px; border: 1px solid #d9d9d9; border-radius: 4px;
   font-size: 12.5px; color: #555; outline: none; cursor: pointer; background: #fff;
 }
 .page-size-select:focus { border-color: #1677ff; }
+/* 页码按钮区 */
+.pag-center { display: flex; align-items: center; gap: 4px; }
+.pag-btn {
+  min-width: 28px; height: 28px; padding: 0 7px;
+  border: 1px solid #d9d9d9; border-radius: 4px; background: #fff;
+  font-size: 12.5px; cursor: pointer; transition: .15s; color: #333;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pag-btn:hover:not(:disabled) { border-color: #1677ff; color: #1677ff; }
+.pag-btn:disabled { opacity: .4; cursor: not-allowed; }
+.pag-num.active { background: #1677ff; color: #fff; border-color: #1677ff; }
+.pag-ellipsis {
+  width: 28px; text-align: center; font-size: 13px; color: #bbb;
+}
+/* 跳转 */
+.pag-right { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #666; }
+.pag-jump-input {
+  width: 44px; height: 26px; padding: 0 4px; text-align: center;
+  border: 1px solid #d9d9d9; border-radius: 4px; font-size: 12.5px;
+  outline: none; color: #333; -moz-appearance: textfield;
+}
+.pag-jump-input::-webkit-inner-spin-button, .pag-jump-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+.pag-go-btn {
+  min-width: auto; height: 26px; padding: 0 10px; font-size: 12px; font-weight: 600;
+}
 
 /* ==================== 卡片列表视图 ==================== */
 .card-grid-area { width: 100%; }

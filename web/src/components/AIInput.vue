@@ -95,7 +95,7 @@ function handleSubmit() {
   if (t.includes('rsi') && (t.includes('超卖') || t.includes('oversold'))) {
     results.push({
       indicatorID: 'rsi6', indicatorName: 'RSI6', category: 'technical',
-      operator: '<', operatorSymbol: '<', operatorLabel: '小于',
+      operator: 'lt', operatorSymbol: '<', operatorLabel: '小于',
       params: { value_number: 30 }, paramSummary: '< 30'
     })
   }
@@ -103,21 +103,21 @@ function handleSubmit() {
     const roeVal = t.match(/roe[^0-9]*(\d+)/i)?.[1] || '15'
     results.push({
       indicatorID: 'roe_w', indicatorName: 'ROE(加权)', category: 'financial',
-      operator: '>=', operatorSymbol: '>=', operatorLabel: '大于等于',
+      operator: 'gte', operatorSymbol: '>=', operatorLabel: '大于等于',
       params: { value_number: Number(roeVal) }, paramSummary: `>= ${roeVal}%`
     })
   }
   if (t.includes('小盘') || t.includes('小市值')) {
     results.push({
       indicatorID: 'circulate_market_cap', indicatorName: '流通市值', category: 'market',
-      operator: '<', operatorSymbol: '<', operatorLabel: '小于',
+      operator: 'lt', operatorSymbol: '<', operatorLabel: '小于',
       params: { value_number: 50 }, paramSummary: '< 50亿'
     })
   }
   if (t.includes('底背离')) {
     results.push({
       indicatorID: 'macd_divergence', indicatorName: 'MACD背离', category: 'technical',
-      operator: '↗', operatorSymbol: '↗', operatorLabel: '底背离',
+      operator: 'divergence_pos', operatorSymbol: '↗', operatorLabel: '底背离',
       params: { lookback_days: 26 }, paramSummary: ''
     })
   }

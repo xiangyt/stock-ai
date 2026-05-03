@@ -101,8 +101,7 @@ func main() {
 		return
 	}
 
-	// 创建 HTTP 路由（注入THS适配器以支持快照全日期实时采集）
-	r := router.SetupRouterWithTHS(thsInstance)
+	r := router.SetupRouter()
 
 	// 启动 HTTP 服务
 	srv := &http.Server{

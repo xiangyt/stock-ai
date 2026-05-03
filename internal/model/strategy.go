@@ -7,7 +7,7 @@ import (
 // StrategySignal 策略中的单个信号条件（对应前端的 Sig 结构体）
 type StrategySignal struct {
 	UID       int                    `json:"uid"`
-	ID        string                 `json:"id"`
+	SignalID  string                 `json:"signal_id"` // 8位信号ID
 	Name      string                 `json:"name"`
 	Category  string                 `json:"category"` // technical/fundamental/market/financial
 	Operator  string                 `json:"operator"` // < > = between cross_up 等

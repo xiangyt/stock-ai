@@ -13,7 +13,7 @@ func CreateUser(u *model.User) error {
 // GetUserByUsername 根据用户名查询
 func GetUserByUsername(username string) (*model.User, error) {
 	var u model.User
-	err := GetDB().Where("username = ? AND status = 1", username).First(&u).Error
+	err := GetDB().Where("username = ?", username).First(&u).Error
 	if err != nil {
 		return nil, err
 	}

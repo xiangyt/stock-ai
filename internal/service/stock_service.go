@@ -285,6 +285,19 @@ func (s *StockService) GetStockPrices(code string, days int) (*PriceHistoryRespo
 	return &PriceHistoryResponse{Success: true, Code: code, Prices: prices}, nil
 }
 
+// GetAllStocks 获取全量股票基本信息 (用于选股引擎输入)
+func (s *StockService) GetAllStocks() ([]interface{}, error) {
+	var stocks []model.Stock
+	if err := s.db.Find(&stocks).Error; err != nil {
+		return nil, err
+	}
+	result := make([]interface{}, len(stocks))
+	for i, stk := range stocks {
+		result[i] = &stk
+	}
+	return result, nil
+}
+
 // InitMockData 初始化模拟数据(开发测试使用DataCollectService的mock适配器)
 func (s *StockService) InitMockData() error {
 	var count int64

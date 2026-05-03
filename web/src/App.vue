@@ -19,11 +19,15 @@
       <div v-if="currentPage === 'strategy-list'" class="page strategy-list-page">
         <StrategyList
           :strategies="savedStrategies"
+          :total="strategyTotal"
+          :page="strategyPage"
+          :pageSize="strategyPageSize"
           @load="onLoadStrategy"
           @goNew="onGoNew"
           @deleted="onDeleteStrategies"
           @rename="onRenameStrategy"
           @search="onSearchStrategies"
+          @pageChange="onStrategyPageChange"
         />
       </div>
 
@@ -173,15 +177,19 @@ interface SavedStrategy {
 const savedStrategies = ref<SavedStrategy[]>([])
 const loadingStrategies = ref(false)
 const currentKeyword = ref('')
+const strategyPage = ref(1)
+const strategyPageSize = ref(10)
+const strategyTotal = ref(0)
 
-/** 从后端加载策略列表（支持关键词搜索） */
+/** 从后端加载策略列表（支持关键词搜索+分页） */
 async function loadStrategies(keyword?: string) {
   loadingStrategies.value = true
   if (keyword !== undefined) currentKeyword.value = keyword
   try {
-    const resp = await strategyApi.fetchStrategies(currentKeyword.value, 1, 100)
+    const resp = await strategyApi.fetchStrategies(currentKeyword.value, strategyPage.value, strategyPageSize.value)
     const list = Array.isArray(resp.list) ? resp.list : []
     savedStrategies.value = list.map(toFrontendFormat)
+    strategyTotal.value = resp.total ?? list.length
   } catch (e) {
     console.error('加载策略列表失败:', e)
     savedStrategies.value = []
@@ -189,8 +197,29 @@ async function loadStrategies(keyword?: string) {
     loadingStrategies.value = false }
 }
 
+/** 分页变化时重新请求 */
+function onStrategyPageChange(page: number, pageSize: number) {
+  strategyPage.value = page
+  strategyPageSize.value = pageSize
+  loadStrategies()
+}
+
+/** 将后端 StrategyListItem 转为前端 SavedStrategy 格式 */
+function toFrontendFormat(item: any): SavedStrategy {
+  return {
+    id: item.id,
+    name: item.name ?? '',
+    backtestCount: item.backtest_count ?? 0,
+    lastRunAt: item.last_run_at ?? null,
+    isPublic: !!item.is_public,
+    createdAt: item.created_at ?? '',
+    updatedAt: item.updated_at ?? '',
+  }
+}
+
 /** 搜索事件处理 */
 function onSearchStrategies(keyword: string) {
+  strategyPage.value = 1
   loadStrategies(keyword)
 }
 

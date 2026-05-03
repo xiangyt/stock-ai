@@ -3,6 +3,8 @@ package model
 import (
 	"fmt"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // ============================================================================
@@ -395,8 +397,9 @@ type Strategy struct {
 	IsPublic      bool       `gorm:"default:false" json:"is_public"`                     // 是否公开
 	StarCount     int        `gorm:"default:0" json:"star_count"`                        // 收藏数
 
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	CreatedAt     time.Time     `json:"created_at"`
+	UpdatedAt     time.Time     `json:"updated_at"`
+	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"` // GORM 软删除
 }
 
 func (Strategy) TableName() string { return "strategies" }
@@ -476,14 +479,11 @@ type StockData struct {
 // ============================================================================
 
 type EvaluatedStock struct {
-	Code           string            `json:"code"`
-	Name           string            `json:"name"`
-	Price          float64           `json:"price"`
-	ChangePct      float64           `json:"change_pct"`
-	MatchedSignals []string          `json:"matched_signals"`
-	FailedSignals  []string          `json:"failed_signals,omitempty"`
-	SignalDetails  map[string]string `json:"signal_details"`
-	Reason         string            `json:"reason,omitempty"` // 归类原因（可选）
+	Code          string   `json:"code"`
+	Name          string   `json:"name"`
+	Price         float64  `json:"price"`
+	Pass          bool     `json:"pass"`
+	FailedSignals []string `json:"failed_signals,omitempty"`
 }
 
 // ============================================================================

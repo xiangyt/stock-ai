@@ -14,14 +14,15 @@ const BASE = 'http://localhost:9100/api/v1/strategies'
 
 export interface StrategySignal {
   uid: number
-  id: string
+  indicator_id: string       // 指标 ID (如 "macd_cross", "pe_ttm")
+  signal_id: string          // 信号 ID (如 "golden_cross", "gt")
   name: string
-  category: string       // technical/fundamental/market/financial
-  operator: string        // < > = between cross_up 等
-  opSym: string           // 运算符符号 < > ↑ ↗ ∈
-  opLbl: string           // 运算符中文
-  params: Record<string, any>
-  paramText: string       // 参数文本描述
+  category: string           // technical/fundamental/market/financial
+  operator: string            // 操作符 (gt/cross_above/in 等)
+  opSym: string               // 显示符号 (>/↑↑/∈ 等)
+  opLbl: string               // 操作符中文标签
+  params: Record<string, any>  // 参数 { threshold: 20, days: 10 }
+  paramText: string           // 可读参数文本
 }
 
 export interface StrategyDetail {

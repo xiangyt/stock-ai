@@ -47,7 +47,7 @@
         <div class="ai-toolbar">
           <div class="ai-tools-left">
             <span class="ai-tool-label">☰ A股 ▾</span>
-            <span class="ai-tool-label" :class="{ active: showAddPanel }" @click="toggleAddPanel">🔍 条件选股</span>
+            <span class="ai-tool-label" @click="scrollToIndicators">🔍 条件选股</span>
             <span class="ai-tool-label dim">★ 我的收藏</span>
           </div>
           <div class="ai-tools-right">
@@ -60,151 +60,149 @@
       </div>
     </section>
 
-    <!-- ========== Section 2: 信号选择器 ========== -->
+    <!-- ========== Section 2: 条件选股（指标平铺网格） ========== -->
     <section class="sec-signals">
       <div class="sec-header-row">
         <div class="sec-left">
-          <h3 class="sec-title">已选条件</h3>
+          <h3 class="sec-title">条件选股</h3>
           <span class="sig-count-tag" v-if="signals.length > 0">{{ signals.length }} 个条件</span>
         </div>
         <div class="sec-right">
-          <button class="btn-add-cond" @click="toggleAddPanel">
-            ＋ 添加条件
-          </button>
+          <button class="btn-sec-sm" v-if="signals.length > 0" @click="showClearConfirm = true">清空全部</button>
         </div>
       </div>
 
-      <!-- 可展开的五步选择器面板 -->
-      <transition name="slide-down">
-        <div v-if="showAddPanel" class="add-panel-inline">
-          <div class="add-panel-inner">
-            <!-- Step 1: 分类 -->
-            <div class="step-block">
-              <div class="step-label"><span class="step-num">①</span> 分类</div>
-              <div class="cat-tabs">
-                <button
-                  v-for="(label, cat) in categoryLabels"
-                  :key="cat"
-                  :class="['cat-tab', { active: state.category === cat }]"
-                  @click="selectCategory(cat as Category)"
-                >{{ label }}</button>
-              </div>
-            </div>
-
-            <!-- Step 2: 指标 -->
-            <div class="step-block" v-if="state.category">
-              <div class="step-label"><span class="step-num">②</span> 指标
-                <span class="step-count">{{ indicatorsInCat.length }} 个可选</span>
-              </div>
-              <div class="indicator-scroll">
-                <button v-for="ind in indicatorsInCat" :key="ind.id"
-                  :class="['ind-btn', { selected: state.indicator?.id === ind.id, 'has-presets': ind.presets.length > 0 }]"
-                  @click="selectIndicator(ind)">
-                  <div class="ind-main">
-                    <span class="ind-name">{{ ind.name }}</span>
-                    <span v-if="state.indicator?.id === ind.id" class="ind-desc">{{ ind.description }}</span>
-                  </div>
-                  <span class="ind-meta">
-                    <span class="type-badge" :class="ind.valueType">{{ valueTypeLabels[ind.valueType] }}</span>
-                    <span v-if="ind.presets.length > 0" class="preset-count">{{ ind.presets.length }}个模板</span>
-                    <span v-else class="preset-count dim">自定义</span>
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Step 3: 信号模板 -->
-            <div class="step-block" v-if="state.indicator">
-              <div class="step-label"><span class="step-num">③</span> 信号类型
-                <span class="step-hint" v-if="state.indicator!.presets.length > 0">该指标有 {{ state.indicator!.presets.length }} 种预设信号</span>
-                <span class="step-hint dim" v-else>无预设模板，将使用自由组合模式</span>
-              </div>
-              <template v-if="state.indicator!.presets.length > 0">
-                <div class="preset-grid">
-                  <button v-for="p in state.indicator!.presets" :key="p.id"
-                    :class="['preset-card', { selected: state.preset?.id === p.id }]" @click="selectPreset(p)">
-                    <div class="preset-name">{{ p.name }}</div>
-                    <div class="preset-desc">{{ p.description }}</div>
-                  </button>
-                </div>
-                <button :class="['custom-mode-btn', { active: state.customMode }]" @click="enterCustomMode">
-                  ⚙️ 自定义模式
-                </button>
-              </template>
-              <div v-else class="no-preset-hint">
-                <p>该指标暂无预设模板，请手动配置</p>
-                <button class="btn-small" @click="enterCustomMode">开始自定义 →</button>
-              </div>
-            </div>
-
-            <!-- Step 4: 操作符 -->
-            <div class="step-block" v-if="showOperatorStep">
-              <div class="step-label"><span class="step-num">④</span> 操作符</div>
-              <template v-if="groupedOperators.number.length > 0">
-                <div class="op-group-label">数值比较</div>
-                <div class="op-list">
-                  <button v-for="op in groupedOperators.number" :key="op.operator"
-                    :class="['op-btn', { selected: state.selectedOp?.operator === op.operator }]"
-                    @click="selectOperator(op)">
-                    <span class="op-sym">{{ op.symbol }}</span><span class="op-lbl">{{ op.label }}</span>
-                  </button>
-                </div>
-              </template>
-              <template v-if="groupedOperators.series.length > 0">
-                <div class="op-group-label">序列分析</div>
-                <div class="op-list">
-                  <button v-for="op in groupedOperators.series" :key="op.operator"
-                    :class="['op-btn', { selected: state.selectedOp?.operator === op.operator }]"
-                    @click="selectOperator(op)">
-                    <span class="op-sym">{{ op.symbol }}</span><span class="op-lbl">{{ op.label }}</span>
-                  </button>
-                </div>
-              </template>
-              <template v-if="groupedOperators.enum.length > 0 || groupedOperators.bool.length > 0">
-                <div class="op-group-label">枚举/布尔</div>
-                <div class="op-list">
-                  <button v-for="op in [...groupedOperators.enum, ...groupedOperators.bool]" :key="op.operator"
-                    :class="['op-btn', { selected: state.selectedOp?.operator === op.operator }]"
-                    @click="selectOperator(op)">
-                    <span class="op-sym">{{ op.symbol }}</span><span class="op-lbl">{{ op.label }}</span>
-                  </button>
-                </div>
-              </template>
-            </div>
-
-            <!-- Step 5: 参数 -->
-            <div class="step-block params-block" v-if="state.selectedOp && state.selectedOp!.params.length > 0">
-              <div class="step-label"><span class="step-num">⑤</span> 参数设置</div>
-              <div class="params-grid">
-                <div v-for="param in state.selectedOp!.params" :key="param.key" class="param-item">
-                  <label class="param-label">{{ param.label }}<span v-if="param.unit">({{ param.unit }})</span></label>
-                  <input v-if="isNumberLike(param.type)" type="number" v-model.number="paramValues[param.key]"
-                    :placeholder="param.placeholder || `默认: ${param.default}`" class="param-input" />
-                  <select v-else-if="param.type === 'select'" v-model="paramValues[param.key]" class="param-input">
-                    <option value="">请选择...</option>
-                    <option v-for="o in getEnumOpts(state.indicator!.id)" :key="o.value" :value="o.value">{{ o.label }}</option>
-                  </select>
-                  <p v-if="param.description" class="param-tip">{{ param.description }}</p>
-                </div>
-              </div>
-            </div>
-
-            <!-- 添加按钮 -->
-            <div class="add-btn-wrap">
-              <button class="add-btn" :disabled="!canAdd" @click="addSignal">✅ 添加到策略</button>
-              <transition name="fade-fast">
-                <span v-if="addSuccessMsg" class="add-success-msg">{{ addSuccessMsg }}</span>
-              </transition>
+      <!-- 分类 + 指标平铺区域（四列横排） -->
+      <div class="indicators-flat-area" v-if="!indicatorsLoading">
+        <template v-for="(inds, cat) in allData" :key="cat">
+          <div class="cat-column">
+            <!-- 分类标题 -->
+            <div class="cat-section-header">{{ catLabels[cat as Category] }}</div>
+            <!-- 该分类下所有指标按钮 -->
+            <div class="indicator-grid">
+              <button
+                v-for="ind in inds" :key="ind.id"
+                :class="['ind-drop-btn', { expanded: expandedIndicatorID === ind.id }]"
+                @click="toggleExpandIndicator(ind.id)"
+              >
+                {{ ind.name }}
+                <span class="drop-arrow">{{ expandedIndicatorID === ind.id ? '▲' : '▾' }}</span>
+              </button>
             </div>
           </div>
+        </template>
+      </div>
+
+      <!-- 指标数据加载中 -->
+      <div v-if="indicatorsLoading" class="indicators-loading">
+        <span class="loading-spinner"></span>
+        正在加载指标数据...
+      </div>
+
+      <!-- 展开的指标面板（inline 紧跟在对应位置或统一展示） -->
+      <transition name="expand-down">
+        <div v-if="expandedIndicatorID && expandedInd" class="ind-expand-panel">
+          <!-- 面板头部 -->
+          <div class="expand-header">
+            <span class="expand-ind-name">{{ expandedInd.name }}</span>
+            <span class="expand-ind-desc">{{ expandedInd.description }}</span>
+            <button class="expand-close-btn" @click="expandedIndicatorID = null">✕</button>
+          </div>
+
+          <!-- 内置信号列表（signal_id 第6位='0'，一键添加） -->
+          <template v-if="builtinSigs.length > 0">
+            <div class="expand-label">内置信号</div>
+            <div class="preset-list-compact">
+              <button
+                v-for="sig in builtinSigs" :key="sig.signal_id"
+                class="preset-mini"
+                @click="addBuiltinSignal(sig)"
+              >
+                <span class="pm-name">{{ sig.name }}</span>
+                <span v-if="sig.default_config" class="pm-desc">{{ formatBuiltinDesc(sig) }}</span>
+              </button>
+            </div>
+          </template>
+
+          <!-- 自定义信号区（signal_id 第6位='1'，表单配置模式） -->
+          <template v-if="customSigs.length > 0">
+          <div class="expand-label">自定义信号</div>
+          <div class="quick-add-form">
+            <!-- 步骤1: 选择自定义信号 -->
+            <div class="qf-operator">
+              <select v-model="customSignalID" class="qf-op-select qf-select-sig">
+                <option v-for="sig in customSigs" :key="sig.signal_id" :value="sig.signal_id">{{ sig.name }}</option>
+              </select>
+            </div>
+            <!-- 步骤2: 选择操作符 -->
+            <div class="qf-operator">
+              <select v-model="customOperator" class="qf-op-select">
+                <option v-for="op in currentCustomOperators" :key="op.operator" :value="op.operator">{{ op.label }} {{ op.label !== operatorSymbol(op.operator) ? `(${operatorSymbol(op.operator)})` : '' }}</option>
+              </select>
+            </div>
+            <!-- 步骤3: 根据选中操作符动态渲染参数输入框 -->
+            <div class="qf-params">
+              <template v-for="p in currentOpParams" :key="p.key">
+                <!-- 数值型参数 → 数字输入框 -->
+                <input
+                  v-if="isNumberLike(p.type)"
+                  type="number"
+                  v-model.number="paramValues[p.key]"
+                  :placeholder="`${p.label} (${p.unit || '默认:' + p.default})`"
+                  class="qf-input"
+                  step="any"
+                  :min="p.min" :max="p.max"
+                />
+                <!-- 单选枚举 → 下拉框 -->
+                <select
+                  v-else-if="p.type === 'select'"
+                  v-model="paramValues[p.key]"
+                  class="qf-input qf-select"
+                >
+                  <option value="">请选择...</option>
+                  <option v-for="o in p.options" :key="o.value" :value="o.value">{{ o.label }}</option>
+                </select>
+                <!-- 多选枚举 → checkbox 组 -->
+                <div v-else-if="isMultiSelect(p.type)" class="qf-multi-select">
+                  <label
+                    v-for="o in p.options" :key="o.value"
+                    class="qf-checkbox"
+                    :class="{ checked: (multiVals[p.key] || []).includes(o.value) }"
+                  >
+                    <input
+                      type="checkbox"
+                      :value="o.value"
+                      :checked="(multiVals[p.key] || []).includes(o.value)"
+                      @change="toggleMultiVal(p.key, o.value)"
+                    />
+                    {{ o.label }}
+                  </label>
+                </div>
+              </template>
+              <span v-if="currentOpParams.length === 0" class="qf-no-params">该操作符无需额外参数</span>
+            </div>
+            <button
+              class="qf-add-btn"
+              :disabled="!canQuickAdd"
+              @click="addCustomSignal"
+            >
+              ✅ 添加到策略
+            </button>
+          </div>
+          </template>
+
+          <!-- 快速添加成功提示 -->
+          <transition name="fade-fast">
+            <span v-if="addSuccessMsg" class="add-success-msg-inline">{{ addSuccessMsg }}</span>
+          </transition>
         </div>
       </transition>
 
       <!-- 空状态 -->
-      <div v-if="signals.length === 0 && !showAddPanel" class="empty-signals">
+      <div v-if="signals.length === 0" class="empty-signals">
         <div class="empty-icon">📭</div>
         <p>还没有信号条件</p>
-        <p class="empty-sub">点击「＋添加条件」或使用上方 AI 输入框自动生成</p>
+        <p class="empty-sub">点击上方指标的 ▾ 展开并选择信号条件，或使用 AI 输入框自动生成</p>
       </div>
 
       <!-- 已添加信号标签行 -->
@@ -227,9 +225,6 @@
           <button :class="['logic-btn', { active: logicalOp === 'AND' }]" @click="logicalOp = 'AND'">AND</button>
           <button :class="['logic-btn', { active: logicalOp === 'OR' }]" @click="logicalOp = 'OR'">OR</button>
         </div>
-        <div class="footer-actions">
-          <button class="btn-sec-sm" @click="showClearConfirm = true">清空全部</button>
-        </div>
       </div>
     </section>
 
@@ -237,16 +232,18 @@
     <section class="sec-results">
       <div class="results-head">
         <div class="results-left">
-          <h3 class="results-title">选出股票 <strong>{{ mockResults.length }}</strong></h3>
+          <h3 class="results-title">选出股票 <strong>{{ screenResult ? screenResult.passed.length : 0 }}</strong> / {{ screenResult?.total ?? 0 }}</h3>
           <div class="results-tabs">
-            <button class="rtab active">≡ 股票列表</button>
+            <button :class="['rtab', { active: !screenError }]" @click="screenError = ''">≡ 股票列表</button>
             <button class="rtab dim">⊞ 多股同列</button>
             <button class="rtab dim">📊 可视化分析</button>
           </div>
         </div>
         <div class="results-right">
           <button class="btn-res-action" @click="exportJSON">导出 ▾</button>
-          <button class="btn-res-action run" @click="runFilter">🔍 运行筛选</button>
+          <button class="btn-res-action run" @click="runFilter" :disabled="isScreening || signals.length === 0">
+            {{ isScreening ? '⏳ 筛选中...' : '🔍 运行筛选' }}
+          </button>
         </div>
       </div>
 
@@ -288,19 +285,44 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(r, i) in mockResults" :key="i" :class="{ odd: i % 2 !== 0 }">
-              <td class="col-cb"><input type="checkbox" /></td>
-              <td>{{ i + 1 }}</td>
-              <td class="code-col">{{ r.code }}</td>
-              <td class="name-col">{{ r.name }}</td>
-              <td>{{ r.price.toFixed(2) }}</td>
-              <td :class="{ up: r.change > 0, down: r.change < 0 }">{{ r.change > 0 ? '+' : '' }}{{ r.change.toFixed(2) }}%</td>
-              <td>{{ r.low.toFixed(2) }}</td>
-              <td>{{ r.high.toFixed(2) }}</td>
-              <td>{{ r.open.toFixed(2) }}</td>
-              <td>{{ r.volume }}</td>
-              <td class="match-tags">
-                <span v-for="(tag, ti) in r.matchedSignals" :key="ti" class="match-tag">{{ tag }}</span>
+            <!-- 筛选中 -->
+            <tr v-if="isScreening">
+              <td colspan="11" style="text-align:center; padding:40px 20px; color:#999;">
+                <span class="loading-spinner"></span> 正在筛选 {{ screenResult?.total ?? 0 }} 只股票...
+              </td>
+            </tr>
+            <!-- 有结果 -->
+            <template v-else-if="screenResult && screenResult.passed.length > 0">
+              <tr v-for="(stock, idx) in screenResult.passed" :key="stock.code">
+                <td class="col-cb"><input type="checkbox" /></td>
+                <td>{{ idx + 1 }}</td>
+                <td class="code-col">{{ stock.code }}</td>
+                <td class="name-col">{{ stock.name }}</td>
+                <td>{{ stock.price?.toFixed(2) ?? '-' }}</td>
+                <td>-</td>
+                <td>-</td>
+                <td>-</td>
+                <td>-</td>
+                <td>-</td>
+                <td><span class="match-tag" :title="stock.message">✓ {{ stock.message || '通过' }}</span></td>
+              </tr>
+            </template>
+            <!-- 无结果 -->
+            <tr v-else-if="screenResult && !screenError">
+              <td colspan="11" style="text-align:center; padding:40px 20px; color:#bbb;">
+                {{ screenResult.total > 0 ? '😔 没有符合条件的股票，请尝试调整条件' : '🔍 运行筛选后显示结果' }}
+              </td>
+            </tr>
+            <!-- 错误 -->
+            <tr v-else-if="screenError">
+              <td colspan="11" style="text-align:center; padding:30px; color:#cf1322;">
+                ⚠️ {{ screenError }}
+              </td>
+            </tr>
+            <!-- 初始状态 -->
+            <tr v-else>
+              <td colspan="11" style="text-align:center; padding:60px 20px; color:#bbb; font-size:14px;">
+                🔍 运行筛选后显示结果
               </td>
             </tr>
           </tbody>
@@ -325,34 +347,181 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed, nextTick } from 'vue'
-import {
-  getAllIndicators, categoryLabels, valueTypeLabels,
-  Category, ValueType,
-  type IndicatorWithPresets, type PresetSignal, type OperatorOption,
-  CompareOperator,
-} from '../mock/indicators'
-
-// ========== 类型定义 ==========
+import { reactive, ref, computed, nextTick, onMounted, watch } from 'vue'
+import * as indicatorsApi from '../api/indicators'
+import type {
+  IndicatorMeta, Category, CompareOperator,
+  SignalDef, SignalConfig, SignalOperatorOption, ParamDef, EnumOption,
+} from '../api/indicators'
+import { categoryLabels as catLabels, operatorSymbols, isCustomSignal } from '../api/indicators'
 
 interface Sig {
   uid: number
-  id: string; name: string; category: Category
-  operator: CompareOperator; opSym: string; opLbl: string
-  params: Record<string, any>; paramText: string
+  indicator_id: string       // 指标 ID（5位, 如 "03001"）
+  signal_id: string          // 8位数字信号ID（如 "03001001", "04001001"）
+  name: string               // 显示名
+  category: Category
+  operator: CompareOperator
+  opSym: string              // 操作符符号 (>)
+  opLbl: string              // 操作符中文标签
+  params: Record<string, any>
+  paramText: string          // 参数可读文本
 }
 
-// ========== 状态 ==========
-const allData = computed(() => getAllIndicators())
-const state = reactive({
-  category: null as Category | null,
-  indicator: null as IndicatorWithPresets | null,
-  preset: null as PresetSignal | null,
-  customMode: false,
-  selectedOp: null as OperatorOption | null,
+// ========== 指标数据（从后端 API 加载） ==========
+
+/** 全量指标数据，按分类分组 */
+const allData = ref<Record<Category, IndicatorMeta[]>>({
+  technical: [],
+  market: [],
+  fundamental: [],
+  financial: [],
 })
+/** 枚举选项映射（从 API 获取，用于 listing_board / industry 等枚举型指标） */
+const enumOptions = ref<Record<string, EnumOption[]>>({})
+/** 指标数据加载状态 */
+const indicatorsLoading = ref(true)
+/** 加载指标数据 */
+async function loadIndicators() {
+  indicatorsLoading.value = true
+  try {
+    const data = await indicatorsApi.fetchIndicators()
+    // 按 category 分组
+    const grouped: Record<string, IndicatorMeta[]> = { technical: [], market: [], fundamental: [], financial: [] }
+    for (const ind of data.indicators) {
+      const cat = ind.category as string
+      if (grouped[cat]) grouped[cat].push(ind)
+    }
+    allData.value = grouped as Record<Category, IndicatorMeta[]>
+    enumOptions.value = data.enum_options
+  } catch (e) {
+    console.error('加载指标数据失败:', e)
+  } finally {
+    indicatorsLoading.value = false
+  }
+}
+
+// 组件挂载时加载指标
+onMounted(() => { loadIndicators() })
+
+/** 当前展开的指标 ID */
+const expandedIndicatorID = ref<string | null>(null)
+const expandedInd = computed(() => {
+  if (!expandedIndicatorID.value) return null
+  for (const cats of Object.values(allData.value)) {
+    const found = cats.find(i => i.id === expandedIndicatorID.value)
+    if (found) return found
+  }
+  return null
+})
+
+// ============================================================================
+//  展开指标的信号拆分（内置 vs 自定义，两种独立交互模型）
+// ============================================================================
+
+/** 当前展开指标下的内置信号列表（signal_id 第6位='0'，一键添加模式） */
+const builtinSigs = ref<SignalDef[]>([])
+
+/** 当前展开指标下的自定义信号列表（signal_id 第6位='1'，表单配置模式） */
+const customSigs = ref<SignalDef[]>([])
+
+/** 自定义表单状态（仅用于自定义信号区） */
+const selectedSignalID = ref<string | null>(null)  // 当前选中的内置信号ID（用于高亮）
+const customSignalID = ref<string>('')
+const customOperator = ref<CompareOperator>('gt')
 const paramValues = reactive<Record<string, any>>({})
 const multiVals = reactive<Record<string, string[]>>({})
+
+/** 监听指标切换：一次性拆分内置/自定义信号 + 初始化表单 */
+watch(expandedIndicatorID, (newID) => {
+  // 重置所有状态
+  builtinSigs.value = []
+  customSigs.value = []
+  customSignalID.value = ''
+  customOperator.value = 'gt'
+  clearParams()
+  selectedSignalID.value = null
+
+  if (!newID || !expandedInd.value) return
+
+  // 按 signal_id 来源位拆分为两个独立数组
+  for (const sig of expandedInd.value.signals) {
+    if (!isCustomSignal(sig.signal_id)) {
+      builtinSigs.value.push(sig)       // 第6位='0' → 一键添加
+    } else if (sig.operators.some(op => op.params.length > 0)) {
+      customSigs.value.push(sig)         // 第6位='1' + 有参数 → 表单配置
+    }
+  }
+
+  // 自定义表单默认选中第一个
+  if (customSigs.value.length > 0) {
+    const first = customSigs.value[0]
+    customSignalID.value = first.signal_id
+    customOperator.value = (first.operators[0]?.operator as CompareOperator) || 'gt'
+  }
+})
+
+/** 切换自定义信号时：重置操作符 → 清空参数 */
+watch(customSignalID, (newSigId) => {
+  if (!newSigId) return
+  // 重置操作符为该信号的第一个可用操作符
+  const sig = currentCustomSig.value
+  if (sig && sig.operators.length > 0) {
+    customOperator.value = (sig.operators[0].operator as CompareOperator)
+  } else {
+    customOperator.value = 'gt'
+  }
+  // 清空所有参数值（输入框 + 多选）
+  clearParams()
+})
+
+/** 切换操作符时：清空参数区域（不同操作符的参数定义可能不同） */
+watch(customOperator, () => {
+  clearParams()
+})
+
+// ============================================================================
+//  自定义表单计算属性（仅依赖 customSigs / customSignalID / customOperator）
+// ============================================================================
+
+/** 当前选中的自定义信号定义 */
+const currentCustomSig = computed((): SignalDef | undefined => {
+  if (!customSignalID.value || customSigs.value.length === 0) return undefined
+  return customSigs.value.find(s => s.signal_id === customSignalID.value)
+})
+
+/** 当前自定义信号的可用操作符 */
+const currentCustomOperators = computed((): SignalOperatorOption[] => {
+  if (!currentCustomSig.value) return []
+  return currentCustomSig.value.operators
+})
+
+/** 当前操作符的参数定义 */
+const currentOpParams = computed((): ParamDef[] => {
+  if (!currentCustomSig.value) return []
+  const op = currentCustomSig.value.operators.find(o => o.operator === customOperator.value)
+  return op?.params || []
+})
+
+/** 自定义添加按钮是否可用 */
+const canQuickAdd = computed(() => {
+  if (!customOperator.value) return false
+  const params = currentOpParams.value
+  for (const p of params) {
+    if (!p.required) continue
+    // 多选类型：检查 multiVals
+    if (p.type === 'multi_select' || p.type === 'select_multi') {
+      if (!multiVals[p.key] || multiVals[p.key].length === 0) return false
+    } else {
+      // 其他类型（数字、单选等）：检查 paramValues
+      const val = paramValues[p.key]
+      if (val === undefined || val === '') return false
+    }
+  }
+  return true
+})
+
+/** 已选信号列表 */
 const signals = ref<Sig[]>([])
 let uidCounter = 0
 const logicalOp = ref<'AND' | 'OR'>('AND')
@@ -373,7 +542,6 @@ interface BuilderEmits {
 }
 const emit = defineEmits<BuilderEmits>()
 const editingId = ref<number | null>(null) // 后端数字 ID，null = 新建模式
-const showAddPanel = ref(false)
 
 // 策略名称内联编辑
 function startEditName() {
@@ -382,6 +550,12 @@ function startEditName() {
     nameInputRef.value?.focus()
     nameInputRef.value?.select()
   })
+}
+
+/** 滚动到条件选股区域 */
+function scrollToIndicators() {
+  const el = document.querySelector('.sec-signals')
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 // AI 输入文本
@@ -401,10 +575,16 @@ async function saveStrategy() {
       name,
       logical_op: logicalOp.value,
       signals: signals.value.map(s => ({
-        uid: s.uid, id: s.id, name: s.name,
-        category: s.category, operator: s.operator,
-        opSym: s.opSym, opLbl: s.opLbl,
-        params: s.params, paramText: s.paramText,
+        uid: s.uid,
+        indicator_id: s.indicator_id,
+        signal_id: s.signal_id,
+        name: s.name,
+        category: s.category,
+        operator: s.operator,
+        opSym: s.opSym,
+        opLbl: s.opLbl,
+        params: s.params,
+        paramText: s.paramText,
       })),
       description: '',
     }
@@ -426,94 +606,207 @@ async function saveStrategy() {
   }
 }
 
-// ========== 计算属性 ==========
-const indicatorsInCat = computed(() => allData.value[state.category!] || [])
-const showOperatorStep = computed(() => !!(state.indicator) && !!(state.preset || state.customMode))
-const groupedOperators = computed(() => {
-  const ops = state.indicator?.operators || []
-  return {
-    number: ops.filter(o => ['>', '>=', '<', '<=', 'between', 'not_between'].includes(o.operator)),
-    series: ops.filter(o => ['cross_up', 'cross_down', 'divergence_pos', 'divergence_neg', 'breakout', 'breakdown'].includes(o.operator)),
-    enum: ops.filter(o => ['in', 'not_in', 'contains'].includes(o.operator)),
-    bool: ops.filter(o => ['=', '!='].includes(o.operator)),
-  }
-})
-const canAdd = computed(() => {
-  if (!state.indicator || !state.selectedOp) return false
-  for (const p of state.selectedOp.params) {
-    if (p.required && ((p.type === 'multiSelect' && (!multiVals[p.key] || multiVals[p.key].length === 0)) || (paramValues[p.key] === undefined || paramValues[p.key] === ''))) return false
-  }
-  return true
-})
-
-// Mock 结果表格数据
-interface MockRow { code: string; name: string; price: number; change: number; low: number; high: number; open: number; volume: string; matchedSignals: string[] }
-const mockResults = computed<MockRow[]>(() => {
-  if (signals.value.length === 0) return []
-  const baseStocks = [
-    { code: '000609', name: '*ST中迪', price: 11.87 },
-    { code: '002290', name: '禾盛新材', price: 81.35 },
-    { code: '600433', name: '冠豪高新', price: 4.00 },
-    { code: '600696', name: '*ST岩石', price: 1.38 },
-    { code: '600770', name: '综艺股份', price: 6.97 },
-    { code: '603318', name: '水发燃气', price: 11.39 },
-    { code: '603813', name: '*ST原尚', price: 33.32 },
-    { code: '001211', name: '双枪科技', price: 28.18 },
-    { code: '600892', name: '*ST大晟', price: 3.68 },
-    { code: '002569', name: '*ST步森', price: 14.02 },
-  ]
-  const sigNames = signals.value.map(s => s.name.slice(0, 6))
-  return baseStocks.map((s, i) => ({
-    ...s,
-    change: (Math.random() * 10 - 4.5),
-    low: s.price * (0.95 + Math.random() * 0.04),
-    high: s.price * (1.01 + Math.random() * 0.06),
-    open: s.price * (0.97 + Math.random() * 0.04),
-    volume: `${Math.floor(Math.random() * 50000 + 5000)}手`,
-    matchedSignals: sigNames.slice(0, Math.min(sigNames.length, Math.floor(Math.random() * sigNames.length) + 1)),
-  })).sort((a, b) => b.change - a.change).slice(0, 7)
-})
-
 // ========== 方法 ==========
-function toggleAddPanel() { showAddPanel.value = !showAddPanel.value }
-function selectCategory(cat: Category) { state.category = cat; resetFrom(1) }
-function selectIndicator(ind: IndicatorWithPresets) { state.indicator = ind; state.preset = null; state.customMode = false; state.selectedOp = null; clearParams() }
-function selectPreset(p: PresetSignal) { state.preset = p; state.customMode = false; clearParams(); const defaultOp = findOpByComparator(p.defaultOperator); if (defaultOp) state.selectedOp = defaultOp; for (const [k, v] of Object.entries(p.defaultParams)) { Array.isArray(v) ? (multiVals[k] = [...v]) : (paramValues[k] = v) } }
-function enterCustomMode() { state.customMode = true; state.preset = null; state.selectedOp = null; clearParams() }
-function selectOperator(op: OperatorOption) { state.selectedOp = op; clearParams(); for (const p of op.params) { if (p.type === 'multiSelect') multiVals[p.key] = []; else if (p.default !== undefined) paramValues[p.key] = p.default } }
-function resetFrom(step: number) { if (step <= 2) state.indicator = null; if (step <= 3) { state.preset = null; state.customMode = false } if (step <= 4) state.selectedOp = null; clearParams() }
-function clearParams() { for (const k of Object.keys(paramValues)) delete paramValues[k]; for (const k of Object.keys(multiVals)) multiVals[k] = [] }
-function isNumberLike(t: string): boolean { return ['number', 'range', 'threshold', 'days'].includes(t) }
-function getEnumOpts(indID: string): { value: string; label: string }[] {
-  const eo = (window as any).__enumOptions || {}
-  if (indID === 'listing_board') { const vs = eo.listing_board || ['main','chinext','star','neeq']; const ls = eo.listing_board_labels || vs; return vs.map((v: string, i: number) => ({ value: v, label: ls[i] || v })) }
-  if (indID === 'industry') return (eo.industry || []).map((v: string) => ({ value: v, label: v }))
-  return []
-}
-function findOpByComparator(cmp: CompareOperator): OperatorOption | undefined { return state.indicator?.operators.find(o => o.operator === cmp) }
-function getOperatorSymbol(cmp: CompareOperator): string { return findOpByComparator(cmp)?.symbol ?? cmp }
-function getOperatorLabel(cmp: CompareOperator): string { return findOpByComparator(cmp)?.label ?? '' }
-function catLabel(c: Category): string { return categoryLabels[c] }
 
-// ========== 信号操作 ==========
-function addSignal() {
-  if (!state.indicator || !state.selectedOp) return
-  const ind = state.indicator; const op = state.selectedOp
-  const collected: Record<string, any> = {}
-  for (const p of op.params) { if (p.type === 'multiSelect') collected[p.key] = [...(multiVals[p.key] || [])]; else if (paramValues[p.key] !== undefined) collected[p.key] = paramValues[p.key]; else if (p.default !== undefined) collected[p.key] = p.default }
-  let text = ''
-  switch (op.operator) {
-    case CompareOperator.GT: case CompareOperator.GTE: case CompareOperator.LT: case CompareOperator.LTE: text = `${collected.value_number}${ind.unit}`; break
-    case CompareOperator.Between: case CompareOperator.NotBetween: text = `[${collected.min_value}, ${collected.max_value}]${ind.unit}`; break
-    case CompareOperator.In: case CompareOperator.NotIn: text = `{${collected.value_list?.join(', ')}}`; break
-    default: text = Object.entries(collected).map(([k, v]) => `${k}=${v}`).join(', ')
+/** 切换指标展开/收起（状态初始化由 watch expandedIndicatorID 统一处理） */
+function toggleExpandIndicator(indID: string) {
+  if (expandedIndicatorID.value === indID) {
+    expandedIndicatorID.value = null
+    return
   }
-  const newSig: Sig = { uid: ++uidCounter, id: ind.id, name: ind.name, category: ind.category, operator: op.operator, opSym: op.symbol, opLbl: op.label, params: collected, paramText: text }
-  signals.value.push(newSig); emit('addSignals', [newSig])
-  addSuccessMsg.value = `✓ 已添加: ${ind.name}`
+  expandedIndicatorID.value = indID
+}
+
+/** 选择信号模板并直接添加（使用默认配置） */
+function selectSignalQuick(sig: SignalDef) {
+  if (!expandedInd.value || !sig.default_config) return
+  selectedSignalID.value = sig.signal_id
+
+  const ind = expandedInd.value
+  const cfg = sig.default_config
+
+  // 使用 default_config 中的默认操作符和参数，直接构建 Sig
+  const text = formatSignalParamText(cfg, ind)
+
+  const newSig: Sig = {
+    uid: ++uidCounter,
+    indicator_id: ind.id,
+    signal_id: cfg.signal_id,
+    name: sig.name || ind.name,
+    category: ind.category,
+    operator: cfg.operator,
+    opSym: operatorSymbols[cfg.operator] || cfg.operator,
+    opLbl: findOpLabel(ind, cfg.operator),
+    params: { ...cfg.params },
+    paramText: text,
+  }
+  signals.value.push(newSig)
+  emit('addSignals', [newSig])
+  showAddSuccess(`✓ 已添加: ${sig.name}`)
+}
+
+/** 添加内置信号（使用 default_config 一键添加） */
+function addBuiltinSignal(sig: SignalDef) {
+  if (!expandedInd.value || !sig.default_config) return
+  const ind = expandedInd.value
+  const cfg = sig.default_config
+  const text = formatSignalParamText(cfg, ind)
+
+  const newSig: Sig = {
+    uid: ++uidCounter,
+    indicator_id: ind.id,
+    signal_id: cfg.signal_id,
+    name: sig.name,
+    category: ind.category,
+    operator: cfg.operator,
+    opSym: operatorSymbols[cfg.operator] || cfg.operator,
+    opLbl: findOpLabel(ind, cfg.operator),
+    params: { ...cfg.params },
+    paramText: text,
+  }
+  signals.value.push(newSig)
+  emit('addSignals', [newSig])
+  showAddSuccess(`✓ 已添加: ${sig.name}`)
+}
+
+/** 内置信号的简短描述（从 default_config 提取，枚举值用 label 替代） */
+function formatBuiltinDesc(sig: SignalDef): string {
+  const cfg = sig.default_config
+  if (!cfg) return ''
+  const op = sig.operators.find(o => o.operator === cfg.operator)
+  const opLabel = op?.label ?? cfg.operator
+  // 枚举型：提取 values 并映射为 label
+  if (cfg.params.values && Array.isArray(cfg.params.values)) {
+    const vals = cfg.params.values as string[]
+    // 从操作符参数定义中找枚举选项
+    const enumOpts = op?.params.find(p =>
+      p.type === 'multi_select' || p.type === 'select_multi' || p.type === 'select'
+    )?.options
+    if (enumOpts && enumOpts.length > 0) {
+      const valToLabel = new Map(enumOpts.map(o => [o.value, o.label]))
+      const labels = vals.map(v => valToLabel.get(v) || v)
+      return `${opLabel} ${labels.join(',')}`
+    }
+    return `${opLabel} ${vals.join(',')}`
+  }
+  // 数值型：取 threshold
+  if (cfg.params.threshold != null) return `${opLabel} ${cfg.params.threshold}`
+  // range 型
+  if (cfg.params.min != null && cfg.params.max != null) return `${opLabel} ${cfg.params.min}~${cfg.params.max}`
+  return opLabel
+}
+
+/** 添加自定义信号（从表单收集操作符+参数） */
+function addCustomSignal() {
+  if (!expandedInd.value || !currentCustomSig.value) return
+  const ind = expandedInd.value
+  const sig = currentCustomSig.value
+  const op = sig.operators.find(o => o.operator === customOperator.value)
+  if (!op) return
+
+  // 收集参数值
+  const collected: Record<string, any> = {}
+  for (const p of op.params) {
+    if (p.type === 'multi_select' || p.type === 'select_multi') { collected[p.key] = [...(multiVals[p.key] || [])] }
+    else if (paramValues[p.key] !== undefined) { collected[p.key] = paramValues[p.key] }
+    else if (p.default !== undefined) { collected[p.key] = p.default }
+  }
+
+  // 构建可读文本
+  const text = formatSignalParamText(
+    { signal_id: sig.signal_id, operator: customOperator.value, params: collected } as SignalConfig,
+    ind,
+  )
+
+  const newSig: Sig = {
+    uid: ++uidCounter,
+    indicator_id: ind.id,
+    signal_id: sig.signal_id,
+    name: sig.name || ind.name,
+    category: ind.category,
+    operator: customOperator.value,
+    opSym: operatorSymbols[customOperator.value] || customOperator.value,
+    opLbl: op.label || findOpLabel(ind, customOperator.value),
+    params: collected,
+    paramText: text,
+  }
+  signals.value.push(newSig)
+  emit('addSignals', [newSig])
+  showAddSuccess(`✓ 已添加: ${ind.name} ${operatorSymbols[customOperator.value]}`)
+  clearParams()
+}
+
+function showAddSuccess(msg: string) {
+  addSuccessMsg.value = msg
   if (successTimer) clearTimeout(successTimer)
   successTimer = setTimeout(() => { addSuccessMsg.value = '' }, 2500)
-  state.preset = null; state.customMode = false; state.selectedOp = null; clearParams()
+}
+function clearParams() {
+  for (const k of Object.keys(paramValues)) delete paramValues[k]
+  for (const k of Object.keys(multiVals)) multiVals[k] = []
+}
+function isNumberLike(t: string): boolean { return ['number', 'range', 'threshold', 'days'].includes(t) }
+function isMultiSelect(t: string): boolean { return ['multi_select', 'select_multi'].includes(t) }
+
+/** 切换多选项的选中状态 */
+function toggleMultiVal(key: string, value: string) {
+  if (!multiVals[key]) multiVals[key] = []
+  const idx = multiVals[key].indexOf(value)
+  if (idx >= 0) {
+    multiVals[key].splice(idx, 1)
+  } else {
+    multiVals[key].push(value)
+  }
+}
+
+/** 获取操作符的显示符号 */
+function operatorSymbol(op: CompareOperator): string { return operatorSymbols[op] || op }
+
+/** 从信号的操作符列表中找操作符标签 */
+function findOpLabel(ind: IndicatorMeta, op: CompareOperator): string {
+  // 遍历所有信号的操作符查找标签
+  for (const sig of ind.signals) {
+    const found = sig.operators.find(o => o.operator === op)
+    if (found) return found.label
+  }
+  return op
+}
+
+/** 将 SignalConfig 格式化为可读参数文本 */
+function formatSignalParamText(cfg: SignalConfig, ind: IndicatorMeta): string {
+  // 辅助：从信号定义中查找枚举选项的 value→label 映射
+  const findEnumLabels = (sigId: string, key: string): Map<string, string> | null => {
+    for (const sig of ind.signals) {
+      if (sig.signal_id === sigId) {
+        for (const op of sig.operators) {
+          for (const p of op.params) {
+            if (p.key === key && p.options) return new Map(p.options.map(o => [o.value, o.label]))
+          }
+        }
+      }
+    }
+    return null
+  }
+
+  switch (cfg.operator) {
+    case 'gt':   return `${cfg.params.threshold ?? ''}${ind.unit}`
+    case 'gte':  return `≥${cfg.params.threshold ?? ''}${ind.unit}`
+    case 'lt':   return `<${cfg.params.threshold ?? ''}${ind.unit}`
+    case 'lte':  return `≤${cfg.params.threshold ?? ''}${ind.unit}`
+    case 'between': case 'not_between':
+      return `[${cfg.params.min ?? ''}~${cfg.params.max ?? ''}]${ind.unit}`
+    case 'in': case 'not_in': {
+      const vals = cfg.params.values as string[] | undefined
+      if (!vals || vals.length === 0) return '{}'
+      const labelMap = findEnumLabels(cfg.signal_id!, 'values')
+      if (labelMap) {
+        return `{${vals.map(v => labelMap.get(v) || v).join(',')}}`
+      }
+      return `{${vals.join(',')}}`
+    }
+    default:
+      return Object.entries(cfg.params).map(([k, v]) => `${k}=${v}`).join(', ')
+  }
 }
 function removeSignal(idx: number) { signals.value.splice(idx, 1) }
 function confirmClear() { signals.value = []; showClearConfirm.value = false }
@@ -521,7 +814,17 @@ function confirmClear() { signals.value = []; showClearConfirm.value = false }
 function handleAISubmit() { /* TODO: 对接 AI 解析 */ }
 
 function exportJSON() {
-  const json = JSON.stringify({ name: strategyName.value, logical_op: logicalOp.value, conditions: signals.value.map(s => ({ indicator_id: s.id, name: s.name, operator: s.operator, params: s.params })) }, null, 2)
+  const json = JSON.stringify({
+    name: strategyName.value,
+    logical_op: logicalOp.value,
+    conditions: signals.value.map(s => ({
+      indicator_id: s.indicator_id,
+      signal_id: s.signal_id,
+      name: s.name,
+      operator: s.operator,
+      params: s.params,
+    })),
+  }, null, 2)
   const blob = new Blob([json], { type: 'application/json' })
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${strategyName.value || '未命名策略'}_${Date.now()}.json`; a.click(); URL.revokeObjectURL(a.href)
 }
@@ -542,12 +845,13 @@ function importJSON(e: Event) {
         for (const c of data.conditions) {
           signals.value.push({
             uid: ++uidCounter,
-            id: c.indicator_id || c.id || '',
+            indicator_id: c.indicator_id || c.id || '',
+            signal_id: c.signal_id || '',
             name: c.name || '',
             category: 'technical',
-            operator: c.operator || '>',
-            opSym: c.operator || '>',
-            opLbl: c.operator || '>',
+            operator: (c.operator as CompareOperator) || 'gt',
+            opSym: operatorSymbols[c.operator as CompareOperator] || c.operator,
+            opLbl: c.operator || 'gt',
             params: c.params || {},
             paramText: JSON.stringify(c.params || {}),
           })
@@ -560,11 +864,55 @@ function importJSON(e: Event) {
   // 重置 file input 以便重复选择同一文件
   ;(e.target as HTMLInputElement).value = ''
 }
-function runFilter() { alert('🔍 筛选功能即将对接后端 API，敬请期待！') }
+// ========== 筛选执行 ==========
+const isScreening = ref(false)
+const screenResult = ref<{ passed: any[]; rejected: any[]; total: number } | null>(null)
+const screenError = ref('')
 
-/** 外部调用 */
+async function runFilter() {
+  if (signals.value.length === 0) { alert('请先添加至少一个信号条件'); return }
+
+  isScreening.value = true
+  screenError.value = ''
+  screenResult.value = null
+
+  try {
+    const res = await indicatorsApi.executeScreen({
+      configs: signals.value.map(s => ({
+        signal_id: s.signal_id,
+        operator: s.operator,
+        params: s.params,
+      })),
+      max_concurrency: 10,
+    })
+
+    screenResult.value = {
+      total: res.total,
+      passed: res.passed || [],
+      rejected: res.rejected || [],
+    }
+  } catch (e: any) {
+    console.error('筛选执行失败:', e)
+    screenError.value = e.message || '筛选执行失败'
+  } finally {
+    isScreening.value = false
+  }
+}
+
+/** 外部调用：接收 AI 解析的信号 */
 function acceptAISignals(aiSignals: any[]) {
-  for (const s of aiSignals) { signals.value.push({ uid: ++uidCounter, id: s.indicatorID, name: s.indicatorName, category: s.category as Category, operator: s.operator as CompareOperator, opSym: s.operatorSymbol, opLbl: s.operatorLabel, params: s.params, paramText: s.paramSummary }) }
+  for (const s of aiSignals) { signals.value.push({
+    uid: ++uidCounter,
+    indicator_id: s.indicatorID || s.indicator_id,
+    signal_id: s.signalID || s.signal_id,
+    name: s.indicatorName || s.name,
+    category: s.category as Category,
+    operator: s.operator as CompareOperator,
+    opSym: operatorSymbols[s.operator as CompareOperator] || s.operatorSymbol || s.operator,
+    opLbl: s.operatorLabel || s.operator,
+    params: s.params || {},
+    paramText: s.paramSummary || '',
+  }) }
 }
 /** 从策略列表加载策略到编辑器 */
 function loadStrategyFromOutside(s: { id: string | number; name: string; signals: Sig[]; logicalOp: 'AND' | 'OR' }) {
@@ -667,12 +1015,12 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .btn-ai-send:hover:not(:disabled) { background: #0958d9; }
 .btn-ai-send:disabled { background: #d9d9d9; cursor: not-allowed; }
 
-/* ========== Section 2: 信号选择器 ========== */
+/* ========== Section 2: 条件选股（指标平铺网格） ========== */
 .sec-signals { background: #fff; border: 1px solid #e8e8e8; border-radius: 10px; padding: 16px 20px; }
 
 .sec-header-row {
   display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 .sec-left { display: flex; align-items: center; gap: 10px; }
 .sec-title { font-size: 15px; font-weight: 700; color: #1a1a2e; margin: 0; }
@@ -681,83 +1029,140 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
   background: #fff7e6; color: #d46b08; font-weight: 600;
 }
 .sec-right { display: flex; gap: 8px; }
-.btn-add-cond {
-  padding: 6px 16px; border: 1.5px dashed #d9d9d9; border-radius: 6px;
-  background: transparent; cursor: pointer; font-size: 13px; color: #555; transition: .15s;
+.btn-sec-sm { padding: 5px 14px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; font-size: 12px; cursor: pointer; color: #666; }
+.btn-sec-sm:hover { border-color: #cf1322; color: #cf1322; }
+
+/* ====== 指标平铺网格（四列横排） ====== */
+.indicators-loading {
+  display: flex; align-items: center; justify-content: center;
+  gap: 10px; padding: 40px 20px; font-size: 13.5px; color: #999;
 }
-.btn-add-cond:hover { border-color: #1677ff; color: #1677ff; }
-
-/* 可展开的添加面板 */
-.add-panel-inline {
-  margin: 12px 0; border: 1px solid #eee; border-radius: 10px;
-  overflow: hidden; background: #fafbfc;
+.loading-spinner {
+  width: 18px; height: 18px; border: 2px solid #e0e0e0;
+  border-top-color: #1677ff; border-radius: 50%;
+  animation: spin 0.7s linear infinite;
 }
-.add-panel-inner { padding: 18px 20px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.indicators-flat-area {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 4px;
+}
+.cat-column {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fafafa;
+}
+.cat-section-header {
+  font-size: 12.5px; font-weight: 700; color: #888;
+  padding-bottom: 6px; letter-spacing: 0.5px;
+}
+.indicator-grid {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.ind-drop-btn {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 4px 11px; border: 1px solid #e0e0e0; border-radius: 6px;
+  background: #fafafa; cursor: pointer; font-size: 13px; font-weight: 500;
+  color: #444; transition: all .12s; white-space: nowrap;
+}
+.ind-drop-btn:hover { border-color: #1677ff; color: #1677ff; background: #f0f7ff; }
+.ind-drop-btn.expanded {
+  border-color: #1677ff; color: #1677ff; background: #e6f4ff; font-weight: 600;
+}
+.drop-arrow { font-size: 9px; opacity: .5; transition: transform .2s; }
 
-/* 步骤样式（复用原有） */
-.step-block { margin-bottom: 16px; }
-.step-label { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: #444; margin-bottom: 10px; }
-.step-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #1677ff; color: #fff; font-size: 12px; font-weight: 700; }
-.step-count { margin-left: auto; font-weight: 400; color: #aaa; font-size: 11px; }
-.step-hint { margin-left: auto; font-weight: 400; color: #888; font-size: 11px; }
-.step-hint.dim { color: #bbb; }
+/* ====== 展开面板 ====== */
+.ind-expand-panel {
+  margin: 10px 0 14px; padding: 16px 18px;
+  border: 1.5px solid #bae0ff; border-radius: 10px;
+  background: linear-gradient(to bottom, #f0f9ff, #fff);
+}
+.expand-header {
+  display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;
+}
+.expand-ind-name { font-size: 15px; font-weight: 700; color: #1a1a2e; }
+.expand-ind-desc { font-size: 12px; color: #999; }
+.expand-close-btn {
+  margin-left: auto; border: none; background: none; cursor: pointer;
+  font-size: 14px; color: #bbb; padding: 2px 6px; border-radius: 4px;
+}
+.expand-close-btn:hover { background: #f0f0f0; color: #666; }
+.expand-label {
+  font-size: 11.5px; font-weight: 600; color: #888;
+  text-transform: uppercase; letter-spacing: 0.5px; margin: 10px 0 6px;
+}
 
-.cat-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
-.cat-tab { padding: 7px 16px; border: 1.5px solid #d9d9d9; border-radius: 20px; background: #fafafa; cursor: pointer; font-size: 13px; transition: .15s; }
-.cat-tab:hover { border-color: #aaa; }
-.cat-tab.active { background: #1677ff; color: #fff; border-color: #1677ff; }
+/* 预设信号紧凑列表 */
+.preset-list-compact { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.preset-mini {
+  display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px;
+  border: 1.5px solid #e8e8e8; border-radius: 6px; cursor: pointer;
+  background: #fafafa; transition: all .12s; text-align: left;
+  font-size: 13px; flex: 0 0 calc(16.66% - 6px); max-width: calc(16.66% - 6px);
+}
+.preset-mini:hover { border-color: #91caff; background: #f0f7ff; }
+.preset-mini.selected { border-color: #1677ff; background: #e6f4ff; }
+.pm-name { font-size: 13px; font-weight: 600; color: #1a1a2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-desc { font-size: 11.5px; color: #999; margin-left: 4px; }
+.pm-add {
+  font-size: 12px; font-weight: 600; color: #389e0d; white-space: nowrap;
+}
 
-.indicator-scroll { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
-.indicator-scroll::-webkit-scrollbar { width: 4px; }
-.indicator-scroll::-webkit-scrollbar-thumb { background: #ddd; border-radius: 3px; }
-.ind-btn { display: flex; justify-content: space-between; align-items: flex-start; padding: 11px 14px; border: 1.5px solid #eee; border-radius: 10px; background: #fff; cursor: pointer; transition: .15s; text-align: left; }
-.ind-btn:hover { border-color: #bbb; }
-.ind-btn.selected { border-color: #1677ff; background: #e6f4ff; }
-.ind-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.ind-name { font-size: 14px; font-weight: 600; }
-.ind-desc { font-size: 11.5px; color: #888; line-height: 1.35; }
-.ind-meta { display: flex; gap: 6px; align-items: center; flex-shrink: 0; margin-left: 8px; }
-.type-badge { font-size: 10.5px; padding: 1px 7px; border-radius: 8px; background: #eee; color: #666; white-space: nowrap; }
-.preset-count { font-size: 10.5px; color: #1677ff; font-weight: 500; white-space: nowrap; }
-.preset-count.dim { color: #ccc; }
-
-.preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.preset-card { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1.5px solid #e8e8e8; border-radius: 10px; background: #fcfcfc; cursor: pointer; transition: .15s; text-align: left; }
-.preset-card:hover { border-color: #bbb; }
-.preset-card.selected { border-color: #1677ff; background: #e6f4ff; }
-.preset-name { font-size: 14px; font-weight: 700; color: #1a1a2e; }
-.preset-desc { font-size: 12px; color: #777; }
-.custom-mode-btn { width: 100%; margin-top: 6px; padding: 8px; border: 1.5px dashed #d9d9d9; border-radius: 8px; background: transparent; cursor: pointer; font-size: 12.5px; color: #666; transition: .15s; }
-.custom-mode-btn:hover { border-color: #1677ff; color: #1677ff; }
-.custom-mode-btn.active { border-style: solid; border-color: #1677ff; background: #e6f4ff; color: #1677ff; font-weight: 600; }
-
-.no-preset-hint { text-align: center; padding: 14px; background: #fafafa; border-radius: 8px; border: 1px dashed #ddd; }
-.no-preset-hint p { font-size: 13px; color: #888; margin-bottom: 8px; }
-.btn-small { padding: 5px 14px; border: 1px solid #1677ff; border-radius: 6px; background: #fff; color: #1677ff; cursor: pointer; font-size: 12px; }
-
-.op-group-label { font-size: 11.5px; font-weight: 600; color: #999; margin: 10px 0 6px; }
-.op-list { display: flex; flex-direction: column; gap: 5px; }
-.op-btn { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border: 1.5px solid #eee; border-radius: 10px; cursor: pointer; background: #fff; transition: .15s; text-align: left; }
-.op-btn:hover { border-color: #aaa; }
-.op-btn.selected { border-color: #1677ff; background: #e6f4ff; }
-.op-sym { font-family: monospace; font-size: 19px; font-weight: 700; width: 36px; text-align: center; }
-.op-lbl { font-size: 14px; font-weight: 600; }
-
-.params-block { background: #f9f9f9; padding: 12px; border-radius: 8px; border: 1px solid #eee; }
-.params-grid { display: flex; flex-direction: column; gap: 10px; }
-.param-item { display: flex; flex-direction: column; gap: 3px; }
-.param-label { font-size: 12px; font-weight: 500; color: #555; }
-.param-unit { color: #999; font-weight: 400; }
-.req { color: #cf1322; }
-.param-input { padding: 7px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; outline: none; }
-.param-input:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.08); }
-.param-tip { font-size: 11px; color: #aaa; margin: 0; }
-
-.add-btn-wrap { position: relative; margin-top: 6px; }
-.add-btn { width: 100%; padding: 13px; font-size: 15px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #1677ff, #0958d9); border: none; border-radius: 10px; cursor: pointer; transition: .2s; }
-.add-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(22,119,255,.35); }
-.add-btn:disabled { background: #d9d9d9; cursor: not-allowed; }
-.add-success-msg { position: absolute; bottom: -24px; left: 0; right: 0; text-align: center; font-size: 12.5px; color: #389e0d; font-weight: 600; }
+/* 自定义快速添加表单 */
+.quick-add-form {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; border: 1px dashed #d9d9d9; border-radius: 8px;
+  background: #fafafa; flex-wrap: wrap;
+}
+.qf-operator { }
+.qf-op-select {
+  padding: 5px 10px; border: 1px solid #d9d9d9; border-radius: 6px;
+  font-size: 13px; font-weight: 500; color: #333; outline: none; cursor: pointer;
+  background: #fff; min-width: 80px;
+}
+.qf-op-select:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.06); }
+.qf-params { display: flex; gap: 6px; flex: 1; align-items: center; flex-wrap: wrap; }
+.qf-input {
+  padding: 5px 10px; border: 1px solid #d9d9d9; border-radius: 6px;
+  font-size: 13px; outline: none; color: #333; width: 110px;
+  background: #fff;
+}
+.qf-input:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.08); }
+.qf-select { width: 130px; }
+.qf-select-sig { min-width: 100px; font-weight: 600; color: #1a1a2e; }
+.qf-no-params { font-size: 12px; color: #aaa; font-style: italic; }
+.qf-add-btn {
+  padding: 5px 16px; font-size: 13px; font-weight: 600; color: #fff;
+  background: linear-gradient(135deg, #1677ff, #0958d9); border: none;
+  border-radius: 6px; cursor: pointer; transition: .15s; white-space: nowrap;
+}
+.qf-add-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(22,119,255,.3); }
+.qf-add-btn:disabled { background: #d9d9d9; cursor: not-allowed; }
+/* 多选 checkbox 组 */
+.qf-multi-select {
+  display: inline-flex; gap: 4px; flex-wrap: wrap;
+  padding: 4px 6px; background: #fafafa; border-radius: 6px;
+}
+.qf-checkbox {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 14px; font-size: 12.5px;
+  cursor: pointer; user-select: none; transition: .15s;
+  border: 1px solid #d9d9d9; background: #fff; color: #666;
+}
+.qf-checkbox:hover { border-color: #1677ff; }
+.qf-checkbox.checked {
+  background: #e6f4ff; border-color: #1677ff; color: #1677ff; font-weight: 600;
+}
+.qf-checkbox input[type="checkbox"] { display: none; }
+.add-success-msg-inline {
+  display: block; text-align: center; font-size: 12.5px; color: #389e0d; font-weight: 600;
+  margin-top: 6px;
+}
 
 /* 空状态 */
 .empty-signals { text-align: center; padding: 40px 20px; }
@@ -876,10 +1281,10 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 }
 
 /* ====== 动画 ====== */
-.slide-down-enter-active { transition: all .25s ease-out; overflow: hidden; }
-.slide-down-leave-active { transition: all .2s ease-in; overflow: hidden; }
-.slide-down-enter-from { opacity: 0; max-height: 0; }
-.slide-down-leave-to { opacity: 0; max-height: 0; }
+.expand-down-enter-active { transition: all .25s ease-out; overflow: hidden; }
+.expand-down-leave-active { transition: all .2s ease-in; overflow: hidden; }
+.expand-down-enter-from { opacity: 0; max-height: 0; margin-top: 0; padding-top: 0; padding-bottom: 0; }
+.expand-down-leave-to { opacity: 0; max-height: 0; margin-top: 0; padding-top: 0; padding-bottom: 0; }
 
 .fade-fast-enter-active { transition: opacity .2s ease; }
 .fade-fast-leave-active { transition: opacity .15s ease; }
