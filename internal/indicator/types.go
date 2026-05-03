@@ -215,8 +215,8 @@ type Signal interface {
 func NewBaseSignal(seq, name, desc string, valueType ValueType, operators []OperatorOption, defaultConfig *SignalConfig) BaseSignal {
 	return BaseSignal{
 		seq:           seq,
-		name:          name,
-		description:   desc,
+		NameStr:       name,
+		Desc:          desc,
 		valueType:     valueType,
 		operators:     operators,
 		defaultConfig: defaultConfig,
@@ -225,8 +225,8 @@ func NewBaseSignal(seq, name, desc string, valueType ValueType, operators []Oper
 
 type BaseSignal struct {
 	seq           string           // 2位序号 "01"~"99"
-	name          string           // 显示名
-	description   string           // 描述
+	NameStr       string           // 显示名
+	Desc          string           // 描述
 	valueType     ValueType        // ★ 值类型
 	operators     []OperatorOption // 该信号支持的操作符
 	defaultConfig *SignalConfig    // 默认配置(SignalID运行时填充)
@@ -237,11 +237,11 @@ func (s *BaseSignal) Seq() string {
 }
 
 func (s *BaseSignal) Name() string {
-	return s.name
+	return s.NameStr
 }
 
 func (s *BaseSignal) Description() string {
-	return s.description
+	return s.Desc
 }
 
 func (s *BaseSignal) ValueType() ValueType {
@@ -255,6 +255,28 @@ func (s *BaseSignal) Operators() []OperatorOption {
 func (s *BaseSignal) DefaultConfig() *SignalConfig {
 	return s.defaultConfig
 }
+
+// ============================================================================
+//  参数键常量 — 所有 SignalConfig.Params 中使用的 key 必须引用这里的常量，
+//  禁止在业务代码中出现裸字符串 key。
+//
+//  分组说明:
+//    - 数值比较类 (gt/gte/lt/lte/eq/neq): ParamKeyThreshold
+//    - 区间类 (between/not_between):       ParamKeyMin + ParamKeyMax
+//    - 枚举多选 (in/not_in):               ParamKeyValues
+//    - 序列交叉 (cross_above/cross_below): ParamKeyFastDays + ParamKeySlowDays
+//    - 回看天数 (rising/falling 等):       ParamKeyDays
+// ============================================================================
+
+const (
+	ParamKeyThreshold = "threshold" // 单阈值：gt/gte/lt/lte/eq/neq
+	ParamKeyMin       = "min"       // 区间下限：between/not_between
+	ParamKeyMax       = "max"       // 区间上限：between/not_between
+	ParamKeyValues    = "values"    // 枚举值列表：in/not_in
+	ParamKeyFastDays  = "fast_days" // 快线周期：cross_above/cross_below
+	ParamKeySlowDays  = "slow_days" // 慢线周期：cross_above/cross_below
+	ParamKeyDays      = "days"      // 通用回看天数：rising/falling 等
+)
 
 // ============================================================================
 //  SignalConfig 运行时信号配置 — 前后端交互核心载体
@@ -275,7 +297,7 @@ func (c *SignalConfig) GetSignalSeq() string { return SignalSeqFromFullID(c.Sign
 // IsCustom 是否为自定义信号 (第6位 == '1')
 func (c *SignalConfig) IsCustom() bool { return len(c.SignalID) >= 8 && c.SignalID[5] == '1' }
 
-// --- 参数访问器 ---
+// --- 通用参数访问器 ---
 
 func (c *SignalConfig) GetParam(key string, defaultVal any) any {
 	if c.Params == nil {
@@ -321,6 +343,73 @@ func (c *SignalConfig) GetString(key string, defaultVal string) string {
 		return s
 	}
 	return defaultVal
+}
+
+// ============================================================================
+//  操作符专用取值方法
+//
+//  每种 CompareOperator 对应固定的参数键集合，通过语义化方法名消除业务代码中的
+//  裸字符串 key（如 GetFloat64("threshold", 0) → Threshold()）。
+//
+//  分组:
+//    数值比较类 (OpGT/OpGTE/OpLT/OpLTE/OpEQ/OpNEQ): Threshold()
+//    区间类     (OpBetween/OpNotBetween):             RangeMin() + RangeMax()
+//    枚举多选   (OpIn/OpNotIn):                       Values()
+//    序列交叉   (OpCrossAbove/OpCrossBelow):           FastDays() + SlowDays()
+//    通用回看   (OpRising/OpFalling 等):               Days()
+// ============================================================================
+
+// Threshold 返回单阈值参数（适用于 OpGT/OpGTE/OpLT/OpLTE/OpEQ/OpNEQ）。
+func (c *SignalConfig) Threshold() float64 {
+	return c.GetFloat64(ParamKeyThreshold, 0)
+}
+
+// RangeMin 返回区间下限（适用于 OpBetween/OpNotBetween）。
+func (c *SignalConfig) RangeMin() float64 {
+	return c.GetFloat64(ParamKeyMin, 0)
+}
+
+// RangeMax 返回区间上限（适用于 OpBetween/OpNotBetween）。
+func (c *SignalConfig) RangeMax() float64 {
+	return c.GetFloat64(ParamKeyMax, 0)
+}
+
+// Values 返回枚举值列表（适用于 OpIn/OpNotIn）。
+// 若参数不存在或类型不匹配则返回空切片。
+func (c *SignalConfig) Values() []string {
+	v := c.GetParam(ParamKeyValues, nil)
+	if v == nil {
+		return nil
+	}
+	switch val := v.(type) {
+	case []string:
+		return val
+	case []any:
+		result := make([]string, 0, len(val))
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+// FastDays 返回快线周期天数（适用于 OpCrossAbove/OpCrossBelow），默认 12。
+func (c *SignalConfig) FastDays() int {
+	return c.GetInt(ParamKeyFastDays, 12)
+}
+
+// SlowDays 返回慢线周期天数（适用于 OpCrossAbove/OpCrossBelow），默认 26。
+func (c *SignalConfig) SlowDays() int {
+	return c.GetInt(ParamKeySlowDays, 26)
+}
+
+// Days 返回通用回看天数（适用于 OpRising/OpFalling 等），默认 5。
+func (c *SignalConfig) Days() int {
+	return c.GetInt(ParamKeyDays, 5)
 }
 
 // ============================================================================

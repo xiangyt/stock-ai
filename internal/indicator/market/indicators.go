@@ -1,7 +1,7 @@
 package market
 
 import (
-	"stock-ai/internal/screener/indicator"
+	"stock-ai/internal/indicator"
 )
 
 // All 返回行情面指标实例

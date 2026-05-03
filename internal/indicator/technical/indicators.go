@@ -1,7 +1,7 @@
 package technical
 
 import (
-	"stock-ai/internal/screener/indicator"
+	"stock-ai/internal/indicator"
 )
 
 // All 返回技术面指标实例

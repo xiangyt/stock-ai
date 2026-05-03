@@ -308,7 +308,7 @@ export function formatSignalConfig(
 /** 操作符 → 显示符号映射 */
 export const operatorSymbols: Record<CompareOperator, string> = {
   gt: '>', gte: '≥', lt: '<', lte: '≤',
-  eq: '=', neq: '≠',
+  eq: '', neq: '≠',
   between: '[]', not_between: ')(',
   in: '∈', not_in: '∉', contains: '∋',
   cross_above: '↑↑', cross_below: '↓↓',

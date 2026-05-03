@@ -1,7 +1,7 @@
 package financial
 
 import (
-	"stock-ai/internal/screener/indicator"
+	"stock-ai/internal/indicator"
 )
 
 // All 返回财务面指标实例

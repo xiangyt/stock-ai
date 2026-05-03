@@ -26,10 +26,6 @@
           :title="'点击编辑名称'"
         >{{ strategyName || '未命名策略' }}</span>
         <button class="btn-save-sm" @click="saveStrategy" :disabled="signals.length === 0" title="保存策略">💾 保存</button>
-        <button class="btn-save-sm btn-outline-sm" @click="exportJSON" title="导出策略JSON">导出</button>
-        <label class="btn-save-sm btn-outline-sm" title="导入策略JSON">导入
-          <input type="file" accept=".json" @change="importJSON" style="display:none" ref="importFileRef" />
-        </label>
       </div>
     </div>
 
@@ -68,6 +64,10 @@
           <span class="sig-count-tag" v-if="signals.length > 0">{{ signals.length }} 个条件</span>
         </div>
         <div class="sec-right">
+          <button class="btn-sec-sm" v-if="signals.length > 0" @click="exportJSON" title="导出信号">导出</button>
+          <label class="btn-sec-sm" v-if="signals.length > 0" title="导入信号">导入
+            <input type="file" accept=".json" @change="importJSON" style="display:none" ref="importFileRef" />
+          </label>
           <button class="btn-sec-sm" v-if="signals.length > 0" @click="showClearConfirm = true">清空全部</button>
         </div>
       </div>
@@ -118,8 +118,7 @@
                 class="preset-mini"
                 @click="addBuiltinSignal(sig)"
               >
-                <span class="pm-name">{{ sig.name }}</span>
-                <span v-if="sig.default_config" class="pm-desc">{{ formatBuiltinDesc(sig) }}</span>
+                <span class="pm-name">{{ sig.description }}</span>
               </button>
             </div>
           </template>
@@ -136,7 +135,7 @@
             </div>
             <!-- 步骤2: 选择操作符 -->
             <div class="qf-operator">
-              <select v-model="customOperator" class="qf-op-select">
+              <select v-model="customOperator" class="qf-op-select" @change="onOperatorChange">
                 <option v-for="op in currentCustomOperators" :key="op.operator" :value="op.operator">{{ op.label }} {{ op.label !== operatorSymbol(op.operator) ? `(${operatorSymbol(op.operator)})` : '' }}</option>
               </select>
             </div>
@@ -240,7 +239,6 @@
           </div>
         </div>
         <div class="results-right">
-          <button class="btn-res-action" @click="exportJSON">导出 ▾</button>
           <button class="btn-res-action run" @click="runFilter" :disabled="isScreening || signals.length === 0">
             {{ isScreening ? '⏳ 筛选中...' : '🔍 运行筛选' }}
           </button>
@@ -382,23 +380,35 @@ const enumOptions = ref<Record<string, EnumOption[]>>({})
 /** 指标数据加载状态 */
 const indicatorsLoading = ref(true)
 /** 加载指标数据 */
+let indicatorsLoadPromise: Promise<void> | null = null
+
 async function loadIndicators() {
+  // 正在加载中 → 返回同一个 Promise，避免重复请求
+  if (indicatorsLoadPromise) return indicatorsLoadPromise
+  // 已加载则直接返回
+  if (allData.value.technical.length > 0) return Promise.resolve()
   indicatorsLoading.value = true
-  try {
-    const data = await indicatorsApi.fetchIndicators()
-    // 按 category 分组
-    const grouped: Record<string, IndicatorMeta[]> = { technical: [], market: [], fundamental: [], financial: [] }
-    for (const ind of data.indicators) {
-      const cat = ind.category as string
-      if (grouped[cat]) grouped[cat].push(ind)
+  indicatorsLoadPromise = (async () => {
+    try {
+      const data = await indicatorsApi.fetchIndicators()
+      const grouped: Record<string, IndicatorMeta[]> = { technical: [], market: [], fundamental: [], financial: [] }
+      for (const ind of data.indicators) {
+        const cat = ind.category as string
+        if (grouped[cat]) grouped[cat].push(ind)
+      }
+      for (const cat in grouped) {
+        grouped[cat].sort((a, b) => a.id.localeCompare(b.id))
+      }
+      allData.value = grouped as Record<Category, IndicatorMeta[]>
+      enumOptions.value = data.enum_options
+    } catch (e) {
+      console.error('加载指标数据失败:', e)
+    } finally {
+      indicatorsLoading.value = false
+      indicatorsLoadPromise = null
     }
-    allData.value = grouped as Record<Category, IndicatorMeta[]>
-    enumOptions.value = data.enum_options
-  } catch (e) {
-    console.error('加载指标数据失败:', e)
-  } finally {
-    indicatorsLoading.value = false
-  }
+  })()
+  return indicatorsLoadPromise
 }
 
 // 组件挂载时加载指标
@@ -457,27 +467,36 @@ watch(expandedIndicatorID, (newID) => {
   if (customSigs.value.length > 0) {
     const first = customSigs.value[0]
     customSignalID.value = first.signal_id
-    customOperator.value = (first.operators[0]?.operator as CompareOperator) || 'gt'
+    // operator 和参数由 watch(customSignalID) 通过 default_config 初始化
   }
 })
 
-/** 切换自定义信号时：重置操作符 → 清空参数 */
-watch(customSignalID, (newSigId) => {
+/** 切换自定义信号时：从 default_config 初始化操作符和参数 */
+watch(customSignalID, async (newSigId) => {
   if (!newSigId) return
-  // 重置操作符为该信号的第一个可用操作符
   const sig = currentCustomSig.value
   if (sig && sig.operators.length > 0) {
-    customOperator.value = (sig.operators[0].operator as CompareOperator)
+    // 优先使用 default_config 初始化操作符和参数
+    if (sig.default_config) {
+      customOperator.value = sig.default_config.operator as CompareOperator
+      // 等待 currentOpParams 随 operator 更新
+      await nextTick()
+      const cfgParams = sig.default_config.params || {}
+      for (const p of currentOpParams.value) {
+        if (p.type === 'multi_select' || p.type === 'select_multi') {
+          multiVals[p.key] = [...(cfgParams[p.key] || [])]
+        } else {
+          paramValues[p.key] = cfgParams[p.key] ?? p.default
+        }
+      }
+    } else {
+      customOperator.value = sig.operators[0].operator as CompareOperator
+      clearParams()
+    }
   } else {
     customOperator.value = 'gt'
+    clearParams()
   }
-  // 清空所有参数值（输入框 + 多选）
-  clearParams()
-})
-
-/** 切换操作符时：清空参数区域（不同操作符的参数定义可能不同） */
-watch(customOperator, () => {
-  clearParams()
 })
 
 // ============================================================================
@@ -575,16 +594,9 @@ async function saveStrategy() {
       name,
       logical_op: logicalOp.value,
       signals: signals.value.map(s => ({
-        uid: s.uid,
-        indicator_id: s.indicator_id,
         signal_id: s.signal_id,
-        name: s.name,
-        category: s.category,
         operator: s.operator,
-        opSym: s.opSym,
-        opLbl: s.opLbl,
         params: s.params,
-        paramText: s.paramText,
       })),
       description: '',
     }
@@ -642,7 +654,6 @@ function selectSignalQuick(sig: SignalDef) {
   }
   signals.value.push(newSig)
   emit('addSignals', [newSig])
-  showAddSuccess(`✓ 已添加: ${sig.name}`)
 }
 
 /** 添加内置信号（使用 default_config 一键添加） */
@@ -666,7 +677,6 @@ function addBuiltinSignal(sig: SignalDef) {
   }
   signals.value.push(newSig)
   emit('addSignals', [newSig])
-  showAddSuccess(`✓ 已添加: ${sig.name}`)
 }
 
 /** 内置信号的简短描述（从 default_config 提取，枚举值用 label 替代） */
@@ -732,7 +742,6 @@ function addCustomSignal() {
   }
   signals.value.push(newSig)
   emit('addSignals', [newSig])
-  showAddSuccess(`✓ 已添加: ${ind.name} ${operatorSymbols[customOperator.value]}`)
   clearParams()
 }
 
@@ -744,6 +753,9 @@ function showAddSuccess(msg: string) {
 function clearParams() {
   for (const k of Object.keys(paramValues)) delete paramValues[k]
   for (const k of Object.keys(multiVals)) multiVals[k] = []
+}
+function onOperatorChange() {
+  clearParams()
 }
 function isNumberLike(t: string): boolean { return ['number', 'range', 'threshold', 'days'].includes(t) }
 function isMultiSelect(t: string): boolean { return ['multi_select', 'select_multi'].includes(t) }
@@ -790,11 +802,25 @@ function formatSignalParamText(cfg: SignalConfig, ind: IndicatorMeta): string {
 
   switch (cfg.operator) {
     case 'gt':   return `${cfg.params.threshold ?? ''}${ind.unit}`
-    case 'gte':  return `≥${cfg.params.threshold ?? ''}${ind.unit}`
-    case 'lt':   return `<${cfg.params.threshold ?? ''}${ind.unit}`
-    case 'lte':  return `≤${cfg.params.threshold ?? ''}${ind.unit}`
+    case 'gte':  return `${cfg.params.threshold ?? ''}${ind.unit}`
+    case 'lt':   return `${cfg.params.threshold ?? ''}${ind.unit}`
+    case 'lte':  return `${cfg.params.threshold ?? ''}${ind.unit}`
     case 'between': case 'not_between':
-      return `[${cfg.params.min ?? ''}~${cfg.params.max ?? ''}]${ind.unit}`
+      return `${cfg.params.min ?? ''}~${cfg.params.max ?? ''}${ind.unit}`
+    case 'eq': {
+      const labelMap = findEnumLabels(cfg.signal_id!, 'threshold')
+      if (labelMap && cfg.params.threshold !== undefined) {
+        return labelMap.get(String(cfg.params.threshold)) || String(cfg.params.threshold)
+      }
+      return String(cfg.params.threshold ?? '')
+    }
+    case 'neq': {
+      const neqLabelMap = findEnumLabels(cfg.signal_id!, 'threshold')
+      if (neqLabelMap && cfg.params.threshold !== undefined) {
+        return neqLabelMap.get(String(cfg.params.threshold)) || String(cfg.params.threshold)
+      }
+      return String(cfg.params.threshold ?? '')
+    }
     case 'in': case 'not_in': {
       const vals = cfg.params.values as string[] | undefined
       if (!vals || vals.length === 0) return '{}'
@@ -811,58 +837,102 @@ function formatSignalParamText(cfg: SignalConfig, ind: IndicatorMeta): string {
 function removeSignal(idx: number) { signals.value.splice(idx, 1) }
 function confirmClear() { signals.value = []; showClearConfirm.value = false }
 
+/** 根据 signal_id 查找信号名称 */
+function findSignalName(ind: IndicatorMeta, signalId: string): string {
+  const sig = ind.signals.find(s => s.signal_id === signalId)
+  return sig ? sig.name : signalId
+}
+
+/** 从 signal_id 提取 indicator_id（前5位） */
+function getIndicatorID(signalId: string): string {
+  return signalId.length >= 5 ? signalId.substring(0, 5) : signalId
+}
+
+/** 补全单个信号的前端字段 */
+function enrichSignal(raw: any): Sig {
+  const indId = getIndicatorID(raw.signal_id)
+  let ind: IndicatorMeta | null = null
+  for (const cat of ['technical', 'market', 'fundamental', 'financial']) {
+    ind = allData.value[cat as Category]?.find(i => i.id === indId) || null
+    if (ind) break
+  }
+  if (!ind) {
+    return {
+      uid: ++uidCounter,
+      indicator_id: indId,
+      signal_id: raw.signal_id,
+      name: raw.signal_id,
+      category: 'technical',
+      operator: raw.operator,
+      opSym: operatorSymbols[raw.operator] || raw.operator,
+      opLbl: raw.operator,
+      params: { ...raw.params },
+      paramText: JSON.stringify(raw.params),
+    }
+  }
+  const text = formatSignalParamText(raw, ind)
+  return {
+    uid: ++uidCounter,
+    indicator_id: indId,
+    signal_id: raw.signal_id,
+    name: findSignalName(ind, raw.signal_id),
+    category: ind.category,
+    operator: raw.operator,
+    opSym: operatorSymbols[raw.operator] || raw.operator,
+    opLbl: findOpLabel(ind, raw.operator),
+    params: { ...raw.params },
+    paramText: text,
+  }
+}
+
 function handleAISubmit() { /* TODO: 对接 AI 解析 */ }
 
 function exportJSON() {
-  const json = JSON.stringify({
-    name: strategyName.value,
-    logical_op: logicalOp.value,
-    conditions: signals.value.map(s => ({
-      indicator_id: s.indicator_id,
+  const json = JSON.stringify(
+    signals.value.map(s => ({
       signal_id: s.signal_id,
-      name: s.name,
       operator: s.operator,
       params: s.params,
     })),
-  }, null, 2)
+    null,
+    2
+  )
   const blob = new Blob([json], { type: 'application/json' })
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${strategyName.value || '未命名策略'}_${Date.now()}.json`; a.click(); URL.revokeObjectURL(a.href)
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `策略信号_${Date.now()}.json`
+  a.click()
+  URL.revokeObjectURL(a.href)
 }
 
-function importJSON(e: Event) {
+async function importJSON(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
   const reader = new FileReader()
-  reader.onload = () => {
+  reader.onload = async () => {
     try {
+      await loadIndicators()
       const data = JSON.parse(reader.result as string)
-      if (data.name) strategyName.value = data.name
-      if (data.logical_op) logicalOp.value = data.logical_op
-      if (Array.isArray(data.conditions) && data.conditions.length > 0) {
-        // 清空现有信号
+      // 支持两种格式：直接是数组，或者是之前的完整策略格式
+      const rawSignals = Array.isArray(data) ? data : (data.conditions || [])
+      if (rawSignals.length > 0) {
         signals.value = []
         uidCounter = 0
-        for (const c of data.conditions) {
-          signals.value.push({
-            uid: ++uidCounter,
-            indicator_id: c.indicator_id || c.id || '',
-            signal_id: c.signal_id || '',
-            name: c.name || '',
-            category: 'technical',
-            operator: (c.operator as CompareOperator) || 'gt',
-            opSym: operatorSymbols[c.operator as CompareOperator] || c.operator,
-            opLbl: c.operator || 'gt',
-            params: c.params || {},
-            paramText: JSON.stringify(c.params || {}),
-          })
+        for (const raw of rawSignals) {
+          signals.value.push(enrichSignal(raw))
         }
+        console.warn('[StrategyBuilder] 导入成功', signals.value)
+      } else {
+        alert('文件中没有找到有效的信号数据')
       }
-      addSuccessMsg.value = `✅ 成功导入 ${data.name || ''}，共 ${signals.value.length} 条条件`
-    } catch { addSuccessMsg.value = '❌ 导入失败：文件格式不正确' }
+    } catch (err) {
+      console.error('[StrategyBuilder] 导入失败:', err)
+      alert('导入失败：文件格式不正确')
+    } finally {
+      ;(e.target as HTMLInputElement).value = ''
+    }
   }
   reader.readAsText(file)
-  // 重置 file input 以便重复选择同一文件
-  ;(e.target as HTMLInputElement).value = ''
 }
 // ========== 筛选执行 ==========
 const isScreening = ref(false)
@@ -915,12 +985,25 @@ function acceptAISignals(aiSignals: any[]) {
   }) }
 }
 /** 从策略列表加载策略到编辑器 */
-function loadStrategyFromOutside(s: { id: string | number; name: string; signals: Sig[]; logicalOp: 'AND' | 'OR' }) {
-  editingId.value = typeof s.id === 'number' ? s.id : parseInt(s.id)
-  strategyName.value = s.name
-  signals.value = JSON.parse(JSON.stringify(s.signals))
-  logicalOp.value = s.logicalOp
-  uidCounter = Math.max(...signals.value.map(s => s.uid), 0)
+async function loadStrategyFromOutside(s: { id: string | number; name: string; signals: any[]; logicalOp: 'AND' | 'OR' }) {
+  try {
+    console.warn('[StrategyBuilder] loadStrategyFromOutside', JSON.stringify(s))
+    editingId.value = typeof s.id === 'number' ? s.id : parseInt(s.id)
+    strategyName.value = s.name
+    // 确保指标数据已加载
+    await loadIndicators()
+    // 补全前端字段
+    const enriched = (s.signals || []).map(raw => {
+      console.warn('[StrategyBuilder] enriching signal', raw)
+      if (raw.name && raw.paramText !== undefined && raw.uid) return { ...raw, uid: ++uidCounter }
+      return enrichSignal(raw)
+    })
+    signals.value = enriched
+    console.warn('[StrategyBuilder] signals loaded', signals.value)
+    logicalOp.value = s.logicalOp || 'AND'
+  } catch (e) {
+    console.error('[StrategyBuilder] 加载策略失败:', e)
+  }
 }
 function resetAllSignals() { editingId.value = null; strategyName.value = ''; signals.value = []; logicalOp.value = 'AND'; uidCounter = 0 }
 

@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"stock-ai/internal/screener/indicator"
+	"stock-ai/internal/indicator"
 	"stock-ai/internal/model"
 	"stock-ai/internal/service"
 
@@ -12,7 +12,7 @@ import (
 
 // IndicatorHandler 指标 HTTP Handler
 type IndicatorHandler struct {
-	registry  *indicator.Registry
+	registry *indicator.Registry
 	stockSvc *service.StockService // 用于获取股票数据
 }
 
@@ -29,8 +29,8 @@ func (h *IndicatorHandler) ListIndicators(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"categories":  meta.Categories,
-			"indicators":  meta.Indicators,
+			"categories":   meta.Categories,
+			"indicators":   meta.Indicators,
 			"enum_options": meta.EnumOptions,
 		},
 	})
@@ -50,15 +50,15 @@ func (h *IndicatorHandler) GetIndicatorByID(c *gin.Context) {
 
 // ExecuteRequest 选股执行请求体
 type ExecuteRequest struct {
-	Configs []indicator.SignalConfig `json:"configs"`       // 信号配置列表
-	MaxConcurrency int               `json:"max_concurrency"` // 最大并发数 (默认10)
+	Configs        []indicator.SignalConfig `json:"configs"`         // 信号配置列表
+	MaxConcurrency int                      `json:"max_concurrency"` // 最大并发数 (默认10)
 }
 
 // ExecuteResponse 选股执行响应
 type ExecuteResponse struct {
-	Total   int                      `json:"total"`            // 输入股票总数
-	Passed  []indicator.EvaluatedStock `json:"passed"`         // 通过列表
-	Rejected []indicator.EvaluatedStock `json:"rejected"`      // 未通过列表
+	Total    int                        `json:"total"`    // 输入股票总数
+	Passed   []indicator.EvaluatedStock `json:"passed"`   // 通过列表
+	Rejected []indicator.EvaluatedStock `json:"rejected"` // 未通过列表
 }
 
 // Execute 执行选股筛选
@@ -96,7 +96,7 @@ func (h *IndicatorHandler) Execute(c *gin.Context) {
 	if len(stocks) == 0 {
 		c.JSON(http.StatusOK, gin.H{"data": ExecuteResponse{
 			Total:    0,
-			Passed:  []indicator.EvaluatedStock{},
+			Passed:   []indicator.EvaluatedStock{},
 			Rejected: []indicator.EvaluatedStock{},
 		}})
 		return
@@ -104,7 +104,7 @@ func (h *IndicatorHandler) Execute(c *gin.Context) {
 
 	// 执行选股
 	// 将 []SignalConfig 转为 []*SignalConfig (Engine 接口要求指针切片)
-		configPtrs := make([]*indicator.SignalConfig, len(req.Configs))
+	configPtrs := make([]*indicator.SignalConfig, len(req.Configs))
 	for i := range req.Configs {
 		configPtrs[i] = &req.Configs[i]
 	}

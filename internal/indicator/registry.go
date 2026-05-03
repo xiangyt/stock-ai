@@ -161,9 +161,8 @@ const (
 //  compareValue — 核心数值比较工具
 //
 //  支持的操作符及参数约定:
-//    gt/gte/lt/lte/eq/neq → params["threshold"] (阈值)
-//    between              → params["min"] + params["max"] (区间上下限)
-//    not_between          → params["min"] + params["max"]
+//    gt/gte/lt/lte/eq/neq → Threshold()   (单阈值)
+//    between/not_between  → RangeMin() + RangeMax() (区间上下限)
 //
 //  用途: NumberFieldIndicator 等数值型指标的通用评估逻辑
 // ============================================================================
@@ -171,25 +170,21 @@ const (
 func compareValue(actual float64, config SignalConfig) bool {
 	switch config.Operator {
 	case OpGT:
-		return actual > config.GetFloat64("threshold", 0)
+		return actual > config.Threshold()
 	case OpGTE:
-		return actual >= config.GetFloat64("threshold", 0)
+		return actual >= config.Threshold()
 	case OpLT:
-		return actual < config.GetFloat64("threshold", 0)
+		return actual < config.Threshold()
 	case OpLTE:
-		return actual <= config.GetFloat64("threshold", 0)
+		return actual <= config.Threshold()
 	case OpEQ:
-		return actual == config.GetFloat64("threshold", 0)
+		return actual == config.Threshold()
 	case OpNEQ:
-		return actual != config.GetFloat64("threshold", 0)
+		return actual != config.Threshold()
 	case OpBetween:
-		minVal := config.GetFloat64("min", 0)
-		maxVal := config.GetFloat64("max", 0)
-		return actual >= minVal && actual <= maxVal
+		return actual >= config.RangeMin() && actual <= config.RangeMax()
 	case OpNotBetween:
-		minVal := config.GetFloat64("min", 0)
-		maxVal := config.GetFloat64("max", 0)
-		return actual < minVal || actual > maxVal
+		return actual < config.RangeMin() || actual > config.RangeMax()
 	default:
 		return false
 	}

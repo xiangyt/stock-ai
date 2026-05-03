@@ -1,11 +1,11 @@
 package handler
 
 import (
-	"stock-ai/internal/screener/indicator"
-	"stock-ai/internal/screener/indicator/fundamental"
-	"stock-ai/internal/screener/indicator/market"
-	"stock-ai/internal/screener/indicator/technical"
-	"stock-ai/internal/screener/indicator/financial"
+	"stock-ai/internal/indicator"
+	"stock-ai/internal/indicator/financial"
+	"stock-ai/internal/indicator/fundamental"
+	"stock-ai/internal/indicator/market"
+	"stock-ai/internal/indicator/technical"
 )
 
 // allBuiltins 聚合所有内置指标实例

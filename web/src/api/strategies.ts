@@ -12,17 +12,11 @@ const BASE = 'http://localhost:9100/api/v1/strategies'
 
 // ========== 类型定义 ==========
 
-export interface StrategySignal {
-  uid: number
-  indicator_id: string       // 指标 ID (如 "macd_cross", "pe_ttm")
-  signal_id: string          // 信号 ID (如 "golden_cross", "gt")
-  name: string
-  category: string           // technical/fundamental/market/financial
-  operator: string            // 操作符 (gt/cross_above/in 等)
-  opSym: string               // 显示符号 (>/↑↑/∈ 等)
-  opLbl: string               // 操作符中文标签
-  params: Record<string, any>  // 参数 { threshold: 20, days: 10 }
-  paramText: string           // 可读参数文本
+/** 前后端交互用的信号结构（不含前端展示字段） */
+export interface StrategySignalInput {
+  signal_id: string
+  operator: string
+  params: Record<string, any>
 }
 
 export interface StrategyDetail {
@@ -30,7 +24,7 @@ export interface StrategyDetail {
   uid: number             // 用户ID(预留)
   name: string
   logical_op: string      // "and" | "or"
-  signals: StrategySignal[]
+  signals: StrategySignalInput[]
   description: string
   backtest_count: number
   created_at: string
@@ -44,9 +38,9 @@ export interface StrategyListItem {
   logical_op: string
   description: string
   backtest_count: number
-  last_run_at: string | null   // 最后运行时间
-  is_public: boolean           // 是否公开
-  created_at: string           // 创建时间
+  last_run_at: string | null
+  is_public: boolean
+  created_at: string
   updated_at: string
 }
 
@@ -93,7 +87,7 @@ export async function fetchStrategyById(id: number): Promise<StrategyDetail> {
 
 /** 创建策略 */
 export async function createStrategy(data: {
-  name: string; logical_op?: string; signals?: StrategySignal[]; description?: string
+  name: string; logical_op?: string; signals?: StrategySignalInput[]; description?: string
 }): Promise<StrategyDetail> {
   return request<StrategyDetail>(BASE, {
     method: 'POST',
@@ -103,7 +97,7 @@ export async function createStrategy(data: {
 
 /** 更新策略（全量） */
 export async function updateStrategy(id: number, data: {
-  name: string; logical_op?: string; signals?: StrategySignal[]; description?: string
+  name: string; logical_op?: string; signals?: StrategySignalInput[]; description?: string
 }): Promise<StrategyDetail> {
   return request<StrategyDetail>(`${BASE}/${id}`, {
     method: 'PUT',

@@ -1,7 +1,7 @@
 package fundamental
 
 import (
-	"stock-ai/internal/screener/indicator"
+	"stock-ai/internal/indicator"
 )
 
 // All 返回基本面指标实例
