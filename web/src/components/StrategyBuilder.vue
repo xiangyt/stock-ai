@@ -64,11 +64,11 @@
           <span class="sig-count-tag" v-if="signals.length > 0">{{ signals.length }} 个条件</span>
         </div>
         <div class="sec-right">
-          <button class="btn-sec-sm" v-if="signals.length > 0" @click="exportJSON" title="导出信号">导出</button>
-          <label class="btn-sec-sm" v-if="signals.length > 0" title="导入信号">导入
-            <input type="file" accept=".json" @change="importJSON" style="display:none" ref="importFileRef" />
+          <button class="btn-sec-sm" v-if="signals.length > 0" @click="onClearClick">清空全部</button>
+          <button class="btn-sec-sm" @click="exportJSON" :disabled="signals.length === 0" title="导出信号">导出</button>
+          <label class="btn-sec-sm" title="导入信号">导入
+            <input type="file" accept=".json" @change="importJSON" style="display:none" />
           </label>
-          <button class="btn-sec-sm" v-if="signals.length > 0" @click="showClearConfirm = true">清空全部</button>
         </div>
       </div>
 
@@ -235,10 +235,10 @@
           <div class="results-tabs">
             <button :class="['rtab', { active: !screenError }]" @click="screenError = ''">≡ 股票列表</button>
             <button class="rtab dim">⊞ 多股同列</button>
-            <button class="rtab dim">📊 可视化分析</button>
           </div>
         </div>
         <div class="results-right">
+          <button class="btn-res-action backtest" @click="onGoBacktest">📊 历史回测</button>
           <button class="btn-res-action run" @click="runFilter" :disabled="isScreening || signals.length === 0">
             {{ isScreening ? '⏳ 筛选中...' : '🔍 运行筛选' }}
           </button>
@@ -247,7 +247,6 @@
 
       <div class="results-toolbar">
         <button class="tb-tool">＋ 加自选</button>
-        <button class="tb-tool">＋ 加板块</button>
         <select class="tb-select"><option>相关</option><option>涨跌</option><option>市值</option></select>
         <div class="tb-sort-tabs">
           <button class="st active">相关</button>
@@ -258,10 +257,8 @@
           <button class="st">财务</button>
         </div>
         <div class="tb-search">
-          🔍 搜索 <input type="text" placeholder="代码/名称" class="tb-search-in" />
-        </div>
-        <div class="tb-extra">
-          我的选择 ▾ &nbsp; ⬇ 导数据
+          <input type="text" placeholder="代码/名称" class="tb-search-in" v-model.trim="searchKeyword" />
+          <span class="tb-search-icon">🔍</span>
         </div>
       </div>
 
@@ -269,7 +266,7 @@
         <table class="results-table">
           <thead>
             <tr>
-              <th class="col-cb"><input type="checkbox" /></th>
+              <th class="col-cb"><input type="checkbox" :checked="allSelected" :indeterminate.prop="someSelected" @change="toggleAll" /></th>
               <th>序号</th>
               <th>股票代码</th>
               <th>股票简称</th>
@@ -289,11 +286,11 @@
                 <span class="loading-spinner"></span> 正在筛选 {{ screenResult?.total ?? 0 }} 只股票...
               </td>
             </tr>
-            <!-- 有结果 -->
-            <template v-else-if="screenResult && screenResult.passed.length > 0">
-              <tr v-for="(stock, idx) in screenResult.passed" :key="stock.code">
-                <td class="col-cb"><input type="checkbox" /></td>
-                <td>{{ idx + 1 }}</td>
+            <!-- 有结果（含搜索过滤） -->
+            <template v-else-if="screenResult && screenResult.passed.length > 0 && paginatedData.length > 0">
+              <tr v-for="(stock, idx) in paginatedData" :key="stock.code">
+                <td class="col-cb"><input type="checkbox" :checked="selectedRows.has((currentPage - 1) * pageSize + idx)" @change="toggleRow((currentPage - 1) * pageSize + idx)" /></td>
+                <td>{{ (currentPage - 1) * pageSize + idx + 1 }}</td>
                 <td class="code-col">{{ stock.code }}</td>
                 <td class="name-col">{{ stock.name }}</td>
                 <td>{{ stock.price?.toFixed(2) ?? '-' }}</td>
@@ -305,6 +302,12 @@
                 <td><span class="match-tag" :title="stock.message">✓ {{ stock.message || '通过' }}</span></td>
               </tr>
             </template>
+            <!-- 搜索无匹配 -->
+            <tr v-else-if="screenResult && screenResult.passed.length > 0 && paginatedData.length === 0">
+              <td colspan="11" style="text-align:center; padding:40px 20px; color:#bbb;">
+                🔍 未找到与「{{ searchKeyword }}」匹配的股票
+              </td>
+            </tr>
             <!-- 无结果 -->
             <tr v-else-if="screenResult && !screenError">
               <td colspan="11" style="text-align:center; padding:40px 20px; color:#bbb;">
@@ -326,17 +329,40 @@
           </tbody>
         </table>
       </div>
+
+      <!-- 分页栏 -->
+      <div v-if="screenResult && screenResult.passed.length > 0" class="pagination-bar">
+        <div class="pag-left">
+          <select class="page-size-select" :value="pageSize" @change="onPageSizeChange">
+            <option v-for="sz in pageSizes" :key="sz" :value="sz">{{ sz }} 条/页</option>
+          </select>
+          <span class="pag-info">共 {{ filteredData.length }} 条</span>
+        </div>
+        <div class="pag-center">
+          <button class="pag-btn" :disabled="currentPage <= 1" @click="prevPage">‹ 上一页</button>
+          <template v-for="p in visiblePages" :key="p">
+            <span v-if="p === '...'" class="pag-ellipsis">...</span>
+            <button v-else :class="['pag-btn', { active: p === currentPage }]" @click="goPage(p)">{{ p }}</button>
+          </template>
+          <button class="pag-btn" :disabled="currentPage >= totalPage" @click="nextPage">下一页 ›</button>
+        </div>
+        <div class="pag-right">
+          <span>前往第</span>
+          <input type="number" class="pag-jump-input" :min="1" :max="totalPage" v-model.number="jumpPageInput" @keyup.enter="goJumpPage" />
+          <span>页 / 共 {{ totalPage }} 页</span>
+        </div>
+      </div>
     </section>
 
-    <!-- 清空确认弹窗 -->
+    <!-- 通用确认弹窗 -->
     <teleport to="body">
-      <div class="modal-overlay" v-if="showClearConfirm" @click.self="showClearConfirm = false">
+      <div class="modal-overlay" v-if="showConfirm" @click.self="onConfirmCancel">
         <div class="modal-box">
-          <div class="modal-title">⚠️ 确认清空</div>
-          <p class="modal-body">确定要清空所有信号条件吗？此操作不可撤销。</p>
+          <div class="modal-title">{{ confirmTitle }}</div>
+          <p class="modal-body">{{ confirmBody }}</p>
           <div class="modal-actions">
-            <button class="btn-modal-cancel" @click="showClearConfirm = false">取消</button>
-            <button class="btn-modal-danger" @click="confirmClear">确认清空</button>
+            <button class="btn-modal-cancel" @click="onConfirmCancel">取消</button>
+            <button class="btn-modal-danger" @click="onConfirmOk">{{ confirmOkText }}</button>
           </div>
         </div>
       </div>
@@ -553,14 +579,43 @@ const editParams = reactive<Record<string, any>>({})
 const expandedJSON = reactive(new Set<number>())
 const addSuccessMsg = ref('')
 let successTimer: ReturnType<typeof setTimeout> | null = null
-const showClearConfirm = ref(false)
+const showConfirm = ref(false)
+const confirmTitle = ref('')
+const confirmBody = ref('')
+const confirmOkText = ref('确认')
+let confirmCallback: (() => void) | null = null
+function showConfirmModal(opts: { title: string; body: string; okText?: string; onOk: () => void }) {
+  confirmTitle.value = opts.title
+  confirmBody.value = opts.body
+  confirmOkText.value = opts.okText || '确认'
+  confirmCallback = opts.onOk
+  showConfirm.value = true
+}
+function onConfirmOk() {
+  showConfirm.value = false
+  confirmCallback?.()
+  confirmCallback = null
+}
+function onConfirmCancel() {
+  showConfirm.value = false
+  confirmCallback = null
+}
 interface BuilderEmits {
   (e: 'addSignals', signals: Sig[]): void
   (e: 'saved', strategy: { id: number; name: string }): void
   (e: 'goBack'): void
+  (e: 'goBacktest', strategyId: number | null): void
 }
 const emit = defineEmits<BuilderEmits>()
 const editingId = ref<number | null>(null) // 后端数字 ID，null = 新建模式
+
+/** 脏标记：是否进行了信号增删操作（未保存） */
+const isDirty = ref(false)
+
+/** 标记脏状态 */
+function markDirty() { isDirty.value = true }
+/** 清除脏状态 */
+function clearDirty() { isDirty.value = false }
 
 // 策略名称内联编辑
 function startEditName() {
@@ -612,9 +667,33 @@ async function saveStrategy() {
     }
 
     emit('saved', { id: result.id, name: result.name })
+    clearDirty()
   } catch (e) {
     console.error('保存策略失败:', e)
     alert('保存失败: ' + (e as Error).message)
+  }
+}
+
+/** 判断当前是否有未保存的修改（信号增删操作） */
+function hasUnsavedChanges(): boolean {
+  return isDirty.value
+}
+
+/** 点击历史回测按钮 */
+function onGoBacktest() {
+  const needsSave = hasUnsavedChanges()
+  if (needsSave) {
+    showConfirmModal({
+      title: '💾 保存提示',
+      body: '当前有未保存的策略内容，是否保存后再前往回测？',
+      okText: '保存并跳转',
+      onOk: async () => {
+        await saveStrategy()
+        emit('goBacktest', editingId.value ?? null)
+      },
+    })
+  } else {
+    emit('goBacktest', editingId.value ?? null)
   }
 }
 
@@ -653,6 +732,7 @@ function selectSignalQuick(sig: SignalDef) {
     paramText: text,
   }
   signals.value.push(newSig)
+  markDirty()
   emit('addSignals', [newSig])
 }
 
@@ -676,6 +756,7 @@ function addBuiltinSignal(sig: SignalDef) {
     paramText: text,
   }
   signals.value.push(newSig)
+  markDirty()
   emit('addSignals', [newSig])
 }
 
@@ -741,6 +822,7 @@ function addCustomSignal() {
     paramText: text,
   }
   signals.value.push(newSig)
+  markDirty()
   emit('addSignals', [newSig])
   clearParams()
 }
@@ -834,8 +916,16 @@ function formatSignalParamText(cfg: SignalConfig, ind: IndicatorMeta): string {
       return Object.entries(cfg.params).map(([k, v]) => `${k}=${v}`).join(', ')
   }
 }
-function removeSignal(idx: number) { signals.value.splice(idx, 1) }
-function confirmClear() { signals.value = []; showClearConfirm.value = false }
+function onClearClick() {
+  showConfirmModal({
+    title: '⚠️ 确认清空',
+    body: '确定要清空所有信号条件吗？此操作不可撤销。',
+    onOk: () => { signals.value = []; markDirty() },
+  })
+}
+
+function removeSignal(idx: number) { signals.value.splice(idx, 1); markDirty() }
+
 
 /** 根据 signal_id 查找信号名称 */
 function findSignalName(ind: IndicatorMeta, signalId: string): string {
@@ -911,20 +1001,23 @@ async function importJSON(e: Event) {
   const reader = new FileReader()
   reader.onload = async () => {
     try {
-      await loadIndicators()
       const data = JSON.parse(reader.result as string)
-      // 支持两种格式：直接是数组，或者是之前的完整策略格式
       const rawSignals = Array.isArray(data) ? data : (data.conditions || [])
-      if (rawSignals.length > 0) {
-        signals.value = []
-        uidCounter = 0
-        for (const raw of rawSignals) {
-          signals.value.push(enrichSignal(raw))
-        }
-        console.warn('[StrategyBuilder] 导入成功', signals.value)
-      } else {
+      if (rawSignals.length === 0) {
         alert('文件中没有找到有效的信号数据')
+        return
       }
+      // 如果当前已有信号，用通用弹窗提示覆盖
+      if (signals.value.length > 0) {
+        showConfirmModal({
+          title: '⚠️ 确认导入',
+          body: `导入将会覆盖当前已有的 ${signals.value.length} 个信号条件，是否继续？`,
+          okText: '确认导入',
+          onOk: () => { doImport(rawSignals) },
+        })
+        return
+      }
+      await doImport(rawSignals)
     } catch (err) {
       console.error('[StrategyBuilder] 导入失败:', err)
       alert('导入失败：文件格式不正确')
@@ -934,10 +1027,97 @@ async function importJSON(e: Event) {
   }
   reader.readAsText(file)
 }
+async function doImport(rawSignals: any[]) {
+  await loadIndicators()
+  signals.value = []
+  uidCounter = 0
+  for (const raw of rawSignals) {
+    signals.value.push(enrichSignal(raw))
+  }
+  markDirty()
+  console.warn('[StrategyBuilder] 导入成功', signals.value)
+}
 // ========== 筛选执行 ==========
 const isScreening = ref(false)
 const screenResult = ref<{ passed: any[]; rejected: any[]; total: number } | null>(null)
 const screenError = ref('')
+
+// ========== 表格选择状态 ==========
+const selectedRows = ref<Set<number>>(new Set())
+const allSelected = computed(() =>
+  screenResult.value && screenResult.value.passed.length > 0 && selectedRows.value.size === screenResult.value.passed.length
+)
+const someSelected = computed(() => selectedRows.value.size > 0 && !allSelected.value)
+
+function toggleAll() {
+  if (!screenResult.value) return
+  if (allSelected.value) {
+    selectedRows.value.clear()
+  } else {
+    selectedRows.value = new Set(screenResult.value.passed.map((_, i) => i))
+  }
+}
+function toggleRow(idx: number) {
+  if (selectedRows.value.has(idx)) {
+    selectedRows.value.delete(idx)
+  } else {
+    selectedRows.value.add(idx)
+  }
+}
+
+// ========== 前端分页 ==========
+const searchKeyword = ref('')
+const currentPage = ref(1)
+const pageSize = ref(20)
+const pageSizes = [10, 20, 50, 100]
+
+/** 先过滤，后分页 */
+const filteredData = computed(() => {
+  if (!screenResult.value) return []
+  const kw = searchKeyword.value.toLowerCase()
+  if (!kw) return screenResult.value.passed
+  return screenResult.value.passed.filter((s: any) =>
+    (s.code ?? '').toLowerCase().includes(kw) || (s.name ?? '').toLowerCase().includes(kw)
+  )
+})
+
+const paginatedData = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredData.value.slice(start, start + pageSize.value)
+})
+
+const totalPage = computed(() => {
+  if (!filteredData.value.length) return 1
+  return Math.ceil(filteredData.value.length / pageSize.value)
+})
+
+// 页码显示逻辑（省略号）
+const visiblePages = computed(() => {
+  const total = totalPage.value
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const cur = currentPage.value
+  const pages: (number | string)[] = [1]
+  if (cur > 3) pages.push('...')
+  for (let i = Math.max(2, cur - 1); i <= Math.min(total - 1, cur + 1); i++) pages.push(i)
+  if (cur < total - 2) pages.push('...')
+  pages.push(total)
+  return pages
+})
+
+const jumpPageInput = ref(1)
+
+function goPage(p: number) { if (p >= 1 && p <= totalPage.value) currentPage.value = p }
+function prevPage() { if (currentPage.value > 1) currentPage.value-- }
+function nextPage() { if (currentPage.value < totalPage.value) currentPage.value++ }
+function onPageSizeChange(e: Event) {
+  pageSize.value = Number((e.target as HTMLSelectElement).value)
+  currentPage.value = 1
+}
+function goJumpPage() { goPage(jumpPageInput.value) }
+
+// 重置分页和选中
+watch(totalPage, () => { currentPage.value = 1; selectedRows.value.clear() })
+watch(searchKeyword, () => { currentPage.value = 1 })
 
 async function runFilter() {
   if (signals.value.length === 0) { alert('请先添加至少一个信号条件'); return }
@@ -945,6 +1125,8 @@ async function runFilter() {
   isScreening.value = true
   screenError.value = ''
   screenResult.value = null
+  selectedRows.value.clear()
+  currentPage.value = 1
 
   try {
     const res = await indicatorsApi.executeScreen({
@@ -953,7 +1135,7 @@ async function runFilter() {
         operator: s.operator,
         params: s.params,
       })),
-      max_concurrency: 10,
+      max_concurrency: 200,
     })
 
     screenResult.value = {
@@ -983,6 +1165,7 @@ function acceptAISignals(aiSignals: any[]) {
     params: s.params || {},
     paramText: s.paramSummary || '',
   }) }
+  markDirty()
 }
 /** 从策略列表加载策略到编辑器 */
 async function loadStrategyFromOutside(s: { id: string | number; name: string; signals: any[]; logicalOp: 'AND' | 'OR' }) {
@@ -999,13 +1182,14 @@ async function loadStrategyFromOutside(s: { id: string | number; name: string; s
       return enrichSignal(raw)
     })
     signals.value = enriched
+    clearDirty()
     console.warn('[StrategyBuilder] signals loaded', signals.value)
     logicalOp.value = s.logicalOp || 'AND'
   } catch (e) {
     console.error('[StrategyBuilder] 加载策略失败:', e)
   }
 }
-function resetAllSignals() { editingId.value = null; strategyName.value = ''; signals.value = []; logicalOp.value = 'AND'; uidCounter = 0 }
+function resetAllSignals() { editingId.value = null; strategyName.value = ''; signals.value = []; logicalOp.value = 'AND'; uidCounter = 0; clearDirty() }
 
 defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 </script>
@@ -1321,6 +1505,8 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .btn-res-action:hover { border-color: #1677ff; color: #1677ff; }
 .btn-res-action.run { background: #52c41a; color: #fff; border: 1px solid #52c41a; }
 .btn-res-action.run:hover { background: #389e0d; }
+.btn-res-action.backtest { background: #fff; color: #1677ff; border: 1px solid #1677ff; font-weight: 600; }
+.btn-res-action.backtest:hover { background: #f0f5ff; }
 
 .results-toolbar {
   display: flex; align-items: center; gap: 8px;
@@ -1333,9 +1519,13 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .st { padding: 4px 10px; border: none; border-radius: 4px; background: transparent; font-size: 12px; cursor: pointer; color: #666; transition: .12s; }
 .st.active { background: #e6f4ff; color: #1677ff; font-weight: 600; }
 .st:hover:not(.active) { background: #f5f5f5; }
-.tb-search { display: flex; align-items: center; gap: 4px; margin-left: auto; color: #888; font-size: 12px; }
-.tb-search-in { padding: 4px 8px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 12px; width: 110px; outline: none; }
+.tb-search { display: flex; align-items: center; margin-left: auto; position: relative; }
+.tb-search-in { padding: 4px 30px 4px 8px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 12px; width: 120px; outline: none; }
 .tb-search-in:focus { border-color: #1677ff; }
+.tb-search-icon {
+  position: absolute; right: 8px; pointer-events: none;
+  font-size: 12.5px; color: #aaa; user-select: none;
+}
 .tb-extra { font-size: 11.5px; color: #aaa; margin-left: 8px; }
 
 .results-table-wrap { flex: 1; overflow: auto; }
@@ -1362,6 +1552,35 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
   font-size: 10.5px; padding: 1px 7px; border-radius: 8px;
   background: #f0f0f0; color: #666; font-weight: 500;
 }
+
+/* ====== 分页栏 ====== */
+.pagination-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 20px; border-top: 1px solid #f0f0f0;
+  font-size: 12.5px; color: #555;
+}
+.pag-left, .pag-right { display: flex; align-items: center; gap: 8px; }
+.pag-center { display: flex; align-items: center; gap: 4px; }
+.page-size-select {
+  padding: 3px 6px; border: 1px solid #d9d9d9; border-radius: 4px;
+  font-size: 12px; color: #555; outline: none; background: #fff; cursor: pointer;
+}
+.pag-info { color: #999; }
+.pag-btn {
+  min-width: 30px; height: 28px; padding: 0 8px; border: 1px solid transparent;
+  border-radius: 4px; background: transparent; cursor: pointer;
+  font-size: 12.5px; color: #555; transition: all .15s; display: inline-flex;
+  align-items: center; justify-content: center;
+}
+.pag-btn:hover:not(:disabled):not(.active) { background: #f5f5f5; border-color: #d9d9d9; color: #1677ff; }
+.pag-btn.active { background: #1677ff; color: #fff; border-color: #1677ff; font-weight: 600; }
+.pag-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pag-ellipsis { color: #bbb; padding: 0 4px; }
+.pag-jump-input {
+  width: 44px; height: 26px; padding: 0 4px; border: 1px solid #d9d9d9;
+  border-radius: 4px; font-size: 12px; text-align: center; outline: none;
+}
+.pag-jump-input:focus { border-color: #1677ff; }
 
 /* ====== 动画 ====== */
 .expand-down-enter-active { transition: all .25s ease-out; overflow: hidden; }

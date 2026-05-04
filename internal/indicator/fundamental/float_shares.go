@@ -52,7 +52,7 @@ func (f *FloatShares) Evaluate(stock *indicator.StockData, configs []*indicator.
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, Message: "未配置信号"}
 	}
 	value := f.getValue(stock)
-	if value <= 0 {
+	if stock.DailySnapshot == nil {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID, Message: "数据缺失: float_shares"}
 	}
 

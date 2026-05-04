@@ -1,10 +1,12 @@
 package db
 
 import (
+	"errors"
 	"log"
 
 	"stock-ai/internal/model"
 
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -78,12 +80,15 @@ func FindSnapshotsByStock(code string, startDate, endDate int, limit int) ([]mod
 }
 
 // FindSnapshotByStockAndDate 查询指定股票指定日期的单条快照
-func FindSnapshotByStockAndDate(code string, tradeDate int) (model.StockDailySnapshot, error) {
+func FindSnapshotByStockAndDate(code string, tradeDate int) (*model.StockDailySnapshot, error) {
 	var snap model.StockDailySnapshot
 	err := GetDB().
 		Where("stock_code = ? AND trade_date = ?", code, tradeDate).
 		First(&snap).Error
-	return snap, err
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &snap, err
 }
 
 // FindSnapshotsByDate 查询指定日期的所有股票快照

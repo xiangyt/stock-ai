@@ -129,7 +129,6 @@ func (s *Stock) GetCodeWithExchange() string {
 // StockPrice 股票日线行情表
 // 存储每日的开高低收、成交量等技术面数据
 type StockPrice struct {
-	ID        uint   `gorm:"primarykey" json:"id"`
 	StockCode string `gorm:"uniqueIndex:idx_code_date;size:20;index;not null" json:"stock_code"`
 	Date      string `gorm:"uniqueIndex:idx_code_date;size:10;not null" json:"date"` // YYYY-MM-DD
 

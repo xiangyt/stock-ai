@@ -9,8 +9,55 @@
     <!-- ====== 工具栏卡片 ====== -->
     <section class="toolbar-card">
       <div class="toolbar-row">
-        <button class="back-btn" @click="$emit('goBack')" title="返回">‹ 返回</button>
-        <input v-model="strategyName" class="strategy-name" placeholder="策略名称" />
+        <button class="back-btn" @click="onGoBack" title="返回">‹ 返回</button>
+        <!-- 策略选择下拉框 -->
+        <div class="strategy-select-wrap" ref="strategySelectRef">
+          <div
+            class="strategy-select-trigger"
+            @click.stop="toggleStrategyDropdown"
+            :class="{ open: showStrategyDropdown }"
+          >
+            <span v-if="selectedStrategy" class="sel-text">{{ selectedStrategy.name }}</span>
+            <span v-else class="sel-placeholder">选择策略</span>
+            <span class="sel-arrow">▾</span>
+          </div>
+          <teleport to="body">
+            <div
+              v-if="showStrategyDropdown"
+              class="sd-overlay"
+              @click.self="showStrategyDropdown = false"
+            >
+              <div class="sd-dropdown" :style="dropdownStyle">
+                <input
+                  type="text"
+                  class="sd-search-input"
+                  placeholder="搜索策略名称..."
+                  v-model.trim="strategySearchKeyword"
+                  ref="sdSearchInputRef"
+                  @click.stop
+                  @keydown.escape="showStrategyDropdown = false"
+                  @keydown.down.prevent="moveSelDown"
+                  @keydown.up.prevent="moveSelUp"
+                  @keydown.enter="selectHighlighted"
+                />
+                <div class="sd-list" ref="sdListRef">
+                  <template v-if="filteredStrategies.length > 0">
+                    <div
+                      v-for="(s, idx) in filteredStrategies"
+                      :key="s.id"
+                      :class="['sd-item', { active: selectedStrategy?.id === s.id, highlighted: highlightIdx === idx }]"
+                      @mousedown.prevent="selectStrategy(s)"
+                    >
+                      <span class="sd-name">{{ s.name }}</span>
+                      <span class="sd-meta">{{ s.signals?.length || 0 }} 个信号</span>
+                    </div>
+                  </template>
+                  <div v-else class="sd-empty">无匹配策略</div>
+                </div>
+              </div>
+            </div>
+          </teleport>
+        </div>
         <span class="toolbar-sep">|</span>
         <label>日期：</label>
         <input type="date" v-model="startDate" class="date-input" />
@@ -196,17 +243,114 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, reactive, nextTick } from 'vue'
+import * as strategyApi from '../api/strategies'
 
-defineEmits<{ goBack: [] }>()
+const props = defineProps<{
+  defaultStrategyId?: number | null
+}>()
+
+const emit = defineEmits<{ goBack: []; goToEdit: [strategyId: number] }>()
 
 // ========== 工具栏状态 ==========
 const strategyName = ref('小市值策略')
-const startDate = ref('2026-04-01')
-const endDate = ref('2026-04-30')
+/** 默认结束日期：今天 */
+const endDate = ref(formatDate(new Date()))
+/** 默认开始日期：半年前 */
+const startDate = ref(formatDate(new Date(new Date().setMonth(new Date().getMonth() - 6))))
+
+/** Date → YYYY-MM-DD */
+function formatDate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 const initialCapital = ref(100000)
 const runStatus = ref<'idle' | 'running' | 'done'>('done')
 const elapsedTime = ref('00分03秒')
+
+// ========== 策略下拉框 ==========
+interface StrategyItem { id: number; name: string; signals?: any[] }
+const allStrategies = ref<StrategyItem[]>([])
+const selectedStrategy = ref<StrategyItem | null>(null)
+const showStrategyDropdown = ref(false)
+const strategySearchKeyword = ref('')
+const highlightIdx = ref(-1)
+
+const strategySelectRef = ref<HTMLElement | null>(null)
+const sdSearchInputRef = ref<HTMLInputElement | null>(null)
+const sdListRef = ref<HTMLElement | null>(null)
+
+/** 下拉框位置 */
+const dropdownStyle = reactive<Record<string, string>>({})
+
+const filteredStrategies = computed(() => {
+  const kw = strategySearchKeyword.value.toLowerCase()
+  if (!kw) return allStrategies.value
+  return allStrategies.value.filter((s: StrategyItem) =>
+    s.name.toLowerCase().includes(kw)
+  )
+})
+
+function toggleStrategyDropdown(e?: MouseEvent) {
+  if (showStrategyDropdown.value) {
+    showStrategyDropdown.value = false
+    return
+  }
+  strategySearchKeyword.value = ''
+  highlightIdx.value = -1
+  const target = e?.currentTarget as HTMLElement
+  if (target) {
+    const rect = target.getBoundingClientRect()
+    dropdownStyle.left = `${rect.left}px`
+    dropdownStyle.top = `${rect.bottom + 4}px`
+    dropdownStyle.minWidth = `${Math.max(rect.width, 200)}px`
+  }
+  showStrategyDropdown.value = true
+  nextTick(() => { sdSearchInputRef.value?.focus() })
+}
+
+function selectStrategy(s: StrategyItem) {
+  selectedStrategy.value = s
+  strategyName.value = s.name
+  showStrategyDropdown.value = false
+}
+
+function moveSelDown() {
+  if (filteredStrategies.value.length === 0) return
+  if (highlightIdx.value < filteredStrategies.value.length - 1) highlightIdx.value++
+}
+function moveSelUp() { if (highlightIdx.value > 0) highlightIdx.value-- }
+function selectHighlighted() {
+  if (highlightIdx.value >= 0 && highlightIdx.value < filteredStrategies.value.length) {
+    selectStrategy(filteredStrategies.value[highlightIdx.value])
+  }
+}
+
+/** 加载所有策略 */
+async function loadAllStrategies() {
+  try {
+    const res = await strategyApi.fetchStrategies('', 1, 200)
+    allStrategies.value = (res.list || []).map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      signals: s.signals,
+    }))
+    // 默认选中：从编辑页跳转来的策略
+    if (props.defaultStrategyId) {
+      const found = allStrategies.value.find((s: StrategyItem) => s.id === props.defaultStrategyId)
+      if (found) {
+        selectedStrategy.value = found
+        strategyName.value = found.name
+      }
+    }
+  } catch (e) {
+    console.error('加载策略列表失败:', e)
+  }
+}
+
+onMounted(loadAllStrategies)
 
 const statusText = computed(() => {
   if (runStatus.value === 'running') return '回测运行中...'
@@ -236,6 +380,15 @@ function runBacktest() {
 }
 function shareToCommunity() { alert('分享功能开发中...') }
 function exportReport() { alert('导出功能开发中...') }
+
+/** 返回按钮：跳转到策略编辑页（带选中策略 ID） */
+function onGoBack() {
+  if (selectedStrategy.value) {
+    emit('goToEdit', selectedStrategy.value.id)
+  } else {
+    emit('goBack')
+  }
+}
 
 // ========== 收益指标数据 ==========
 interface StatItem { key: string; label: string; value: string; color?: string; cls?: string }
@@ -388,13 +541,48 @@ def handle_data(context, data):
   white-space: nowrap;
 }
 .back-btn:hover { background: #f5f5f5; }
-.strategy-name {
-  border: none; border-bottom: 1.5px solid transparent;
-  font-size: 15px; font-weight: 700; outline: none;
-  width: 160px; background: transparent; color: #1a1a2e;
-  transition: border-color .15s;
+/* ====== 策略选择下拉框 ====== */
+.strategy-select-wrap {
+  position: relative; display: inline-block;
 }
-.strategy-name:focus { border-bottom-color: #1677ff; }
+.strategy-select-trigger {
+  border: 1.5px solid #e0e0e0; border-radius: 6px; padding: 4px 10px 4px 12px;
+  font-size: 15px; font-weight: 700; cursor: pointer; display: flex;
+  align-items: center; gap: 6px; width: 220px; background: #fff;
+  color: #1a1a2e; transition: all .15s; user-select: none; box-sizing: border-box;
+}
+.strategy-select-trigger:hover { border-color: #1677ff; }
+.strategy-select-trigger.open { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.1); }
+.sel-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.sel-placeholder { color: #bbb; }
+.sel-arrow { font-size: 11px; color: #999; flex-shrink: 0; transition: transform .15s; }
+.strategy-select-trigger.open .sel-arrow { transform: rotate(180deg); }
+.sd-overlay { position: fixed; inset: 0; z-index: 998; }
+.sd-dropdown {
+  position: fixed; z-index: 999; background: #fff;
+  border: 1px solid #e8e8e8; border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.14); padding: 4px 0; animation: sd-fade .12s ease-out;
+}
+@keyframes sd-fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; } }
+
+.sd-search-input {
+  margin: 4px 8px 6px; padding: 5px 10px; width: calc(100% - 16px);
+  border: 1px solid #d9d9d9; border-radius: 5px; font-size: 12.5px;
+  outline: none; box-sizing: border-box;
+}
+.sd-search-input:focus { border-color: #1677ff; }
+
+.sd-list { max-height: 260px; overflow-y: auto; padding: 0 4px; }
+.sd-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 12px; cursor: pointer; border-radius: 5px; gap: 8px;
+  transition: background .1s;
+}
+.sd-item:hover, .sd-item.highlighted { background: #f5f7fa; }
+.sd-item.active { background: #e6f4ff; color: #1677ff; font-weight: 600; }
+.sd-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sd-meta { font-size: 11px; color: #aaa; flex-shrink: 0; white-space: nowrap; }
+.sd-empty { text-align: center; padding: 20px 16px; color: #bbb; font-size: 13px; }
 .date-input, .capital-input {
   border: 1px solid #d9d9d9; border-radius: 6px; padding: 4px 8px;
   font-size: 13px; outline: none; transition: border-color .15s;

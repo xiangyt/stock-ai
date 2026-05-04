@@ -475,24 +475,25 @@ func (b *BaseIndicator) AllSignals() []Signal {
 // registerSignals 将信号列表注册到 Signal 映射表，并赋值给目标切片字段。
 // 内部公共方法，供 SetBuiltInSignals / SetCustomSignals 复用，
 // 消除两处完全相同的 for+map 赋值逻辑。
-func (b *BaseIndicator) registerSignals(sigs []Signal, target *[]Signal) {
+func (b *BaseIndicator) registerSignals(sigs []Signal, target *[]Signal, sourceCode string) {
 	if b.Signal == nil {
 		b.Signal = make(map[string]Signal, len(sigs))
 	}
+
 	for _, sig := range sigs {
-		b.Signal[b.ID()+sig.Seq()] = sig
+		b.Signal[b.ID()+sourceCode+sig.Seq()] = sig
 	}
 	*target = sigs
 }
 
 // SetBuiltInSignals 注册内置信号到映射表
 func (b *BaseIndicator) SetBuiltInSignals(sigs []Signal) {
-	b.registerSignals(sigs, &b.builtInSigs)
+	b.registerSignals(sigs, &b.builtInSigs, "0")
 }
 
 // SetCustomSignals 注册自定义信号到映射表
 func (b *BaseIndicator) SetCustomSignals(sigs []Signal) {
-	b.registerSignals(sigs, &b.customSigs)
+	b.registerSignals(sigs, &b.customSigs, "1")
 }
 
 // BatchEvaluate 默认实现:
@@ -514,13 +515,13 @@ func (b *BaseIndicator) Evaluate(stock *StockData, configs []*SignalConfig) *Eva
 
 type StockData struct {
 	Detail            *model.Stock
-	DailyKline        []*model.DailyKline
-	WeeklyKline       []*model.WeeklyKline
-	MonthlyKline      []*model.MonthlyKline
-	YearlyKline       []*model.YearlyKline
-	PerformanceReport []*model.PerformanceReport
-	ShareholderCount  *model.ShareholderCount
-	DailySnapshot     *model.StockDailySnapshot
+	DailyKline        []*model.DailyKline        // 按时间降序
+	WeeklyKline       []*model.WeeklyKline       // 按时间降序
+	MonthlyKline      []*model.MonthlyKline      // 按时间降序
+	YearlyKline       []*model.YearlyKline       // 按时间降序
+	PerformanceReport []*model.PerformanceReport // 按公告时间降序
+	ShareholderCount  *model.ShareholderCount    // 最新一条
+	DailySnapshot     *model.StockDailySnapshot  // 最新一条
 }
 
 // ============================================================================

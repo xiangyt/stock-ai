@@ -1,10 +1,12 @@
 package db
 
 import (
+	"errors"
 	"log"
 
 	"stock-ai/internal/model"
 
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -27,7 +29,7 @@ func UpsertPerformanceReport(m model.PerformanceReport) int64 {
 		}),
 	}).Create(&m)
 	if result.Error != nil {
-		log.Printf("[dao-fundamental] 财报upsert失败 [%s/%s]: %v", m.StockCode, m.ReportDate, result.Error)
+		log.Printf("[dao-fundamental] 财报upsert失败 [%s/%d]: %v", m.StockCode, m.ReportDate, result.Error)
 		return -1
 	}
 	return result.RowsAffected
@@ -45,7 +47,7 @@ func UpsertShareholderCount(m model.ShareholderCount) int64 {
 		}),
 	}).Create(&m)
 	if result.Error != nil {
-		log.Printf("[dao-fundamental] 股东户数upsert失败 [%s/%s]: %v", m.StockCode, m.EndDate, result.Error)
+		log.Printf("[dao-fundamental] 股东户数upsert失败 [%s/%d]: %v", m.StockCode, m.EndDate, result.Error)
 		return -1
 	}
 	return result.RowsAffected
@@ -79,12 +81,15 @@ func FindPerformanceReports(code string, limit int) ([]model.PerformanceReport, 
 }
 
 // FindLatestShareholderCount 查询最新股东户数
-func FindLatestShareholderCount(code string) (model.ShareholderCount, error) {
+func FindLatestShareholderCount(code string) (*model.ShareholderCount, error) {
 	var sc model.ShareholderCount
 	err := GetDB().Where("stock_code = ?", code).
 		Order("end_date DESC").
 		First(&sc).Error
-	return sc, err
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &sc, err
 }
 
 // FindShareChanges 查询股本变动记录

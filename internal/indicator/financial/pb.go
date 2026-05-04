@@ -50,11 +50,11 @@ func (pb *PB) Evaluate(stock *indicator.StockData, configs []*indicator.SignalCo
 	if len(configs) == 0 {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, Message: "未配置信号"}
 	}
-	value := pb.getValue(stock)
-	if value == 0 {
+
+	if stock.DailySnapshot == nil {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID, Message: "数据缺失: PB"}
 	}
-
+	value := pb.getValue(stock)
 	for _, v := range configs {
 		if s, ok := pb.Signal[v.SignalID]; ok {
 			if ss, ok := s.(*pbSignal); ok {

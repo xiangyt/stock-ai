@@ -3,6 +3,8 @@ package indicator
 import (
 	"fmt"
 	"sync"
+
+	"stock-ai/utils"
 )
 
 // ============================================================================
@@ -61,32 +63,18 @@ func (e *Engine) Execute(stocks []*StockData, configs []*SignalConfig, maxConcur
 		return nil
 	}
 
-	var wg sync.WaitGroup
-	result := make([]*EvaluatedStock, 0, len(stocks))
+	var (
+		result = make([]*EvaluatedStock, 0, len(stocks))
+		mu     sync.Mutex
+	)
 
-	sem := make(chan struct{}, maxConcurrency)
-	if maxConcurrency <= 0 {
-		sem = nil
-	}
-	mu := sync.Mutex{}
-
-	for _, stock := range stocks {
-		wg.Add(1)
-		go func(s *StockData) {
-			defer wg.Done()
-			if sem != nil {
-				sem <- struct{}{}
-				defer func() { <-sem }()
-			}
-			evaluated := e.evalStockGrouped(s, groups)
-
-			mu.Lock()
-			defer mu.Unlock()
-			result = append(result, evaluated)
-		}(stock)
-	}
-	wg.Wait()
-
+	utils.ConcurrentExec(stocks, maxConcurrency, func(i int, stock *StockData) error {
+		evaluated := e.evalStockGrouped(stocks[i], groups)
+		mu.Lock()
+		result = append(result, evaluated)
+		mu.Unlock()
+		return nil
+	})
 	return result
 }
 

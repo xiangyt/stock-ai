@@ -33,12 +33,12 @@
 
       <!-- ====== 策略详情/编辑页面（新建 + 编辑） ====== -->
       <div v-else-if="currentPage === 'strategy-new' || currentPage === 'strategy-edit'" class="page strategy-edit-page">
-        <StrategyBuilder ref="builderRef" @saved="onStrategySaved" @goBack="onBackFromEdit" />
+        <StrategyBuilder ref="builderRef" @saved="onStrategySaved" @goBack="onBackFromEdit" @goBacktest="onGoBacktest" />
       </div>
 
       <!-- ====== 策略回测页面 ====== -->
       <div v-else-if="currentPage === 'strategy-backtest'" class="page backtest-page-wrapper">
-        <BacktestPage @goBack="onBackFromBacktest" />
+        <BacktestPage :default-strategy-id="pendingStrategyId" @goBack="onBackFromBacktest" @goToEdit="onGoToEditFromBacktest" />
       </div>
 
       <!-- ====== 策略订阅页面 ====== -->
@@ -155,6 +155,7 @@ const sidebarActive = computed(() => {
 })
 
 function onPageChange(key: string) {
+  pendingStrategyId.value = null
   currentPage.value = key
 }
 
@@ -288,8 +289,20 @@ async function onStrategySaved() {
   await loadStrategies()
 }
 
+const pendingStrategyId = ref<number | null>(null)
+
+function onGoBacktest(strategyId: number | null) {
+  pendingStrategyId.value = strategyId
+  currentPage.value = 'strategy-backtest'
+}
+
 function onBackFromBacktest() {
   currentPage.value = 'strategy-list'
+}
+
+function onGoToEditFromBacktest(strategyId: number) {
+  // 从回测页返回编辑页：通过策略 ID 加载详情后进入编辑
+  onLoadStrategy({ id: strategyId, name: '', signals: [], logicalOp: 'AND' } as SavedStrategy)
 }
 
 function onBackFromProfile() {

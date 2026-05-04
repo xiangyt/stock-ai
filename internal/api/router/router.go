@@ -32,7 +32,7 @@ func SetupRouter() *gin.Engine {
 	// 初始化服务
 	cfg := config.Get()
 	authSvc := service.NewAuthService(cfg.Auth.JWTSecret)
-	stockSvc := service.NewStockService()
+	screenSvc := service.NewScreenService()
 
 	// API v1 路由组
 	apiV1 := r.Group("/api/v1")
@@ -41,7 +41,7 @@ func SetupRouter() *gin.Engine {
 		RegisterStockRoutes(apiV1)
 		RegisterCollectorRoutes(apiV1)
 		RegisterStrategyRoutes(apiV1, authSvc)
-		RegisterIndicatorRoutes(apiV1, authSvc, stockSvc)
+		RegisterIndicatorRoutes(apiV1, authSvc, screenSvc)
 	}
 
 	return r

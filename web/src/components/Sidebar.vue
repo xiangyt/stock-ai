@@ -130,12 +130,15 @@ const roleLabel = computed(() => {
 <style scoped>
 .sidebar {
   width: 180px;
-  min-height: 100vh;
+  height: 100vh;
+  position: sticky;
+  top: 0;
   background: #fff;
   border-right: 1px solid #e8e8e8;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  overflow-y: auto;
 }
 .sidebar-logo {
   display: flex; align-items: center; gap: 10px; padding: 20px 18px 16px;

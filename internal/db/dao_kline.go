@@ -205,6 +205,64 @@ func FindLatestNKlinesAny(period KLinePeriod, code string, n int) ([]int, error)
 	return dates, nil
 }
 
+// ========== 查询（按周期，供 ScreenService 使用，直接调用 GetDB()） ==========
+
+// FindDailyKlines 按 trade_date DESC 取最近 limit 条日K
+func FindDailyKlines(code string, limit int) ([]*model.DailyKline, error) {
+	var list []*model.DailyKline
+	if limit <= 0 {
+		limit = 250
+	}
+	err := GetDB().
+		Where("stock_code = ?", code).
+		Order("trade_date DESC").
+		Limit(limit).
+		Find(&list).Error
+	return list, err
+}
+
+// FindWeeklyKlines 按 trade_date DESC 取最近 limit 条周K
+func FindWeeklyKlines(code string, limit int) ([]*model.WeeklyKline, error) {
+	var list []*model.WeeklyKline
+	if limit <= 0 {
+		limit = 250
+	}
+	err := GetDB().
+		Where("stock_code = ?", code).
+		Order("trade_date DESC").
+		Limit(limit).
+		Find(&list).Error
+	return list, err
+}
+
+// FindMonthlyKlines 按 trade_date DESC 取最近 limit 条月K
+func FindMonthlyKlines(code string, limit int) ([]*model.MonthlyKline, error) {
+	var list []*model.MonthlyKline
+	if limit <= 0 {
+		limit = 250
+	}
+	err := GetDB().
+		Where("stock_code = ?", code).
+		Order("trade_date DESC").
+		Limit(limit).
+		Find(&list).Error
+	return list, err
+}
+
+// FindYearlyKlines 按 trade_date DESC 取最近 limit 条年K
+func FindYearlyKlines(code string, limit int) ([]*model.YearlyKline, error) {
+	var list []*model.YearlyKline
+	if limit <= 0 {
+		limit = 250
+	}
+	err := GetDB().
+		Where("stock_code = ?", code).
+		Order("trade_date DESC").
+		Limit(limit).
+		Find(&list).Error
+	return list, err
+}
+
 // DeleteKlinesAfterDate 删除指定股票某周期中 trade_date > anchorDate 的所有记录
 // 用于 daily 模式：全量对齐后，截断脏数据/过期数据，再重新写入全量数据
 // 返回删除的行数
@@ -247,45 +305,6 @@ func IsSamePeriod(period KLinePeriod, dateA, dateB int) bool {
 	default:
 		return false
 	}
-}
-
-// ========== 旧接口保留（向后兼容） ==========
-
-// FindDailyKlines 查询日K线数据（按日期范围）
-func FindDailyKlines(code string, startDate, endDate int, limit int) ([]model.DailyKline, error) {
-	var klines []model.DailyKline
-	q := GetDB().Where("stock_code = ?", code)
-	if startDate > 0 {
-		q = q.Where("trade_date >= ?", startDate)
-	}
-	if endDate > 0 {
-		q = q.Where("trade_date <= ?", endDate)
-	}
-	if limit > 0 {
-		q = q.Limit(limit)
-	}
-	err := q.Order("trade_date ASC").Find(&klines).Error
-	return klines, err
-}
-
-// FindLatestDailyKline 查询最新一条日K线（向后兼容）
-func FindLatestDailyKline(code string) (model.DailyKline, error) {
-	var kline model.DailyKline
-	err := GetDB().Where("stock_code = ?", code).
-		Order("trade_date DESC").
-		First(&kline).Error
-	return kline, err
-}
-
-// FindLatestDailyKlineWithAmount 日K特化版（向后兼容）
-func FindLatestDailyKlineWithAmount(code string) (model.DailyKline, error) {
-	var kline model.DailyKline
-	err := GetDB().
-		Where("stock_code = ? AND amount > 0", code).
-		Order("trade_date DESC").
-		Limit(1).
-		First(&kline).Error
-	return kline, err
 }
 
 // ========== 内部辅助函数 ==========

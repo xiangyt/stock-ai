@@ -57,9 +57,8 @@ func (p *PETTM) Evaluate(stock *indicator.StockData, configs []*indicator.Signal
 	if len(configs) == 0 {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, Message: "未配置信号"}
 	}
-
-	if stock.DailySnapshot != nil {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID, Message: "数据缺失: PE_TTM"}
+	if stock.DailySnapshot == nil {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID, Message: "数据缺失: DailySnapshot"}
 	}
 
 	for _, v := range configs {

@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"stock-ai/internal/indicator"
-	"stock-ai/internal/model"
 	"stock-ai/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -12,14 +11,14 @@ import (
 
 // IndicatorHandler 指标 HTTP Handler
 type IndicatorHandler struct {
-	registry *indicator.Registry
-	stockSvc *service.StockService // 用于获取股票数据
+	registry  *indicator.Registry
+	screenSvc *service.ScreenService // 用于构建选股/回测引擎输入数据
 }
 
 // NewIndicatorHandler 创建指标 Handler（初始化全部内置指标）
-func NewIndicatorHandler(stockSvc *service.StockService) *IndicatorHandler {
+func NewIndicatorHandler(screenSvc *service.ScreenService) *IndicatorHandler {
 	reg := indicator.NewRegistry(allBuiltins())
-	return &IndicatorHandler{registry: reg, stockSvc: stockSvc}
+	return &IndicatorHandler{registry: reg, screenSvc: screenSvc}
 }
 
 // ListIndicators 获取全部指标元数据
@@ -50,8 +49,8 @@ func (h *IndicatorHandler) GetIndicatorByID(c *gin.Context) {
 
 // ExecuteRequest 选股执行请求体
 type ExecuteRequest struct {
-	Configs        []indicator.SignalConfig `json:"configs"`         // 信号配置列表
-	MaxConcurrency int                      `json:"max_concurrency"` // 最大并发数 (默认10)
+	Configs        []*indicator.SignalConfig `json:"configs"`         // 信号配置列表
+	MaxConcurrency int                       `json:"max_concurrency"` // 最大并发数 (默认10)
 }
 
 // ExecuteResponse 选股执行响应
@@ -66,7 +65,7 @@ type ExecuteResponse struct {
 //
 // 处理流程:
 //  1. 从请求体解析 SignalConfig 列表
-//  2. 调用 StockService 获取全量股票数据，构建 StockData 列表
+//  2. 调用 ScreenService.BuildAll() 获取全量股票数据
 //  3. 调用 Engine.Execute() 并发评估
 //  4. 按 Passed/Rejected 分组返回
 func (h *IndicatorHandler) Execute(c *gin.Context) {
@@ -87,7 +86,7 @@ func (h *IndicatorHandler) Execute(c *gin.Context) {
 	}
 
 	// 获取股票数据
-	stocks, err := h.buildStockData()
+	stocks, err := h.screenSvc.BuildAll(maxConcurrency)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取股票数据失败: " + err.Error()})
 		return
@@ -103,12 +102,7 @@ func (h *IndicatorHandler) Execute(c *gin.Context) {
 	}
 
 	// 执行选股
-	// 将 []SignalConfig 转为 []*SignalConfig (Engine 接口要求指针切片)
-	configPtrs := make([]*indicator.SignalConfig, len(req.Configs))
-	for i := range req.Configs {
-		configPtrs[i] = &req.Configs[i]
-	}
-	results := h.registry.Engine().Execute(stocks, configPtrs, maxConcurrency)
+	results := h.registry.Engine().Execute(stocks, req.Configs, maxConcurrency)
 
 	// 分组结果
 	var passed, rejected []indicator.EvaluatedStock
@@ -126,23 +120,4 @@ func (h *IndicatorHandler) Execute(c *gin.Context) {
 		Passed:   passed,
 		Rejected: rejected,
 	}})
-}
-
-// buildStockData 从 StockService 获取全量 A 股数据并构建 StockData 列表
-func (h *IndicatorHandler) buildStockData() ([]*indicator.StockData, error) {
-	// 获取全量股票基本信息
-	stockList, err := h.stockSvc.GetAllStocks()
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO: 后续可优化为按需加载 K线/财务数据
-	// 当前先构建基础 StockData（仅含 Detail）
-	result := make([]*indicator.StockData, 0, len(stockList))
-	for _, s := range stockList {
-		result = append(result, &indicator.StockData{
-			Detail: s.(*model.Stock),
-		})
-	}
-	return result, nil
 }

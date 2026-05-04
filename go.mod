@@ -1,6 +1,6 @@
 module stock-ai
 
-go 1.23.0
+go 1.25.0
 
 require (
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
