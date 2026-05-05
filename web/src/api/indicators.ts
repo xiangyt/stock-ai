@@ -246,6 +246,8 @@ export async function fetchIndicatorById(id: string): Promise<IndicatorMeta> {
 export interface ExecuteRequest {
   configs: SignalConfig[]
   max_concurrency?: number
+  /** 筛选日期，格式 YYYY-MM-DD，默认为今天 */
+  date?: string
 }
 
 /** 单股评估结果 */

@@ -2,6 +2,7 @@ package financial
 
 import (
 	"stock-ai/internal/indicator"
+	"stock-ai/internal/model"
 	signalutil "stock-ai/internal/indicator/signalutil"
 )
 
@@ -53,12 +54,14 @@ func NewPETTM() *PETTM {
 	return p
 }
 
-func (p *PETTM) Evaluate(stock *indicator.StockData, configs []*indicator.SignalConfig) *indicator.EvaluatedStock {
+func (p *PETTM) Evaluate(stock indicator.StockSource, configs []*indicator.SignalConfig) *indicator.EvaluatedStock {
 	if len(configs) == 0 {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, Message: "未配置信号"}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, Message: indicator.ErrNoConfig.Error()}
 	}
-	if stock.DailySnapshot == nil {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID, Message: "数据缺失: DailySnapshot"}
+
+	snap, err := stock.GetDailySnapshot()
+	if err != nil || snap == nil {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID, Message: indicator.DataEmptyError("DailySnapshot").Error()}
 	}
 
 	for _, v := range configs {
@@ -66,13 +69,13 @@ func (p *PETTM) Evaluate(stock *indicator.StockData, configs []*indicator.Signal
 			var res *indicator.EvaluatedStock
 			switch ss := s.(type) {
 			case *peTTMSignal:
-				res = ss.Evaluate(stock, v)
+				res = ss.Evaluate(snap, v)
 			case *peDynamicSignal:
-				res = ss.Evaluate(stock, v)
+				res = ss.Evaluate(snap, v)
 			case *peStaticSignal:
-				res = ss.Evaluate(stock, v)
+				res = ss.Evaluate(snap, v)
 			default:
-				return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: v.SignalID, Message: "不支持的信号"}
+				return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: v.SignalID, Message: indicator.ErrUnsupportedSignal.Error()}
 			}
 			if res.Result == indicator.ResultPassed {
 				continue
@@ -80,7 +83,7 @@ func (p *PETTM) Evaluate(stock *indicator.StockData, configs []*indicator.Signal
 				return res
 			}
 		}
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: v.SignalID, Message: "不支持的信号"}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: v.SignalID, Message: indicator.ErrUnsupportedSignal.Error()}
 	}
 	return &indicator.EvaluatedStock{Result: indicator.ResultPassed}
 }
@@ -89,21 +92,21 @@ type peTTMSignal struct {
 	indicator.BaseSignal
 }
 
-func (s *peTTMSignal) Evaluate(stock *indicator.StockData, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+func (s *peTTMSignal) Evaluate(snap *model.StockDailySnapshot, config *indicator.SignalConfig) *indicator.EvaluatedStock {
 	sId := config.SignalID
 	if !config.IsCustom() {
 		config = s.DefaultConfig()
 	}
-	value := s.getValue(stock)
+	value := s.getValue(snap)
 	return signalutil.EvalNumberOp(value, s.NameStr, "%.2f", "%.0f", sId, config)
 }
 
-func (s *peTTMSignal) getValue(stock *indicator.StockData) float64 {
-	if stock.DailySnapshot != nil && stock.DailySnapshot.PETTM != 0 {
-		return stock.DailySnapshot.PETTM
+func (s *peTTMSignal) getValue(snap *model.StockDailySnapshot) float64 {
+	if snap != nil && snap.PETTM != 0 {
+		return snap.PETTM
 	}
-	if stock.DailySnapshot != nil && stock.DailySnapshot.PEStatic != 0 {
-		return stock.DailySnapshot.PEStatic
+	if snap != nil && snap.PEStatic != 0 {
+		return snap.PEStatic
 	}
 	return 0
 }
@@ -112,18 +115,18 @@ type peDynamicSignal struct {
 	indicator.BaseSignal
 }
 
-func (s *peDynamicSignal) Evaluate(stock *indicator.StockData, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+func (s *peDynamicSignal) Evaluate(snap *model.StockDailySnapshot, config *indicator.SignalConfig) *indicator.EvaluatedStock {
 	sId := config.SignalID
 	if !config.IsCustom() {
 		config = s.DefaultConfig()
 	}
-	value := s.getValue(stock)
+	value := s.getValue(snap)
 	return signalutil.EvalNumberOp(value, s.NameStr, "%.2f", "%.0f", sId, config)
 }
 
-func (s *peDynamicSignal) getValue(stock *indicator.StockData) float64 {
-	if stock.DailySnapshot != nil && stock.DailySnapshot.PEDynamic != 0 {
-		return stock.DailySnapshot.PEDynamic
+func (s *peDynamicSignal) getValue(snap *model.StockDailySnapshot) float64 {
+	if snap != nil && snap.PEDynamic != 0 {
+		return snap.PEDynamic
 	}
 	return 0
 }
@@ -132,18 +135,18 @@ type peStaticSignal struct {
 	indicator.BaseSignal
 }
 
-func (s *peStaticSignal) Evaluate(stock *indicator.StockData, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+func (s *peStaticSignal) Evaluate(snap *model.StockDailySnapshot, config *indicator.SignalConfig) *indicator.EvaluatedStock {
 	sId := config.SignalID
 	if !config.IsCustom() {
 		config = s.DefaultConfig()
 	}
-	value := s.getValue(stock)
+	value := s.getValue(snap)
 	return signalutil.EvalNumberOp(value, s.NameStr, "%.2f", "%.0f", sId, config)
 }
 
-func (s *peStaticSignal) getValue(stock *indicator.StockData) float64 {
-	if stock.DailySnapshot != nil && stock.DailySnapshot.PEStatic != 0 {
-		return stock.DailySnapshot.PEStatic
+func (s *peStaticSignal) getValue(snap *model.StockDailySnapshot) float64 {
+	if snap != nil && snap.PEStatic != 0 {
+		return snap.PEStatic
 	}
 	return 0
 }

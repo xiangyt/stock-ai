@@ -65,10 +65,10 @@ func main() {
 
 	// 统一调用
 	startTime := time.Now()
-	results := svc.Calc(ctx, strings.TrimSpace(*code))
+	result := svc.Calc(ctx, strings.TrimSpace(*code))
 
 	// 输出汇总
-	printResults(results)
+	printResult(result)
 	log.Printf("\n总耗时: %.1fs\n", time.Since(startTime).Seconds())
 }
 
@@ -104,19 +104,13 @@ func initAll(configPath string) error {
 
 // ========== 输出 ==========
 
-func printResults(results []service.SnapshotBatchResult) {
-	totalS, totalF, totalT := 0, 0, 0.0
-	for _, r := range results {
-		totalS += r.Success
-		totalF += r.Fail
-		totalT += r.CostSeconds
-
-		if len(results) > 1 || len(r.Details) > 1 {
-			fmt.Printf("[批次] 成功=%d 失败=%d 耗时=%.1fs\n",
-				r.Success, r.Fail, r.CostSeconds)
-		}
+func printResult(result service.SnapshotBatchResult) {
+	if result.Mode == "all_stocks_all_dates" {
+		fmt.Println("==============================")
+		fmt.Printf("全部完成! 成功=%d 失败=%d 耗时=%.1fs\n", result.Success, result.Fail, result.CostSeconds)
+		fmt.Println("==============================")
+	} else {
+		fmt.Printf("[单股票] 成功=%d 失败=%d 耗时=%.1fs\n",
+			result.Success, result.Fail, result.CostSeconds)
 	}
-	fmt.Println("==============================")
-	fmt.Printf("全部完成! 成功=%d 失败=%d 总耗时=%.1fs\n", totalS, totalF, totalT)
-	fmt.Println("==============================")
 }

@@ -2,6 +2,7 @@ package financial
 
 import (
 	"stock-ai/internal/indicator"
+	"stock-ai/internal/model"
 	signalutil "stock-ai/internal/indicator/signalutil"
 )
 
@@ -46,15 +47,16 @@ func NewPB() *PB {
 	return pb
 }
 
-func (pb *PB) Evaluate(stock *indicator.StockData, configs []*indicator.SignalConfig) *indicator.EvaluatedStock {
+func (pb *PB) Evaluate(stock indicator.StockSource, configs []*indicator.SignalConfig) *indicator.EvaluatedStock {
 	if len(configs) == 0 {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, Message: "未配置信号"}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, Message: indicator.ErrNoConfig.Error()}
 	}
 
-	if stock.DailySnapshot == nil {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID, Message: "数据缺失: PB"}
+	snap, err := stock.GetDailySnapshot()
+	if err != nil || snap == nil {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID, Message: indicator.DataEmptyError("PB").Error()}
 	}
-	value := pb.getValue(stock)
+	value := pb.getValue(snap)
 	for _, v := range configs {
 		if s, ok := pb.Signal[v.SignalID]; ok {
 			if ss, ok := s.(*pbSignal); ok {
@@ -65,14 +67,14 @@ func (pb *PB) Evaluate(stock *indicator.StockData, configs []*indicator.SignalCo
 				}
 			}
 		}
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: v.SignalID, Message: "不支持的信号"}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: v.SignalID, Message: indicator.ErrUnsupportedSignal.Error()}
 	}
 	return &indicator.EvaluatedStock{Result: indicator.ResultPassed}
 }
 
-func (pb *PB) getValue(stock *indicator.StockData) float64 {
-	if stock.DailySnapshot != nil && stock.DailySnapshot.PB != 0 {
-		return stock.DailySnapshot.PB
+func (pb *PB) getValue(snap *model.StockDailySnapshot) float64 {
+	if snap != nil && snap.PB != 0 {
+		return snap.PB
 	}
 	return 0
 }

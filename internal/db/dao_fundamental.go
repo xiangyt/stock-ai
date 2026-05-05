@@ -70,7 +70,7 @@ func UpsertShareChange(m model.ShareChange) int64 {
 }
 
 // FindPerformanceReports 查询股票财报列表（按报告日期降序）
-func FindPerformanceReports(code string, limit int) ([]model.PerformanceReport, error) {
+func FindPerformanceReports(code string, endDate, limit int) ([]model.PerformanceReport, error) {
 	var reports []model.PerformanceReport
 	q := GetDB().Where("stock_code = ?", code).Order("report_date DESC")
 	if limit > 0 {
@@ -81,11 +81,13 @@ func FindPerformanceReports(code string, limit int) ([]model.PerformanceReport, 
 }
 
 // FindLatestShareholderCount 查询最新股东户数
-func FindLatestShareholderCount(code string) (*model.ShareholderCount, error) {
+func FindLatestShareholderCount(code string, endDate int) (*model.ShareholderCount, error) {
 	var sc model.ShareholderCount
-	err := GetDB().Where("stock_code = ?", code).
-		Order("end_date DESC").
-		First(&sc).Error
+	db := GetDB().Where("stock_code = ?", code)
+	if endDate > 0 {
+		db = db.Where("trade_date <= ?", endDate)
+	}
+	err := db.Order("end_date DESC").First(&sc).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}

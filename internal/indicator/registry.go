@@ -50,10 +50,10 @@ type ScreenResult struct {
 //  4. 采用短路策略：任一指标不通过即返回 Pending/Rejected
 //
 // 参数:
-//   - stocks: 待评估股票列表
+//   - stocks: 待评估股票列表（实现 StockSource 接口，支持懒加载）
 //   - configs: 用户配置的所有信号条件
 //   - maxConcurrency: 最大并发数 (<=0 表示不限制)
-func (e *Engine) Execute(stocks []*StockData, configs []*SignalConfig, maxConcurrency int) []*EvaluatedStock {
+func (e *Engine) Execute(stocks []StockSource, configs []*SignalConfig, maxConcurrency int) []*EvaluatedStock {
 	if len(stocks) == 0 || len(configs) == 0 {
 		return nil
 	}
@@ -68,8 +68,8 @@ func (e *Engine) Execute(stocks []*StockData, configs []*SignalConfig, maxConcur
 		mu     sync.Mutex
 	)
 
-	utils.ConcurrentExec(stocks, maxConcurrency, func(i int, stock *StockData) error {
-		evaluated := e.evalStockGrouped(stocks[i], groups)
+	utils.ConcurrentExec(stocks, maxConcurrency, func(i int, stock StockSource) error {
+		evaluated := e.evalStockGrouped(stock, groups)
 		mu.Lock()
 		result = append(result, evaluated)
 		mu.Unlock()
@@ -98,16 +98,14 @@ func (e *Engine) groupByIndicator(configs []*SignalConfig) map[string][]*SignalC
 //   - 所有指标组均通过才返回 Passed
 //
 // 返回值: 该股票的最终评估结果 (含代码、名称、价格、不通过原因)
-func (e *Engine) evalStockGrouped(stock *StockData, groups map[string][]*SignalConfig) *EvaluatedStock {
-	var code, name string
+func (e *Engine) evalStockGrouped(stock StockSource, groups map[string][]*SignalConfig) *EvaluatedStock {
+	code := stock.GetCode()
+	name := stock.GetName()
+
+	// 取最新价：从 DailyKline[0].Close 换算（懒加载，价格取不到时用 0）
 	var price float64
-	if stock.Detail != nil {
-		code = stock.Detail.Code
-		name = stock.Detail.Name
-	}
-	if len(stock.DailyKline) > 0 {
-		latest := stock.DailyKline[0]
-		price = float64(latest.Close) / 100.00
+	if klines, err := stock.GetDailyKline(); err == nil && len(klines) > 0 {
+		price = float64(klines[0].Close) / 100.00
 	}
 
 	ev := EvaluatedStock{
@@ -120,7 +118,7 @@ func (e *Engine) evalStockGrouped(stock *StockData, groups map[string][]*SignalC
 	for indKey, groupConfigs := range groups {
 		ind, ok := e.indicators[indKey]
 		if !ok {
-			ev.Message = fmt.Sprintf("指标 %s 不存在", indKey)
+			ev.Message = fmt.Sprintf("指标 %s 不存在: %v", indKey, ErrIndicatorNotFound)
 			return &ev
 		}
 

@@ -51,6 +51,7 @@ func (h *IndicatorHandler) GetIndicatorByID(c *gin.Context) {
 type ExecuteRequest struct {
 	Configs        []*indicator.SignalConfig `json:"configs"`         // 信号配置列表
 	MaxConcurrency int                       `json:"max_concurrency"` // 最大并发数 (默认10)
+	Date           string                    `json:"date"`            // 选股日期
 }
 
 // ExecuteResponse 选股执行响应
@@ -86,7 +87,7 @@ func (h *IndicatorHandler) Execute(c *gin.Context) {
 	}
 
 	// 获取股票数据
-	stocks, err := h.screenSvc.BuildAll(maxConcurrency)
+	stocks, err := h.screenSvc.BuildAll(maxConcurrency, req.Date)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取股票数据失败: " + err.Error()})
 		return

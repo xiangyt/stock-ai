@@ -97,3 +97,7 @@ func (a *Adapter) Close() error {
 func (a *Adapter) GetQuotaInfo() adapter.QuotaInfo {
 	return a.quota
 }
+
+func (a *Adapter) GetIndexDailyKLine(_ context.Context, _ string, _, _ time.Time, _ string) ([]adapter.StockPriceDaily, error) {
+	return nil, fmt.Errorf("not implemented")
+}

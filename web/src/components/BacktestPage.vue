@@ -60,9 +60,9 @@
         </div>
         <span class="toolbar-sep">|</span>
         <label>日期：</label>
-        <input type="date" v-model="startDate" class="date-input" />
+        <input type="date" v-model="startDate" class="date-picker" />
         <span>至</span>
-        <input type="date" v-model="endDate" class="date-input" />
+        <input type="date" v-model="endDate" class="date-picker" />
         <span class="toolbar-sep">|</span>
         <label>本金：</label>
         <input type="number" v-model.number="initialCapital" class="capital-input" min="1000" step="1000" />
@@ -583,11 +583,16 @@ def handle_data(context, data):
 .sd-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sd-meta { font-size: 11px; color: #aaa; flex-shrink: 0; white-space: nowrap; }
 .sd-empty { text-align: center; padding: 20px 16px; color: #bbb; font-size: 13px; }
-.date-input, .capital-input {
+.capital-input {
   border: 1px solid #d9d9d9; border-radius: 6px; padding: 4px 8px;
   font-size: 13px; outline: none; transition: border-color .15s;
 }
-.date-input:focus, .capital-input:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.08); }
+.capital-input:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.08); }
+.date-picker, .capital-input {
+  border: 1px solid #d9d9d9; border-radius: 6px; padding: 4px 8px;
+  font-size: 13px; outline: none; transition: border-color .15s;
+}
+.date-picker:focus, .capital-input:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.08); }
 .capital-input { width: 110px; }
 .toolbar-sep { color: #ddd; }
 .toolbar-right { display: inline-flex; gap: 6px; align-items: center; }

@@ -40,22 +40,13 @@ func (h *SnapshotHandler) Calc(c *gin.Context) {
 	}
 
 	go func() {
-		results := h.service.Calc(c.Request.Context(), strings.TrimSpace(req.Code))
-		logSnapshotResults(results)
+		result := h.service.Calc(c.Request.Context(), strings.TrimSpace(req.Code))
+		log.Printf("[snapshot] 全部完成! 成功=%d 失败=%d 耗时=%.1fs",
+			result.Success, result.Fail, result.CostSeconds)
 	}()
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "快照计算已启动",
 	})
-}
-
-func logSnapshotResults(results []service.SnapshotBatchResult) {
-	totalS, totalF, totalT := 0, 0, 0.0
-	for _, r := range results {
-		totalS += r.Success
-		totalF += r.Fail
-		totalT += r.CostSeconds
-	}
-	log.Printf("[snapshot] 全部完成! 成功=%d 失败=%d 总耗时=%.1fs", totalS, totalF, totalT)
 }

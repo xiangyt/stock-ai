@@ -2,6 +2,7 @@ package fundamental
 
 import (
 	"stock-ai/internal/indicator"
+	"stock-ai/internal/model"
 	signalutil "stock-ai/internal/indicator/signalutil"
 )
 
@@ -47,14 +48,16 @@ func NewFloatShares() *FloatShares {
 	return f
 }
 
-func (f *FloatShares) Evaluate(stock *indicator.StockData, configs []*indicator.SignalConfig) *indicator.EvaluatedStock {
+func (f *FloatShares) Evaluate(stock indicator.StockSource, configs []*indicator.SignalConfig) *indicator.EvaluatedStock {
 	if len(configs) == 0 {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, Message: "未配置信号"}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, Message: indicator.ErrNoConfig.Error()}
 	}
-	value := f.getValue(stock)
-	if stock.DailySnapshot == nil {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID, Message: "数据缺失: float_shares"}
+
+	snap, err := stock.GetDailySnapshot()
+	if err != nil || snap == nil {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID, Message: indicator.DataEmptyError("float_shares").Error()}
 	}
+	value := f.getValue(snap)
 
 	for _, v := range configs {
 		if s, ok := f.Signal[v.SignalID]; ok {
@@ -66,16 +69,16 @@ func (f *FloatShares) Evaluate(stock *indicator.StockData, configs []*indicator.
 				}
 			}
 		}
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: v.SignalID, Message: "不支持的信号"}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: v.SignalID, Message: indicator.ErrUnsupportedSignal.Error()}
 	}
 	return &indicator.EvaluatedStock{Result: indicator.ResultPassed}
 }
 
-func (f *FloatShares) getValue(stock *indicator.StockData) float64 {
-	if stock.DailySnapshot == nil || stock.DailySnapshot.FloatShares == 0 {
+func (f *FloatShares) getValue(snap *model.StockDailySnapshot) float64 {
+	if snap == nil || snap.FloatShares == 0 {
 		return 0
 	}
-	return float64(stock.DailySnapshot.FloatShares) / 1e8 // 股 → 亿股
+	return float64(snap.FloatShares) / 1e8 // 股 → 亿股
 }
 
 type floatShareSignal struct {

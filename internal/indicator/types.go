@@ -2,6 +2,7 @@ package indicator
 
 import (
 	"fmt"
+
 	"stock-ai/internal/model"
 )
 
@@ -416,7 +417,7 @@ func (c *SignalConfig) Days() int {
 //  Indicator 接口 — 所有指标必须实现
 //
 //  指标的核心职责:
-//    1. 提供数据 (从 StockData 提取/计算指标特有数据)
+//    1. 提供数据 (从 StockSource 提取/计算指标特有数据)
 //    2. 管理信号 (内置 + 自定义两组)
 //    3. 调度评估 (Evaluate 将公共计算结果分发给各信号)
 // ============================================================================
@@ -435,7 +436,7 @@ type Indicator interface {
 	AllSignals() []Signal     // 合并视图 = BuiltIn + Custom
 
 	// 核心评估方法 — 指标负责所有信号的评估调度
-	Evaluate(stock *StockData, configs []*SignalConfig) *EvaluatedStock
+	Evaluate(stock StockSource, configs []*SignalConfig) *EvaluatedStock
 }
 
 // ============================================================================
@@ -500,28 +501,69 @@ func (b *BaseIndicator) SetCustomSignals(sigs []Signal) {
 //
 //	逐个调用 Indicator.Evaluate，由子类根据 config 中的信号序号分发到具体评估逻辑。
 //	需要优化的指标（如 NumberFieldIndicator）应覆写此方法以实现批量计算。
-func (b *BaseIndicator) Evaluate(stock *StockData, configs []*SignalConfig) *EvaluatedStock {
+func (b *BaseIndicator) Evaluate(stock StockSource, configs []*SignalConfig) *EvaluatedStock {
 	return &EvaluatedStock{
-		Code:    stock.Detail.Code,
-		Name:    stock.Detail.Name,
+		Code:    stock.GetCode(),
+		Name:    stock.GetName(),
 		Result:  ResultRejected,
 		Message: fmt.Sprintf("%s 未实现 Evaluate 方法", b.Name()),
 	}
 }
 
 // ============================================================================
-//  StockData — 引擎输入的股票数据结构
+//  分类子接口 — 按指标分类拆分数据源
+//
+//  每个子接口只包含对应分类所需的方法。
+//  实现类可以选择性实现，不必实现所有方法。
 // ============================================================================
 
-type StockData struct {
-	Detail            *model.Stock
-	DailyKline        []*model.DailyKline        // 按时间降序
-	WeeklyKline       []*model.WeeklyKline       // 按时间降序
-	MonthlyKline      []*model.MonthlyKline      // 按时间降序
-	YearlyKline       []*model.YearlyKline       // 按时间降序
-	PerformanceReport []*model.PerformanceReport // 按公告时间降序
-	ShareholderCount  *model.ShareholderCount    // 最新一条
-	DailySnapshot     *model.StockDailySnapshot  // 最新一条
+// TechnicalSource 技术面数据源（01xxxx）
+// 提供 K 线序列数据，用于 MACD、均线等技术指标计算。
+type TechnicalSource interface {
+	GetDailyKline() ([]*model.DailyKline, error)
+	GetWeeklyKline() ([]*model.WeeklyKline, error)
+	GetMonthlyKline() ([]*model.MonthlyKline, error)
+	GetYearlyKline() ([]*model.YearlyKline, error)
+}
+
+// MarketSource 行情面数据源（02xxxx）
+// 提供实时行情数据，用于价格、涨跌幅、市值等指标。
+type MarketSource interface {
+	GetDailyKline() ([]*model.DailyKline, error)
+	GetDailySnapshot() (*model.StockDailySnapshot, error)
+}
+
+// FundamentalSource 基本面数据源（03xxxx）
+// 提供公司基本信息，用于上市板块、行业分类等枚举型指标。
+type FundamentalSource interface {
+	GetDetail() (*model.Stock, error)
+}
+
+// FinancialSource 财务面数据源（04xxxx）
+// 提供财报、股本等财务数据，用于 PE、PB、ROE 等财务指标。
+type FinancialSource interface {
+	GetDailySnapshot() (*model.StockDailySnapshot, error)
+	GetPerformanceReport() ([]*model.PerformanceReport, error)
+	GetShareholderCount() (*model.ShareholderCount, error)
+}
+
+// ============================================================================
+//
+//	StockSource — 总接口（组合 4 个子接口）
+//
+//	各指标 Evaluate 只依赖自身分类的子接口，但引擎层需要统一处理
+//	（取 Code/Name/Price 等），因此需要总接口作为 Engine.Execute 的入参类型。
+//
+// ============================================================================
+type StockSource interface {
+	// 公共方法 — 所有指标和引擎都可能访问
+	GetCode() string
+	GetName() string
+
+	TechnicalSource
+	MarketSource
+	FundamentalSource
+	FinancialSource
 }
 
 // ============================================================================

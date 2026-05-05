@@ -27,25 +27,13 @@ const (
 
 // ========== 结果结构体 ==========
 
-// SnapshotResult 单次快照计算结果
-type SnapshotResult struct {
-	Code        string       `json:"code"`
-	TradeDate   int          `json:"trade_date"`
-	Mode        SnapshotMode `json:"mode"`
-	UpsertCount int          `json:"upsert_count"`
-	Success     int          `json:"success"` // 1=成功, 0=失败
-	CostSeconds float64      `json:"cost_seconds"`
-	Error       error        `json:"error,omitempty"`
-}
-
 // SnapshotBatchResult 批量计算汇总
 type SnapshotBatchResult struct {
-	Mode        SnapshotMode     `json:"mode"`
-	Total       int              `json:"total"`
-	Success     int              `json:"success"`
-	Fail        int              `json:"fail"`
-	CostSeconds float64          `json:"cost_seconds"`
-	Details     []SnapshotResult `json:"details,omitempty"`
+	Mode        SnapshotMode `json:"mode"`
+	Total       int          `json:"total"`
+	Success     int          `json:"success"`
+	Fail        int          `json:"fail"`
+	CostSeconds float64      `json:"cost_seconds"`
 }
 
 // ========== 服务入口 ==========
@@ -67,11 +55,10 @@ func NewSnapshotService() *SnapshotService {
 // Calc 统一快照计算入口，根据 code 和 tradeDate 自动分发
 //   - code != "" → 单股票全日期（走 THS 实时采集 + 批量路径）
 //   - code == "" → 全股票全日期
-func (s *SnapshotService) Calc(ctx context.Context, code string) []SnapshotBatchResult {
+func (s *SnapshotService) Calc(ctx context.Context, code string) SnapshotBatchResult {
 	switch {
 	case code != "":
-		result := s.calcSingleStockAllDates(ctx, code)
-		return []SnapshotBatchResult{result}
+		return s.calcSingleStockAllDates(ctx, code)
 	default:
 		return s.calcAllStocksAllDates(ctx)
 	}
@@ -172,30 +159,14 @@ done:
 	if len(snapshots) > 0 {
 		totalRows, batchErr := db.BatchUpsertSnapshots(snapshots)
 		if batchErr != nil {
-			log.Printf("[snapshot] %s 批量写入失败: %v", code, batchErr)
+			log.Printf("[snapshot] %s 批量写入失败，降级逐条写入: %v", code, batchErr)
 			for _, snap := range snapshots {
-				ok := db.UpsertSnapshot(snap)
-				detail := SnapshotResult{
-					Code: code, TradeDate: snap.TradeDate, Mode: SnapshotSingleStockAllDates,
-				}
-				if ok {
+				if db.UpsertSnapshot(snap) {
 					successCount++
-					detail.UpsertCount = 1
-				} else {
-					detail.Error = batchErr
 				}
-				result.Details = append(result.Details, detail)
 			}
 		} else {
 			successCount = int(totalRows)
-			if len(snapshots) <= 50 {
-				for _, snap := range snapshots {
-					result.Details = append(result.Details, SnapshotResult{
-						Code: code, TradeDate: snap.TradeDate, Mode: SnapshotSingleStockAllDates,
-						UpsertCount: 1,
-					})
-				}
-			}
 		}
 	}
 
@@ -212,32 +183,34 @@ done:
 }
 
 // calcAllStocksAllDates 计算所有股票所有日期的快照
-func (s *SnapshotService) calcAllStocksAllDates(ctx context.Context) []SnapshotBatchResult {
+func (s *SnapshotService) calcAllStocksAllDates(ctx context.Context) SnapshotBatchResult {
 	stocks := db.LoadAllStockCodes()
-	var results []SnapshotBatchResult
+	result := SnapshotBatchResult{
+		Mode: SnapshotAllStocksAllDates,
+	}
+	allStart := time.Now()
 
 	for _, stock := range stocks {
 		select {
 		case <-ctx.Done():
 			log.Printf("[snapshot] 全股票全日期计算被取消")
-			return results
+			result.CostSeconds = time.Since(allStart).Seconds()
+			return result
 		default:
 		}
 
 		br := s.calcSingleStockAllDates(ctx, stock.Code)
-		results = append(results, br)
+		result.Total += br.Total
+		result.Success += br.Success
+		result.Fail += br.Fail
 	}
 
-	totalS, totalF := 0, 0
-	for _, r := range results {
-		totalS += r.Success
-		totalF += r.Fail
-	}
+	result.CostSeconds = time.Since(allStart).Seconds()
 	log.Println("==============================")
-	log.Printf("全量快照计算完成! 成功=%d 失败=%d", totalS, totalF)
+	log.Printf("全量快照计算完成! 成功=%d 失败=%d 耗时=%.1fs", result.Success, result.Fail, result.CostSeconds)
 	log.Println("==============================")
 
-	return results
+	return result
 }
 
 // ================================================================

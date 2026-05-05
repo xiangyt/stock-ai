@@ -208,56 +208,64 @@ func FindLatestNKlinesAny(period KLinePeriod, code string, n int) ([]int, error)
 // ========== 查询（按周期，供 ScreenService 使用，直接调用 GetDB()） ==========
 
 // FindDailyKlines 按 trade_date DESC 取最近 limit 条日K
-func FindDailyKlines(code string, limit int) ([]*model.DailyKline, error) {
+func FindDailyKlines(code string, tradeDate, limit int) ([]*model.DailyKline, error) {
 	var list []*model.DailyKline
 	if limit <= 0 {
 		limit = 250
 	}
-	err := GetDB().
-		Where("stock_code = ?", code).
-		Order("trade_date DESC").
+	db := GetDB().Where("stock_code = ?", code)
+	if tradeDate > 0 {
+		db = db.Where("trade_date <= ?", tradeDate)
+	}
+	err := db.Order("trade_date DESC").
 		Limit(limit).
 		Find(&list).Error
 	return list, err
 }
 
 // FindWeeklyKlines 按 trade_date DESC 取最近 limit 条周K
-func FindWeeklyKlines(code string, limit int) ([]*model.WeeklyKline, error) {
+func FindWeeklyKlines(code string, tradeDate, limit int) ([]*model.WeeklyKline, error) {
 	var list []*model.WeeklyKline
 	if limit <= 0 {
 		limit = 250
 	}
-	err := GetDB().
-		Where("stock_code = ?", code).
-		Order("trade_date DESC").
+	db := GetDB().Where("stock_code = ?", code)
+	if tradeDate > 0 {
+		db = db.Where("trade_date <= ?", tradeDate)
+	}
+	err := db.Order("trade_date DESC").
 		Limit(limit).
 		Find(&list).Error
 	return list, err
 }
 
 // FindMonthlyKlines 按 trade_date DESC 取最近 limit 条月K
-func FindMonthlyKlines(code string, limit int) ([]*model.MonthlyKline, error) {
+func FindMonthlyKlines(code string, tradeDate, limit int) ([]*model.MonthlyKline, error) {
 	var list []*model.MonthlyKline
 	if limit <= 0 {
 		limit = 250
 	}
-	err := GetDB().
-		Where("stock_code = ?", code).
-		Order("trade_date DESC").
+	db := GetDB().Where("stock_code = ?", code)
+	if tradeDate > 0 {
+		db = db.Where("trade_date <= ?", tradeDate)
+	}
+	err := db.Order("trade_date DESC").
 		Limit(limit).
 		Find(&list).Error
 	return list, err
 }
 
 // FindYearlyKlines 按 trade_date DESC 取最近 limit 条年K
-func FindYearlyKlines(code string, limit int) ([]*model.YearlyKline, error) {
+func FindYearlyKlines(code string, tradeDate, limit int) ([]*model.YearlyKline, error) {
 	var list []*model.YearlyKline
 	if limit <= 0 {
 		limit = 250
 	}
-	err := GetDB().
-		Where("stock_code = ?", code).
-		Order("trade_date DESC").
+	db := GetDB().Where("stock_code = ?", code)
+	if tradeDate > 0 {
+		db = db.Where("trade_date <= ?", tradeDate)
+	}
+	err := db.Order("trade_date DESC").
 		Limit(limit).
 		Find(&list).Error
 	return list, err

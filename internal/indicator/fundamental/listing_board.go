@@ -64,30 +64,34 @@ func NewListingBoard() *ListingBoard {
 
 	return l
 }
-func (l *ListingBoard) Evaluate(stock *indicator.StockData, config []*indicator.SignalConfig) *indicator.EvaluatedStock {
+
+func (l *ListingBoard) Evaluate(stock indicator.StockSource, config []*indicator.SignalConfig) *indicator.EvaluatedStock {
 	if len(config) == 0 {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, Message: "未配置信号"}
-	}
-	var board string
-	if stock.Detail != nil {
-		board = stock.Detail.ListingBoard
-	}
-	if board == "" {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config[0].SignalID, Message: "数据缺失: listing_board"}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, Message: indicator.ErrNoConfig.Error()}
 	}
 
+	detail, err := stock.GetDetail()
+	if err != nil {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config[0].SignalID, Message: err.Error()}
+	}
+	var board = detail.ListingBoard
+	if board == "" {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config[0].SignalID, Message: indicator.DataEmptyError("listing_board").Error()}
+	}
+
+	stockName := stock.GetName()
 	for _, v := range config {
 		if s, ok := l.Signal[v.SignalID]; ok {
 			switch vv := s.(type) {
 			case *ListingBoardSignal:
-				if res := vv.Evaluate(stock.Detail.Name, board, v); res.Result == indicator.ResultPassed {
+				if res := vv.Evaluate(stockName, board, v); res.Result == indicator.ResultPassed {
 					continue
 				} else {
 					return res
 				}
 			}
 		}
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: v.SignalID, Message: "不支持的信号"}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: v.SignalID, Message: indicator.ErrUnsupportedSignal.Error()}
 	}
 	return &indicator.EvaluatedStock{Result: indicator.ResultPassed}
 }

@@ -211,7 +211,7 @@
             class="sig-chip" :class="'chip-' + s.category">
             <span class="chip-bar"></span>
             <span class="chip-name">{{ s.name }}</span>
-            <span class="chip-op">{{ s.opSym }} {{ s.paramText }}</span>
+            <span v-if="s.operator !== 'none'" class="chip-op">{{ s.opSym }} {{ s.paramText }}</span>
             <button class="chip-del" @click="removeSignal(i)">✕</button>
           </div>
         </transition-group>
@@ -238,6 +238,7 @@
           </div>
         </div>
         <div class="results-right">
+          <input type="date" v-model="runDate" class="date-picker" />
           <button class="btn-res-action backtest" @click="onGoBacktest">📊 历史回测</button>
           <button class="btn-res-action run" @click="runFilter" :disabled="isScreening || signals.length === 0">
             {{ isScreening ? '⏳ 筛选中...' : '🔍 运行筛选' }}
@@ -483,9 +484,15 @@ watch(expandedIndicatorID, (newID) => {
   // 按 signal_id 来源位拆分为两个独立数组
   for (const sig of expandedInd.value.signals) {
     if (!isCustomSignal(sig.signal_id)) {
-      builtinSigs.value.push(sig)       // 第6位='0' → 一键添加
-    } else if (sig.operators.some(op => op.params.length > 0)) {
-      customSigs.value.push(sig)         // 第6位='1' + 有参数 → 表单配置
+      // 内置信号（第6位='0'）：只要有 operators 就加入（用于查看/备用）
+      // 即使没有 default_config，也记录到 builtinSigs 供后续检查
+      builtinSigs.value.push(sig)
+    } else if (sig.operators && sig.operators.length > 0) {
+      // 自定义信号（第6位='1'）：只要有 operators 就加入（有参数或无参数均可）
+      customSigs.value.push(sig)
+    } else if (sig.default_config) {
+      // 兜底：如果没有 operators 但有 default_config，也加入自定义列表
+      customSigs.value.push(sig)
     }
   }
 
@@ -497,30 +504,27 @@ watch(expandedIndicatorID, (newID) => {
   }
 })
 
-/** 切换自定义信号时：从 default_config 初始化操作符和参数 */
+/** 切换自定义信号时：从 operators/default_config 初始化操作符和参数 */
 watch(customSignalID, async (newSigId) => {
   if (!newSigId) return
   const sig = currentCustomSig.value
-  if (sig && sig.operators.length > 0) {
-    // 优先使用 default_config 初始化操作符和参数
-    if (sig.default_config) {
-      customOperator.value = sig.default_config.operator as CompareOperator
-      // 等待 currentOpParams 随 operator 更新
-      await nextTick()
-      const cfgParams = sig.default_config.params || {}
-      for (const p of currentOpParams.value) {
-        if (p.type === 'multi_select' || p.type === 'select_multi') {
-          multiVals[p.key] = [...(cfgParams[p.key] || [])]
-        } else {
-          paramValues[p.key] = cfgParams[p.key] ?? p.default
-        }
+  if (!sig) return
+
+  // 自定义信号必定有 operators
+  if (sig.default_config) {
+    customOperator.value = sig.default_config.operator as CompareOperator
+    // 等待 currentOpParams 随 operator 更新
+    await nextTick()
+    const cfgParams = sig.default_config.params || {}
+    for (const p of currentOpParams.value) {
+      if (p.type === 'multi_select' || p.type === 'select_multi') {
+        multiVals[p.key] = [...(cfgParams[p.key] || [])]
+      } else {
+        paramValues[p.key] = cfgParams[p.key] ?? p.default
       }
-    } else {
-      customOperator.value = sig.operators[0].operator as CompareOperator
-      clearParams()
     }
   } else {
-    customOperator.value = 'gt'
+    customOperator.value = sig.operators[0].operator as CompareOperator
     clearParams()
   }
 })
@@ -537,14 +541,14 @@ const currentCustomSig = computed((): SignalDef | undefined => {
 
 /** 当前自定义信号的可用操作符 */
 const currentCustomOperators = computed((): SignalOperatorOption[] => {
-  if (!currentCustomSig.value) return []
-  return currentCustomSig.value.operators
+  return currentCustomSig.value?.operators || []
 })
 
 /** 当前操作符的参数定义 */
 const currentOpParams = computed((): ParamDef[] => {
-  if (!currentCustomSig.value) return []
-  const op = currentCustomSig.value.operators.find(o => o.operator === customOperator.value)
+  const sig = currentCustomSig.value
+  if (!sig) return []
+  const op = sig.operators.find(o => o.operator === customOperator.value)
   return op?.params || []
 })
 
@@ -579,6 +583,10 @@ const editParams = reactive<Record<string, any>>({})
 const expandedJSON = reactive(new Set<number>())
 const addSuccessMsg = ref('')
 let successTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 筛选日期（YYYY-MM-DD），默认为今天 */
+const today = new Date().toISOString().split('T')[0]
+const runDate = ref(today)
 const showConfirm = ref(false)
 const confirmTitle = ref('')
 const confirmBody = ref('')
@@ -736,11 +744,17 @@ function selectSignalQuick(sig: SignalDef) {
   emit('addSignals', [newSig])
 }
 
-/** 添加内置信号（使用 default_config 一键添加） */
+/** 添加内置信号（一键添加，无需配置） */
 function addBuiltinSignal(sig: SignalDef) {
-  if (!expandedInd.value || !sig.default_config) return
+  if (!expandedInd.value) return
   const ind = expandedInd.value
-  const cfg = sig.default_config
+
+  // 使用 default_config（如果有），否则使用空配置（无参内置信号如 513 战法）
+  const cfg: SignalConfig = sig.default_config || {
+    signal_id: sig.signal_id,
+    operator: 'none',  // 无参信号使用特殊操作符
+    params: {},
+  }
   const text = formatSignalParamText(cfg, ind)
 
   const newSig: Sig = {
@@ -750,7 +764,7 @@ function addBuiltinSignal(sig: SignalDef) {
     name: sig.name,
     category: ind.category,
     operator: cfg.operator,
-    opSym: operatorSymbols[cfg.operator] || cfg.operator,
+    opSym: cfg.operator === 'none' ? '' : (operatorSymbols[cfg.operator] || cfg.operator),
     opLbl: findOpLabel(ind, cfg.operator),
     params: { ...cfg.params },
     paramText: text,
@@ -1136,6 +1150,7 @@ async function runFilter() {
         params: s.params,
       })),
       max_concurrency: 200,
+      date: runDate.value,
     })
 
     screenResult.value = {
@@ -1495,6 +1510,11 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 
 .results-right { display: flex; align-items: center; gap: 8px; }
 .res-strategy-name { font-size: 13px; color: #555; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.date-picker {
+  padding: 5px 10px; border: 1px solid #d9d9d9; border-radius: 5px;
+  font-size: 12.5px; color: #333; background: #fff; outline: none; cursor: pointer;
+}
+.date-picker:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.08); }
 .btn-res-action {
   padding: 5px 14px; border-radius: 5px; font-size: 12.5px; font-weight: 500;
   cursor: pointer; transition: .15s; white-space: nowrap;

@@ -2,6 +2,7 @@ package fundamental
 
 import (
 	"stock-ai/internal/indicator"
+	"stock-ai/internal/model"
 	signalutil "stock-ai/internal/indicator/signalutil"
 )
 
@@ -47,14 +48,16 @@ func NewTotalShares() *TotalShares {
 	return t
 }
 
-func (t *TotalShares) Evaluate(stock *indicator.StockData, configs []*indicator.SignalConfig) *indicator.EvaluatedStock {
+func (t *TotalShares) Evaluate(stock indicator.StockSource, configs []*indicator.SignalConfig) *indicator.EvaluatedStock {
 	if len(configs) == 0 {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, Message: "未配置信号"}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, Message: indicator.ErrNoConfig.Error()}
 	}
-	value := t.getValue(stock)
-	if stock.DailySnapshot == nil {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID, Message: "数据缺失: total_shares"}
+
+	snap, err := stock.GetDailySnapshot()
+	if err != nil || snap == nil {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID, Message: indicator.DataEmptyError("total_shares").Error()}
 	}
+	value := t.getValue(snap)
 
 	for _, v := range configs {
 		if s, ok := t.Signal[v.SignalID]; ok {
@@ -66,17 +69,17 @@ func (t *TotalShares) Evaluate(stock *indicator.StockData, configs []*indicator.
 				}
 			}
 		}
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: v.SignalID, Message: "不支持的信号"}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: v.SignalID, Message: indicator.ErrUnsupportedSignal.Error()}
 	}
 	return &indicator.EvaluatedStock{Result: indicator.ResultPassed}
 }
 
-// getValue 从 StockData 中提取总股本，单位转换为 亿股
-func (t *TotalShares) getValue(stock *indicator.StockData) float64 {
-	if stock.DailySnapshot == nil || stock.DailySnapshot.TotalShares == 0 {
+// getValue 从 StockDailySnapshot 中提取总股本，单位转换为 亿股
+func (t *TotalShares) getValue(snap *model.StockDailySnapshot) float64 {
+	if snap == nil || snap.TotalShares == 0 {
 		return 0
 	}
-	return float64(stock.DailySnapshot.TotalShares) / 1e8
+	return float64(snap.TotalShares) / 1e8
 }
 
 type totalShareSignal struct {

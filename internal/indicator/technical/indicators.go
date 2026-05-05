@@ -6,5 +6,7 @@ import (
 
 // All 返回技术面指标实例
 func All() []indicator.Indicator {
-	return nil
+	return []indicator.Indicator{
+		NewPattern(),
+	}
 }

@@ -30,12 +30,18 @@ type DataSource interface {
 	GetQuarterlyKLine(ctx context.Context, code, adjType string) ([]StockPriceDaily, error) // 季K线
 	GetYearlyKLine(ctx context.Context, code, adjType string) ([]StockPriceDaily, error)    // 年K线
 
+	// 指数K线 - 同花顺 v4 接口
+	// code: 使用 IndexSH000001 / IndexSZ399001 / IndexHS300 / IndexSH399006 等常量
+	// startTime / endTime: 时间区间，跨年会自动按年拆分并发请求后合并
+	// adjType: 复权类型（指数一般用 AdjNone）
+	GetIndexDailyKLine(ctx context.Context, code string, startTime, endTime time.Time, adjType string) ([]StockPriceDaily, error)
+
 	// 实时数据
-	GetTodayData(ctx context.Context, code string) (*StockPriceDaily, error) // 当日数据
-	GetThisWeekData(ctx context.Context, code string) (*StockPriceDaily, error)      // 本周数据
-	GetThisMonthData(ctx context.Context, code string) (*StockPriceDaily, error)     // 本月数据
-	GetThisQuarterData(ctx context.Context, code string) (*StockPriceDaily, error)   // 本季数据
-	GetThisYearData(ctx context.Context, code string) (*StockPriceDaily, error)      // 本年数据
+	GetTodayData(ctx context.Context, code string) (*StockPriceDaily, error)       // 当日数据
+	GetThisWeekData(ctx context.Context, code string) (*StockPriceDaily, error)    // 本周数据
+	GetThisMonthData(ctx context.Context, code string) (*StockPriceDaily, error)   // 本月数据
+	GetThisQuarterData(ctx context.Context, code string) (*StockPriceDaily, error) // 本季数据
+	GetThisYearData(ctx context.Context, code string) (*StockPriceDaily, error)    // 本年数据
 
 	// 财务数据
 	GetPerformanceReports(ctx context.Context, code string) ([]PerformanceReport, error)     // 业绩报表列表
@@ -271,6 +277,14 @@ const (
 	AdjQFQ  = "1" // 前复权 (forward adjustment)
 	AdjNone = "0" // 不复权 (no adjustment)
 	AdjBQQ  = "2" // 后复权 (backward adjustment)
+)
+
+// 指数代码常量（6位数字代码，各数据源通用）
+const (
+	IndexSH000001 = "000001" // 上证指数
+	IndexSZ399001 = "399001" // 深证成指
+	IndexHS300    = "000300" // 沪深300
+	IndexSH399006 = "399006" // 创业板指
 )
 
 // InstitutionalHolding 机构持仓（东财 RPT_F10_MAIN_ORGHOLDDETAILS，ORG_TYPE=00 合计）
