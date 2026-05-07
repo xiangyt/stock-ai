@@ -7,7 +7,9 @@ package fundamental
 // ============================================================================
 
 const (
-	IndListingBoardSeq = "001" // 上市板块
-	IndTotalSharesSeq  = "002" // 总股本
-	IndFloatSharesSeq  = "003" // 流通股本
+	IndListingBoardSeq  = "001" // 上市板块
+	IndTotalSharesSeq   = "002" // 总股本
+	IndFloatSharesSeq   = "003" // 流通股本
+	IndTotalMarketCapSeq    = "004" // 总市值
+	IndCirculateMarketCapSeq = "005" // 流通市值
 )

@@ -2,8 +2,8 @@ package fundamental
 
 import (
 	"stock-ai/internal/indicator"
-	"stock-ai/internal/model"
 	signalutil "stock-ai/internal/indicator/signalutil"
+	"stock-ai/internal/model"
 )
 
 // ============================================================================
@@ -35,7 +35,7 @@ func NewTotalShares() *TotalShares {
 		},
 	}
 
-	numberOps := signalutil.NumberOpsByUnitMin(t.UnitStr, 0)
+	numberOps := signalutil.NumberOpsByUnit(t.UnitStr)
 
 	builtInSigs := signalutil.BuildRangeSignals(totalShareDefs, "总股本", numberOps, func(bs indicator.BaseSignal) indicator.Signal {
 		return &totalShareSignal{bs}

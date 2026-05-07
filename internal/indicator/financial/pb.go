@@ -2,13 +2,13 @@ package financial
 
 import (
 	"stock-ai/internal/indicator"
-	"stock-ai/internal/model"
 	signalutil "stock-ai/internal/indicator/signalutil"
+	"stock-ai/internal/model"
 )
 
 // ============================================================================
 //  PB — 市净率 (数值型)
-//  ID: 040002 = CatCodeFinancial("04") + IndPBSeq("002")
+//  ID: 04002 = CatCodeFinancial("04") + IndPBSeq("002")
 //  数据源: StockDailySnapshot.PB (float64, 单位: 倍)
 // ============================================================================
 
@@ -42,7 +42,8 @@ func NewPB() *PB {
 	pb.SetBuiltInSignals(builtInSigs)
 
 	cs1 := indicator.NewBaseSignal("01", "市净率", "自定义市净率筛选条件", indicator.ValNumber, numberOps,
-		&indicator.SignalConfig{Operator: indicator.OpLT, Params: map[string]any{indicator.ParamKeyThreshold: 3.0}})
+		&indicator.SignalConfig{Operator: indicator.OpBetween,
+			Params: map[string]any{indicator.ParamKeyMin: 1.0, indicator.ParamKeyMax: 5.0}})
 	pb.SetCustomSignals([]indicator.Signal{&pbSignal{cs1}})
 	return pb
 }

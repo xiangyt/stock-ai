@@ -9,5 +9,13 @@ func All() []indicator.Indicator {
 	return []indicator.Indicator{
 		NewPETTM(),
 		NewPB(),
+		NewPSTTM(),
+		NewROE(),
+		NewROA(),
+		NewGrossMargin(),
+		NewNetMargin(),
+		NewBVPS(),
+		NewBasicEPS(),
+		NewDebtRatio(),
 	}
 }

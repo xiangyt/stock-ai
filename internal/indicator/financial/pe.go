@@ -2,13 +2,13 @@ package financial
 
 import (
 	"stock-ai/internal/indicator"
-	"stock-ai/internal/model"
 	signalutil "stock-ai/internal/indicator/signalutil"
+	"stock-ai/internal/model"
 )
 
 // ============================================================================
 //  PETTM — 市盈率(TTM) (数值型)
-//  ID: 040001 = CatCodeFinancial("04") + IndPETTMSeq("001")
+//  ID: 04001 = CatCodeFinancial("04") + IndPETTMSeq("001")
 //  数据源: StockDailySnapshot.PETTM (float64, 单位: 倍)
 // ============================================================================
 

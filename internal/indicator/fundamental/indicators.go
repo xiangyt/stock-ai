@@ -10,5 +10,7 @@ func All() []indicator.Indicator {
 		NewListingBoard(),
 		NewTotalShares(),
 		NewFloatShares(),
+		NewTotalMarketCap(),
+		NewCirculateMarketCap(),
 	}
 }

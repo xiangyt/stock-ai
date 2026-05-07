@@ -2,8 +2,8 @@ package fundamental
 
 import (
 	"stock-ai/internal/indicator"
-	"stock-ai/internal/model"
 	signalutil "stock-ai/internal/indicator/signalutil"
+	"stock-ai/internal/model"
 )
 
 // ============================================================================
@@ -35,7 +35,7 @@ func NewFloatShares() *FloatShares {
 		},
 	}
 
-	numberOps := signalutil.NumberOpsByUnitMin(f.UnitStr, 0)
+	numberOps := signalutil.NumberOpsByUnit(f.UnitStr)
 
 	builtInSigs := signalutil.BuildRangeSignals(floatShareDefs, f.NameStr, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
 		return &floatShareSignal{bs}
