@@ -6,5 +6,8 @@ import (
 
 // All 返回行情面指标实例
 func All() []indicator.Indicator {
-	return nil
+	return []indicator.Indicator{
+		NewVolume(),
+		NewAmount(),
+	}
 }

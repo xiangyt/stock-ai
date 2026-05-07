@@ -18,7 +18,7 @@ type TotalMarketCap struct {
 }
 
 var totalMarketCapDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于50亿", Operator: indicator.OpLT, MinThreshold: 50, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于50亿", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 50},
 	{Seq: "02", Desc: "50亿~200亿", Operator: indicator.OpBetween, MinThreshold: 50, MaxThreshold: 200},
 	{Seq: "03", Desc: "200亿~1000亿", Operator: indicator.OpBetween, MinThreshold: 200, MaxThreshold: 1000},
 	{Seq: "04", Desc: "大于1000亿", Operator: indicator.OpGT, MinThreshold: 1000, MaxThreshold: 0},

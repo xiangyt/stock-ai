@@ -17,7 +17,7 @@ type PB struct {
 }
 
 var pbDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "0~1", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 1},
+	{Seq: "01", Desc: "破净股", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 1},
 	{Seq: "02", Desc: "1~2", Operator: indicator.OpBetween, MinThreshold: 1, MaxThreshold: 2},
 	{Seq: "03", Desc: "2~5", Operator: indicator.OpBetween, MinThreshold: 2, MaxThreshold: 5},
 	{Seq: "04", Desc: "大于5", Operator: indicator.OpGT, MinThreshold: 5, MaxThreshold: 0},

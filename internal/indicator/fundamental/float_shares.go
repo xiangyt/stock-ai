@@ -8,7 +8,7 @@ import (
 
 // ============================================================================
 //  FloatShares — 流通股本 (数值型)
-//  ID: 030003 = CatCodeFundamental("03") + IndFloatSharesSeq("003")
+//  ID: 03003 = CatCodeFundamental("03") + IndFloatSharesSeq("003")
 //  数据源: StockDailySnapshot.FloatShares (int64, 单位: 股)
 //  显示单位: 亿股
 // ============================================================================
@@ -18,7 +18,7 @@ type FloatShares struct {
 }
 
 var floatShareDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于2亿", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 2},
+	{Seq: "01", Desc: "小于2亿", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 2},
 	{Seq: "02", Desc: "2亿~5亿", Operator: indicator.OpBetween, MinThreshold: 2, MaxThreshold: 5},
 	{Seq: "03", Desc: "5亿~10亿", Operator: indicator.OpBetween, MinThreshold: 5, MaxThreshold: 10},
 	{Seq: "04", Desc: "大于10亿", Operator: indicator.OpGT, MinThreshold: 10, MaxThreshold: 0},

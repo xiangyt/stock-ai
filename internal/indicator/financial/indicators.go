@@ -17,5 +17,8 @@ func All() []indicator.Indicator {
 		NewBVPS(),
 		NewBasicEPS(),
 		NewDebtRatio(),
+		NewParentNetProfit(),
+		NewDeductNetProfit(),
+		NewTotalRevenue(),
 	}
 }
