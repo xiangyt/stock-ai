@@ -43,7 +43,7 @@ func (a *Adapter) GetYearlyKLine(ctx context.Context, code, adjType string) ([]a
 // 核心逻辑：
 // 1. 拼接 kline 参数 = 周期 + 复权bit（如 "01"=日前复权, "02"=日后复权, "00"=日不复权）
 // 2. 请求同花顺全量 K 线接口，解析 JSONP 响应
-func (a *Adapter) getKLines(ctx context.Context, code, adjType, klineType string) ([]adapter.StockPriceDaily, error) {
+func (a *Adapter) getKLines(_ context.Context, code, adjType, klineType string) ([]adapter.StockPriceDaily, error) {
 	symbol, _, err := a.parseCode(code)
 	if err != nil {
 		return nil, fmt.Errorf("invalid tsCode format: %s", code)

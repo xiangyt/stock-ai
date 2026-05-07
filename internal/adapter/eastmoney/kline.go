@@ -51,7 +51,7 @@ func (a *Adapter) GetYearlyKLine(ctx context.Context, code, adjType string) ([]a
 
 // fetchKLines 通用K线获取方法
 // beg: 起始日期，格式 YYYYMMDD，空字符串则从上市起("0")
-func (a *Adapter) fetchKLines(ctx context.Context, code, adjType, klineType, beg string) ([]adapter.StockPriceDaily, error) {
+func (a *Adapter) fetchKLines(_ context.Context, code, adjType, klineType, beg string) ([]adapter.StockPriceDaily, error) {
 	symbol, market := parseCode(code)
 	secid := buildSecID(symbol, market)
 	refer := "https://quote.eastmoney.com/"

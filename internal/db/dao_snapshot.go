@@ -30,16 +30,16 @@ var snapshotUpdateCols = []string{
 //   - 0: 数据未变化，无需更新（仍算成功）
 //
 // 返回值: true=成功（含无需更新的情况）, false=出错
-func UpsertSnapshot(m model.StockDailySnapshot) bool {
+func UpsertSnapshot(m model.StockDailySnapshot) error {
 	result := GetDB().Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "stock_code"}, {Name: "trade_date"}},
 		DoUpdates: clause.AssignmentColumns(snapshotUpdateCols),
 	}).Create(&m)
 	if result.Error != nil {
 		log.Printf("[dao-snapshot] upsert失败 [%s/%d]: %v", m.StockCode, m.TradeDate, result.Error)
-		return false
+		return result.Error
 	}
-	return true
+	return nil
 }
 
 // BatchUpsertSnapshots 批量 upsert 快照记录
@@ -51,10 +51,10 @@ func BatchUpsertSnapshots(snapshots []model.StockDailySnapshot) (int64, error) {
 	var successCount int64
 	var firstErr error
 	for _, s := range snapshots {
-		if UpsertSnapshot(s) {
+		if err := UpsertSnapshot(s); err == nil {
 			successCount++
-		} else if firstErr == nil {
-			firstErr = GetDB().Error
+		} else {
+			firstErr = err
 		}
 	}
 	return successCount, firstErr
@@ -63,7 +63,7 @@ func BatchUpsertSnapshots(snapshots []model.StockDailySnapshot) (int64, error) {
 // ========== 快照查询 ==========
 
 // FindSnapshotsByStock 查询指定股票的快照（按日期范围）
-func FindSnapshotsByStock(code string, startDate, endDate int, limit int) ([]model.StockDailySnapshot, error) {
+func FindSnapshotsByStock(code string, startDate, endDate, limit int, asc bool) ([]model.StockDailySnapshot, error) {
 	var snaps []model.StockDailySnapshot
 	q := GetDB().Where("stock_code = ?", code)
 	if startDate > 0 {
@@ -75,7 +75,12 @@ func FindSnapshotsByStock(code string, startDate, endDate int, limit int) ([]mod
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
-	err := q.Order("trade_date ASC").Find(&snaps).Error
+	var err error
+	if asc {
+		err = q.Order("trade_date ASC").Find(&snaps).Error
+	} else {
+		err = q.Order("trade_date DESC").Find(&snaps).Error
+	}
 	return snaps, err
 }
 

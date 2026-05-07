@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"fmt"
 	"sync"
 )
@@ -104,7 +105,7 @@ func (r *Registry) InitAll() error {
 	defer r.mu.Unlock()
 
 	for name, a := range r.adapters {
-		if err := a.TestConnection(nil); err != nil {
+		if err := a.TestConnection(context.Background()); err != nil {
 			fmt.Printf("⚠️ 数据源 %s 连接失败: %v (将继续使用)\n", name, err)
 		} else {
 			fmt.Printf("✅ 数据源 %s 连接正常\n", name)

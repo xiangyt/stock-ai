@@ -38,6 +38,11 @@ func RegisterCollectorRoutes(apiV1 *gin.RouterGroup) {
 			fundamentalBatch.POST("/shareholder", dataHandler.RunShareholderCountsBatch)
 			fundamentalBatch.POST("/share-change", dataHandler.RunShareChangesBatch)
 		}
+
+		// --- 每日估值快照接口 ---
+		snapHandler := handler.NewSnapshotHandler()
+		snapshot := collector.Group("/snapshot")
+		snapshot.POST("/calc", snapHandler.Calc)
 	}
 
 	// --- K线同步接口（多周期三模式） ---
@@ -45,12 +50,8 @@ func RegisterCollectorRoutes(apiV1 *gin.RouterGroup) {
 	syncKline := apiV1.Group("/sync-kline")
 	{
 		syncKline.POST("/init", syncHandler.RunInit)   // 初始化：同花顺全量骨架
-		syncKline.POST("/daily", syncHandler.RunDaily)  // 每日增量：同花顺 GetToday
-		syncKline.POST("/fill", syncHandler.RunFill)    // 补全金额：东财补 amount=0
-		syncKline.POST("/debug", syncHandler.Debug)     // 调试
+		syncKline.POST("/daily", syncHandler.RunDaily) // 每日增量：同花顺 GetToday
+		syncKline.POST("/fill", syncHandler.RunFill)   // 补全金额：东财补 amount=0
+		syncKline.POST("/debug", syncHandler.Debug)    // 调试
 	}
-
-	// --- 每日估值快照接口 ---
-	snapHandler := handler.NewSnapshotHandler()
-	apiV1.POST("/snapshot/calc", snapHandler.Calc)
 }

@@ -36,7 +36,7 @@ func (a *Adapter) GetThisYearData(ctx context.Context, code string) (*adapter.St
 	return a.getDataByType(ctx, code, KLineTypeYearly)
 }
 
-func (a *Adapter) getDataByType(ctx context.Context, code, klineType string) (*adapter.StockPriceDaily, error) {
+func (a *Adapter) getDataByType(_ context.Context, code, klineType string) (*adapter.StockPriceDaily, error) {
 	symbol, _, err := a.parseCode(code)
 	if err != nil {
 		return nil, fmt.Errorf("invalid tsCode format: %s", code)

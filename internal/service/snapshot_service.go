@@ -84,33 +84,65 @@ func (s *SnapshotService) calcSingleStockAllDates(ctx context.Context, code stri
 		Mode: SnapshotSingleStockAllDates,
 	}
 
-	// ---- Step 1: 从同花顺获取全部不复权日K线（实时数据）----
-	thsAdapter, ok := s.registry.Get(ths.AdapterName)
-	if !ok {
-		log.Printf("[snapshot] %s THS数据源未注册，无法执行批量路径", code)
-		result.Fail = 1
-		result.CostSeconds = time.Since(start).Seconds()
-		return result
+	// ---- Step 1.5: 从DB加载快照数据，获取trade_date最大的那条记录----
+	ss, _ := db.FindSnapshotsByStock(code, 0, 0, 1, false)
+	var maxDate int
+	if len(ss) > 0 {
+		maxDate = ss[0].TradeDate
 	}
-	ths, ok := thsAdapter.(*ths.Adapter)
-	if !ok {
-		log.Printf("[snapshot] %s THS数据源类型错误", code)
+
+	snapshots, err := s.calcStockAfterDate(ctx, code, maxDate)
+	if err != nil {
 		result.Fail = 1
 		result.CostSeconds = time.Since(start).Seconds()
 		return result
 	}
 
+	// ---- Step 5: 批量写入数据库 ----
+	successCount := 0
+	if len(snapshots) > 0 {
+		totalRows, batchErr := db.BatchUpsertSnapshots(snapshots)
+		if batchErr != nil {
+			log.Printf("[snapshot] %s 批量写入失败，err: %v", code, batchErr)
+		} else {
+			successCount = int(totalRows)
+		}
+	}
+
+	result.Total = len(snapshots)
+	result.Success = successCount
+	result.Fail = result.Total - successCount
+	result.CostSeconds = time.Since(start).Seconds()
+
+	if result.Total > 0 {
+		log.Printf("[snapshot] 单股票全日期完成 [%s]: 快照=%d 成功=%d 失败=%d 耗时=%.1fs",
+			code, len(snapshots), result.Success, result.Fail, result.CostSeconds)
+	}
+	return result
+}
+
+func (s *SnapshotService) calcStockAfterDate(ctx context.Context, code string, date int) (
+	[]model.StockDailySnapshot, error) {
+	// ---- Step 1: 从同花顺获取全部不复权日K线（实时数据）----
+	thsAdapter, ok := s.registry.Get(ths.AdapterName)
+	if !ok {
+		log.Printf("[snapshot] %s THS数据源未注册，无法执行批量路径", code)
+		return nil, fmt.Errorf("%s THS数据源未注册，无法执行批量路径", code)
+	}
+	ths, ok := thsAdapter.(*ths.Adapter)
+	if !ok {
+		log.Printf("[snapshot] %s THS数据源类型错误", code)
+		return nil, fmt.Errorf("[snapshot] %s THS数据源类型错误", code)
+	}
+
 	klineRecords, err := s.fetchKlinesFromTHS(ctx, code, ths)
 	if err != nil {
 		log.Printf("[snapshot] %s 从同花顺获取K线失败: %v", code, err)
-		result.Fail = 1
-		result.CostSeconds = time.Since(start).Seconds()
-		return result
+		return nil, fmt.Errorf("[snapshot] %s 从同花顺获取K线失败: %v", code, err)
 	}
 	if len(klineRecords) == 0 {
 		log.Printf("[snapshot] %s 无K线数据，跳过", code)
-		result.CostSeconds = time.Since(start).Seconds()
-		return result
+		return nil, nil
 	}
 	log.Printf("[snapshot] %s 从同花顺获取 %d 条不复权日K", code, len(klineRecords))
 
@@ -131,12 +163,14 @@ func (s *SnapshotService) calcSingleStockAllDates(ctx context.Context, code stri
 		select {
 		case <-ctx.Done():
 			log.Printf("[snapshot] %s 计算被取消", code)
-			goto done
+			return nil, nil
 		default:
 		}
 
 		tradeDate := kr.TradeDate
-
+		if tradeDate <= date {
+			continue
+		}
 		// 4a. 推进股本指针：找到 <= trade_date 的最新一条
 		for shareIdx+1 < len(shares) && shares[shareIdx+1].ChangeDate <= tradeDate {
 			shareIdx++
@@ -153,33 +187,7 @@ func (s *SnapshotService) calcSingleStockAllDates(ctx context.Context, code stri
 		snapshots = append(snapshots, snap)
 	}
 
-done:
-	// ---- Step 5: 批量写入数据库 ----
-	successCount := 0
-	if len(snapshots) > 0 {
-		totalRows, batchErr := db.BatchUpsertSnapshots(snapshots)
-		if batchErr != nil {
-			log.Printf("[snapshot] %s 批量写入失败，降级逐条写入: %v", code, batchErr)
-			for _, snap := range snapshots {
-				if db.UpsertSnapshot(snap) {
-					successCount++
-				}
-			}
-		} else {
-			successCount = int(totalRows)
-		}
-	}
-
-	result.Total = len(klineRecords)
-	result.Success = successCount
-	result.Fail = result.Total - successCount
-	result.CostSeconds = time.Since(start).Seconds()
-
-	if result.Total > 0 {
-		log.Printf("[snapshot] 单股票全日期完成 [%s]: K线=%d 快照=%d 成功=%d 失败=%d 耗时=%.1fs",
-			code, result.Total, len(snapshots), result.Success, result.Fail, result.CostSeconds)
-	}
-	return result
+	return snapshots, nil
 }
 
 // calcAllStocksAllDates 计算所有股票所有日期的快照
@@ -259,21 +267,21 @@ func (s *SnapshotService) buildSnapshotFromTHSKline(code string, tradeDate int, 
 		}
 
 		// 盈利能力指标：直接取混合组最新财报原始值
-		snap.ROE = report.ROEW           // 净资产收益率-加权(%)
-		snap.ROA = report.ROA            // 总资产收益率(%)
+		snap.ROE = report.ROEW                // 净资产收益率-加权(%)
+		snap.ROA = report.ROA                 // 总资产收益率(%)
 		snap.GrossMargin = report.GrossMargin // 销售毛利率(%)
 		snap.NetMargin = report.NetMargin     // 销售净利率(%)
 
 		// 每股指标
-		snap.BasicEPS = report.BasicEPS       // 基本每股收益(元)
+		snap.BasicEPS = report.BasicEPS // 基本每股收益(元)
 
 		// 财报当期数据：取混合组最新一期财报值
 		snap.ParentNetProfit = report.ParentNetProfit // 归母净利润
 		snap.DeductNetProfit = report.DeductNetProfit // 扣非净利润
-		snap.TotalRevenue = report.TotalRevenue        // 营业总收入
+		snap.TotalRevenue = report.TotalRevenue       // 营业总收入
 
 		// 偿债能力指标
-		snap.DebtRatio = report.DebtRatio              // 资产负债率(%)
+		snap.DebtRatio = report.DebtRatio // 资产负债率(%)
 
 		// 市盈率(动态): 总市值 / (最新财报归母净利润 × 年化系数)
 		//   季报 → 按类型年化（一季报×4 / 中报×2 / 三季报÷3×4）

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"strings"
@@ -40,7 +41,7 @@ func (h *SnapshotHandler) Calc(c *gin.Context) {
 	}
 
 	go func() {
-		result := h.service.Calc(c.Request.Context(), strings.TrimSpace(req.Code))
+		result := h.service.Calc(context.Background(), strings.TrimSpace(req.Code))
 		log.Printf("[snapshot] 全部完成! 成功=%d 失败=%d 耗时=%.1fs",
 			result.Success, result.Fail, result.CostSeconds)
 	}()

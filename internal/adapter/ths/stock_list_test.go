@@ -41,9 +41,9 @@ func TestGetStockDetail(t *testing.T) {
 	defer a.Close()
 
 	tests := []struct {
-		code        string
-		wantMarket  string
-		wantBoard   string
+		code       string
+		wantMarket string
+		wantBoard  string
 	}{
 		{"600519", "SSE", "main"},     // 沪市主板
 		{"300750", "SZSE", "chinext"}, // 创业板
@@ -53,7 +53,7 @@ func TestGetStockDetail(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.code, func(t *testing.T) {
-			detail, err := a.GetStockDetail(nil, tt.code)
+			detail, err := a.GetStockDetail(t.Context(), tt.code)
 			if err != nil {
 				t.Fatalf("GetStockDetail(%s) failed: %v", tt.code, err)
 			}
@@ -110,9 +110,9 @@ func TestBuildTHSCode(t *testing.T) {
 
 func TestDetectExchange(t *testing.T) {
 	tests := []struct {
-		input         string
-		wantMarket    string
-		wantExchange  string
+		input        string
+		wantMarket   string
+		wantExchange string
 	}{
 		{"600519", "SH", "SSE"},
 		{"601318", "SH", "SSE"},
@@ -142,9 +142,9 @@ func TestParseCode(t *testing.T) {
 	a := newTestAdapter()
 
 	tests := []struct {
-		input       string
-		wantSymbol  string
-		wantMarket  string
+		input      string
+		wantSymbol string
+		wantMarket string
 	}{
 		{"000001.SZ", "000001", "SZ"},
 		{"600519.SH", "600519", "SH"},
