@@ -28,12 +28,12 @@ func isValidChannel(ch string) bool {
 	return validChannels[ch]
 }
 
-// PushHandler 推送配置 HTTP Handler
-type PushHandler struct{}
+// BotHandler 推送配置 HTTP Handler
+type BotHandler struct{}
 
-// NewPushHandler 创建推送 Handler
-func NewPushHandler() *PushHandler {
-	return &PushHandler{}
+// NewBotHandler 创建推送 Handler
+func NewBotHandler() *BotHandler {
+	return &BotHandler{}
 }
 
 // ====== 请求/响应类型 ======
@@ -55,7 +55,7 @@ type updatePushReq struct {
 }
 
 type toggleStatusReq struct {
-	Status int `json:"status" binding:"required"`
+	Status *int `json:"status"`
 }
 
 type pushBotItem struct {
@@ -73,14 +73,14 @@ type pushBotItem struct {
 
 // List 获取当前用户的推送配置列表
 // GET /api/v1/push-configs
-func (h *PushHandler) List(c *gin.Context) {
+func (h *BotHandler) List(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	if userID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
 		return
 	}
 
-	list, err := db.ListPushConfigs(userID)
+	list, err := db.ListPushBots(userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询推送配置失败"})
 		return
@@ -107,7 +107,7 @@ func (h *PushHandler) List(c *gin.Context) {
 
 // Create 创建推送配置
 // POST /api/v1/push-configs
-func (h *PushHandler) Create(c *gin.Context) {
+func (h *BotHandler) Create(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	if userID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
@@ -124,7 +124,7 @@ func (h *PushHandler) Create(c *gin.Context) {
 		return
 	}
 
-	cfg := &model.PushConfig{
+	cfg := &model.PushBot{
 		UserID:     userID,
 		Name:       req.Name,
 		Channel:    req.Channel,
@@ -134,7 +134,7 @@ func (h *PushHandler) Create(c *gin.Context) {
 		Status:     1,
 	}
 
-	if err := db.CreatePushConfig(cfg); err != nil {
+	if err := db.CreatePushBot(cfg); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
 		return
 	}
@@ -146,7 +146,7 @@ func (h *PushHandler) Create(c *gin.Context) {
 
 // Update 更新推送配置
 // PUT /api/v1/push-configs/:id
-func (h *PushHandler) Update(c *gin.Context) {
+func (h *BotHandler) Update(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	id := parseID(c)
 	if id == 0 {
@@ -185,7 +185,7 @@ func (h *PushHandler) Update(c *gin.Context) {
 		return
 	}
 
-	if err := db.UpdatePushConfig(id, userID, updates); err != nil {
+	if err := db.UpdatePushBot(id, userID, updates); err != nil {
 		if err == db.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "配置不存在或无权操作"})
 			return
@@ -199,14 +199,14 @@ func (h *PushHandler) Update(c *gin.Context) {
 
 // Delete 删除推送配置
 // DELETE /api/v1/push-configs/:id
-func (h *PushHandler) Delete(c *gin.Context) {
+func (h *BotHandler) Delete(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	id := parseID(c)
 	if id == 0 {
 		return
 	}
 
-	if err := db.DeletePushConfig(id, userID); err != nil {
+	if err := db.DeletePushBot(id, userID); err != nil {
 		if err == db.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "配置不存在或无权操作"})
 			return
@@ -220,7 +220,7 @@ func (h *PushHandler) Delete(c *gin.Context) {
 
 // ToggleStatus 切换启用/禁用状态
 // PUT /api/v1/push-configs/:id/status
-func (h *PushHandler) ToggleStatus(c *gin.Context) {
+func (h *BotHandler) ToggleStatus(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	id := parseID(c)
 	if id == 0 {
@@ -229,15 +229,20 @@ func (h *PushHandler) ToggleStatus(c *gin.Context) {
 
 	var req toggleStatusReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "status 只能是 0 或 1"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数格式错误"})
 		return
 	}
-	if req.Status != 0 && req.Status != 1 {
+	if req.Status == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 status 参数"})
+		return
+	}
+	s := *req.Status
+	if s != 0 && s != 1 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "status 只能是 0 或 1"})
 		return
 	}
 
-	if err := db.UpdatePushStatus(id, userID, req.Status); err != nil {
+	if err := db.UpdatePushStatus(id, userID, s); err != nil {
 		if err == db.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "配置不存在或无权操作"})
 			return
@@ -247,7 +252,7 @@ func (h *PushHandler) ToggleStatus(c *gin.Context) {
 	}
 
 	action := "禁用"
-	if req.Status == 1 {
+	if s == 1 {
 		action = "启用"
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "已" + action})
@@ -255,14 +260,14 @@ func (h *PushHandler) ToggleStatus(c *gin.Context) {
 
 // Test 测试推送
 // POST /api/v1/push-configs/:id/test
-func (h *PushHandler) Test(c *gin.Context) {
+func (h *BotHandler) Test(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	id := parseID(c)
 	if id == 0 {
 		return
 	}
 
-	cfg, err := db.GetPushConfigByID(id, userID)
+	cfg, err := db.GetPushBotByID(id, userID)
 	if err != nil {
 		if err == db.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "配置不存在或无权操作"})

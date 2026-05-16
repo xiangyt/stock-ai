@@ -2,8 +2,8 @@ package model
 
 import "time"
 
-// PushConfig 推送配置表
-type PushConfig struct {
+// PushBot 推送配置表
+type PushBot struct {
 	ID         uint      `gorm:"primarykey" json:"id"`
 	UserID     uint      `gorm:"index;not null" json:"user_id"`
 	Name       string    `gorm:"size:100;not null" json:"name"`
@@ -16,6 +16,6 @@ type PushConfig struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-func (PushConfig) TableName() string {
+func (PushBot) TableName() string {
 	return "push_configs"
 }

@@ -156,14 +156,33 @@
         </div>
       </div>
     </teleport>
+    <!-- ====== 确认弹窗（删除 / 禁用-启用）====== -->
+    <teleport to="body">
+      <div v-if="showConfirmModal" class="modal-overlay" @click.self="showConfirmModal = false">
+        <div class="modal-box confirm-modal">
+          <h3>{{ confirmTitle }}</h3>
+          <p class="confirm-msg">{{ confirmMessage }}</p>
+          <div v-if="confirmError" class="error-msg">{{ confirmError }}</div>
+          <div class="modal-actions">
+            <button class="btn-modal-cancel" @click="closeConfirmModal">{{ confirmLoading ? '关闭' : '取消' }}</button>
+            <button
+              class="btn-login-sm"
+              :class="{ 'btn-danger-sm': confirmIsDanger }"
+              :disabled="confirmLoading"
+              @click="executeConfirm"
+            >{{ confirmLoading ? '处理中...' : confirmOkText }}</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import * as pushApi from '../api/push'
-import type { PushBotItem, CreatePushBotReq, UpdatePushBotReq } from '../api/push'
-import { ChannelLabels } from '../api/push'
+import * as pushApi from '../api/bot'
+import type { PushBotItem, CreatePushBotReq, UpdatePushBotReq } from '../api/bot'
+import { ChannelLabels } from '../api/bot'
 
 // ========== 数据状态 ==========
 const bots = ref<PushBotItem[]>([])
@@ -196,6 +215,55 @@ const showTestModal = ref(false)
 const testTarget = ref<PushBotItem | null>(null)
 const testLoading = ref(false)
 const testResult = ref<{ success: boolean; message: string } | null>(null)
+
+// ---- 通用确认弹窗 ----
+const showConfirmModal = ref(false)
+const confirmTitle = ref('')
+const confirmMessage = ref('')
+const confirmOkText = ref('确定')
+const confirmIsDanger = ref(false)
+const confirmLoading = ref(false)
+const confirmError = ref('')
+let confirmAction: (() => Promise<void>) | null = null
+
+/** 打开确认弹框 */
+function openConfirm(opts: {
+  title: string
+  message: string
+  okText?: string
+  isDanger?: boolean
+  onOk: () => Promise<void>
+}) {
+  confirmTitle.value = opts.title
+  confirmMessage.value = opts.message
+  confirmOkText.value = opts.okText || '确定'
+  confirmIsDanger.value = opts.isDanger ?? false
+  confirmError.value = ''
+  confirmLoading.value = false
+  confirmAction = opts.onOk
+  showConfirmModal.value = true
+}
+
+/** 关闭确认弹框 */
+function closeConfirmModal() {
+  showConfirmModal.value = false
+  confirmAction = null
+}
+
+/** 执行确认操作 */
+async function executeConfirm() {
+  if (!confirmAction || confirmLoading.value) return
+  confirmLoading.value = true
+  confirmError.value = ''
+  try {
+    await confirmAction()
+    closeConfirmModal()
+  } catch (e: any) {
+    confirmError.value = e.message || '操作失败'
+  } finally {
+    confirmLoading.value = false
+  }
+}
 
 // ========== 数据操作 ==========
 
@@ -266,29 +334,33 @@ async function confirmForm() {
 
 // ---- 删除 ----
 
-async function onDelete(bot: PushBotItem) {
-  if (!confirm(`确定删除机器人「${bot.name}」？`)) return
-
-  try {
-    await pushApi.deletePushBot(bot.id)
-    await loadBots()
-  } catch (e: any) {
-    alert('删除失败: ' + (e.message || '未知错误'))
-  }
+function onDelete(bot: PushBotItem) {
+  openConfirm({
+    title: '删除机器人',
+    message: `确定删除机器人「${bot.name}」？删除后无法恢复。`,
+    okText: '删除',
+    isDanger: true,
+    onOk: async () => {
+      await pushApi.deletePushBot(bot.id)
+      await loadBots()
+    },
+  })
 }
 
 // ---- 状态切换 ----
 
-async function onToggleStatus(bot: PushBotItem, newStatus: number) {
+function onToggleStatus(bot: PushBotItem, newStatus: number) {
   const action = newStatus === 1 ? '启用' : '禁用'
-  if (!confirm(`确定${action}机器人「${bot.name}」？`)) return
-
-  try {
-    await pushApi.togglePushBotStatus(bot.id, newStatus)
-    await loadBots()
-  } catch (e: any) {
-    alert(`${action}失败: ` + (e.message || '未知错误'))
-  }
+  openConfirm({
+    title: `${action}机器人`,
+    message: `确定${action}机器人「${bot.name}」？`,
+    okText: action,
+    isDanger: newStatus === 0,
+    onOk: async () => {
+      await pushApi.togglePushBotStatus(bot.id, newStatus)
+      await loadBots()
+    },
+  })
 }
 
 // ---- 测试推送 ----
@@ -456,4 +528,17 @@ onMounted(loadBots)
 .test-result p { font-size: 14px; word-break: break-all; }
 .test-result.success p { color: #16a34a; }
 .test-result.fail p { color: #cf1322; }
+
+/* ====== 确认弹框 ====== */
+.confirm-modal { width: 380px; text-align: center; }
+.confirm-msg {
+  font-size: 14.5px; color: #555; line-height: 1.6;
+  padding: 8px 0 4px; word-break: break-all;
+}
+.btn-danger-sm {
+  padding: 7px 22px; font-size: 14px; font-weight: 600;
+  color: #fff; background: #cf1322; border: none; border-radius: 6px; cursor: pointer;
+}
+.btn-danger-sm:hover:not(:disabled) { background: #a80f1c; }
+.btn-danger-sm:disabled { opacity: .5; cursor: not-allowed; }
 </style>

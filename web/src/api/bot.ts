@@ -1,6 +1,6 @@
 import { getToken } from '../utils/auth'
 
-const BASE = 'http://localhost:9100/api/v1/push-configs'
+const BASE = 'http://localhost:9100/api/v1/bots'
 
 function request(url: string, options?: RequestInit): Promise<any> {
   const token = getToken()

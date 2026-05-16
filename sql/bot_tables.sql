@@ -1,5 +1,5 @@
 -- =============================================
--- 推送配置表: 存储用户的推送机器人配置
+-- 推送机器人表: 存储用户的推送机器人配置
 -- 支持多渠道: QQ / 企微 / 钉钉 / 飞书
 -- =============================================
 
@@ -18,4 +18,4 @@ CREATE TABLE IF NOT EXISTS push_configs (
     PRIMARY KEY (id),
     INDEX idx_user_id (user_id),
     INDEX idx_channel (channel)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='推送配置表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='推送机器人表';

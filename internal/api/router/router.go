@@ -43,7 +43,7 @@ func SetupRouter() *gin.Engine {
 		RegisterStrategyRoutes(apiV1, authSvc)
 		RegisterIndicatorRoutes(apiV1, authSvc, screenSvc)
 		RegisterKLineRoutes(apiV1)
-		RegisterPushRoutes(apiV1, authSvc)
+		RegisterBotRoutes(apiV1, authSvc)
 	}
 
 	return r

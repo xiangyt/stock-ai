@@ -77,8 +77,8 @@
       </div>
 
       <!-- ====== 机器人配置页面 ====== -->
-      <div v-else-if="currentPage === 'push-management'" class="page">
-        <PushManagementPage />
+      <div v-else-if="currentPage === 'bot-config'" class="page">
+        <BotConfigPage />
       </div>
 
       <!-- ====== 个人主页 ====== -->
@@ -97,7 +97,7 @@ import StrategyBuilder from './components/StrategyBuilder.vue'
 import StrategyList from './components/StrategyList.vue'
 import BacktestPage from './components/BacktestPage.vue'
 import AccountManagementPage from './components/AccountManagementPage.vue'
-import PushManagementPage from './components/PushManagementPage.vue'
+import BotConfigPage from './components/BotConfigPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import * as strategyApi from './api/strategies'
 import * as authApi from './api/auth'
