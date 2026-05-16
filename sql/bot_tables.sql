@@ -1,13 +1,13 @@
 -- =============================================
 -- 推送机器人表: 存储用户的推送机器人配置
--- 支持多渠道: QQ / 企微 / 钉钉 / 飞书
+-- 支持多渠道: 企微 / 钉钉 / 飞书
 -- =============================================
 
-CREATE TABLE IF NOT EXISTS push_configs (
+CREATE TABLE IF NOT EXISTS push_bots (
     id              INT UNSIGNED    NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     user_id         INT UNSIGNED    NOT NULL COMMENT '所属用户ID',
     name            VARCHAR(100)    NOT NULL COMMENT '机器人名称',
-    channel         VARCHAR(20)     NOT NULL COMMENT '渠道: qq/wecom/dingtalk/feishu',
+    channel         VARCHAR(20)     NOT NULL COMMENT '渠道: wecom/dingtalk/feishu',
     webhook_url     VARCHAR(500)    NOT NULL DEFAULT '' COMMENT 'Webhook地址',
     token           VARCHAR(255)    NOT NULL DEFAULT '' COMMENT 'Token/密钥',
     secret          VARCHAR(255)    NOT NULL DEFAULT '' COMMENT '加签密钥(钉钉用)',

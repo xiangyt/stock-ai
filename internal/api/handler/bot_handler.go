@@ -28,7 +28,7 @@ func isValidChannel(ch string) bool {
 	return validChannels[ch]
 }
 
-// BotHandler 推送配置 HTTP Handler
+// BotHandler 机器人配置 HTTP Handler
 type BotHandler struct{}
 
 // NewBotHandler 创建推送 Handler
@@ -38,7 +38,7 @@ func NewBotHandler() *BotHandler {
 
 // ====== 请求/响应类型 ======
 
-type createPushReq struct {
+type createBotReq struct {
 	Name       string `json:"name" binding:"required"`
 	Channel    string `json:"channel" binding:"required"`
 	WebhookURL string `json:"webhook_url"`
@@ -46,7 +46,7 @@ type createPushReq struct {
 	Secret     string `json:"secret"`
 }
 
-type updatePushReq struct {
+type updateBotReq struct {
 	Name       string `json:"name"`
 	Channel    string `json:"channel"`
 	WebhookURL string `json:"webhook_url"`
@@ -58,7 +58,7 @@ type toggleStatusReq struct {
 	Status *int `json:"status"`
 }
 
-type pushBotItem struct {
+type botItem struct {
 	ID         uint   `json:"id"`
 	UserID     uint   `json:"user_id"`
 	Name       string `json:"name"`
@@ -72,7 +72,7 @@ type pushBotItem struct {
 }
 
 // List 获取当前用户的推送配置列表
-// GET /api/v1/push-configs
+// GET /api/v1/bots
 func (h *BotHandler) List(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	if userID == 0 {
@@ -82,13 +82,13 @@ func (h *BotHandler) List(c *gin.Context) {
 
 	list, err := db.ListPushBots(userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询推送配置失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询机器人失败"})
 		return
 	}
 
-	result := make([]pushBotItem, 0, len(list))
+	result := make([]botItem, 0, len(list))
 	for _, cfg := range list {
-		result = append(result, pushBotItem{
+		result = append(result, botItem{
 			ID:         cfg.ID,
 			UserID:     cfg.UserID,
 			Name:       cfg.Name,
@@ -105,8 +105,8 @@ func (h *BotHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": result})
 }
 
-// Create 创建推送配置
-// POST /api/v1/push-configs
+// Create 创建机器人配置
+// POST /api/v1/bots
 func (h *BotHandler) Create(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	if userID == 0 {
@@ -114,7 +114,7 @@ func (h *BotHandler) Create(c *gin.Context) {
 		return
 	}
 
-	var req createPushReq
+	var req createBotReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
 		return
@@ -144,8 +144,8 @@ func (h *BotHandler) Create(c *gin.Context) {
 	}, "message": "创建成功"})
 }
 
-// Update 更新推送配置
-// PUT /api/v1/push-configs/:id
+// Update 更新机器人配置
+// PUT /api/v1/bots/:id
 func (h *BotHandler) Update(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	id := parseID(c)
@@ -153,7 +153,7 @@ func (h *BotHandler) Update(c *gin.Context) {
 		return
 	}
 
-	var req updatePushReq
+	var req updateBotReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
@@ -197,8 +197,8 @@ func (h *BotHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
 }
 
-// Delete 删除推送配置
-// DELETE /api/v1/push-configs/:id
+// Delete 删除机器人配置
+// DELETE /api/v1/bots/:id
 func (h *BotHandler) Delete(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	id := parseID(c)
@@ -219,7 +219,7 @@ func (h *BotHandler) Delete(c *gin.Context) {
 }
 
 // ToggleStatus 切换启用/禁用状态
-// PUT /api/v1/push-configs/:id/status
+// PUT /api/v1/bots/:id/status
 func (h *BotHandler) ToggleStatus(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	id := parseID(c)
@@ -258,8 +258,8 @@ func (h *BotHandler) ToggleStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已" + action})
 }
 
-// Test 测试推送
-// POST /api/v1/push-configs/:id/test
+// Test 测试机器人
+// POST /api/v1/bots/:id/test
 func (h *BotHandler) Test(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	id := parseID(c)
