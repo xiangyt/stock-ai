@@ -2,6 +2,7 @@ package indicator
 
 import (
 	"fmt"
+	"strconv"
 
 	"stock-ai/internal/model"
 )
@@ -319,6 +320,11 @@ func (c *SignalConfig) GetFloat64(key string, defaultVal float64) float64 {
 		return float64(val)
 	case int64:
 		return float64(val)
+	case string:
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			return f
+		}
+		return defaultVal
 	default:
 		return defaultVal
 	}

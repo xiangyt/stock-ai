@@ -2,13 +2,13 @@ package market
 
 import (
 	"stock-ai/internal/indicator"
-	"stock-ai/internal/model"
 	signalutil "stock-ai/internal/indicator/signalutil"
+	"stock-ai/internal/model"
 )
 
 // ============================================================================
 //  Amount — 成交额 (数值型)
-//  ID: 020002 = CatCodeMarket("02") + IndAmountSeq("002")
+//  ID: 02002 = CatCodeMarket("02") + IndAmountSeq("002")
 //  数据源: GetDailyKline()[0].Amount (int64, 单位: 分)
 //  显示单位: 亿元
 // ============================================================================

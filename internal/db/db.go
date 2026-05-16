@@ -61,6 +61,7 @@ func AutoMigrate() error {
 		&model.Stock{},
 		&model.DailyKline{},
 		&model.Strategy{},
+		&model.PushConfig{},
 	// 基本面/财务数据表
 	// &model.PerformanceReport{},
 	// &model.ShareholderCount{},

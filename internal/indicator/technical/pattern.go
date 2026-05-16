@@ -5,6 +5,12 @@ import (
 	"stock-ai/internal/model"
 )
 
+// ============================================================================
+//  Pattern — 形态 (序列型)
+//  ID: 01006 = CatCodeMarket("01") + IndVolumeSeq("006")
+//  数据源: GetDailyKline()
+// ============================================================================
+
 type Pattern struct {
 	indicator.BaseIndicator
 }
@@ -76,51 +82,41 @@ func NewSignal513() *Signal513 {
 
 // Evaluate ...
 func (s *Signal513) Evaluate(klines []*model.DailyKline, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	if len(klines) < 5 {
+	var key1, key2 = 5, 2
+	if len(klines) < (key1 + key2 + 1) {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID,
 			Message: indicator.DataEmptyError("513 kline").Error()}
 	}
 
-	var reds = make([]*model.DailyKline, 0, 7)
-	var index1 int //1根异动倍量阳线
-	for i, v := range klines {
-		if v.Close > v.Open {
-			reds = append(reds, v)
-		} else {
-			break
+	if klines[key2].Volume > klines[key2+1].Volume*2 { // key2天前那天成交量大于2倍4天前成交量
+		maxRate := float64((klines[key2].High - klines[key2+1].Close)) / float64(klines[key2+1].Close) * 100
+		rate1 := float64((klines[key2].High - klines[key2].Close)) / float64(klines[key2+1].Close) * 100
+		rate2 := float64((klines[key2].Close - klines[key2].Open)) / float64(klines[key2+1].Close) * 100
+		if !(maxRate > 5 && rate1 > 1 && rate2 > 3) { //异动当天最高至少涨8%，回落超过1%，阳线高度至少3%
+			return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID,
+				Message: "未出现异动阳线"}
 		}
-		if len(reds) > 2 && reds[i-1].Volume > reds[i].Volume*2 { // 前一天成交量大于2倍当日成交量
-			maxRate := float64((reds[i-1].High - reds[i].Close)) / float64(reds[i].Close) * 100
-			rate1 := float64((reds[i-1].High - reds[i-1].Close)) / float64(reds[i].Close) * 100
-			rate2 := float64((reds[i-1].Close - reds[i-1].Open)) / float64(reds[i].Close) * 100
-			if maxRate > 8 && rate1 > 1 && rate2 > 3 { //异动当天最高至少涨8%，回落超过1%，阳线高度至少3%
-				index1 = i - 1
-			}
-		}
-	}
-	if !(index1 == 3 || index1 == 4) {
+	} else {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID,
-			Message: "在出现那根异动倍量阳线后，接下来的3个交易日是关键的验证期"}
+			Message: "未出现异动阳线"}
 	}
-	switch {
-	case len(reds) < 5:
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: "至少5连阳"}
-	case index1 == 0:
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: "没有异动"}
-	default:
-		for i := 0; i < index1; i++ {
-			if reds[i].Open < reds[index1].Open {
+	for i := key2; i < key2+key1; i++ {
+		if !(klines[i].Close >= klines[i].Open && klines[i].Close >= klines[i+1].Close) {
+			return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: "至少5连阳"}
+		}
+	}
+	for i := 0; i < key2; i++ {
+		if klines[i].Open < klines[key2].Open {
+			return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID,
+				Message: "股价（收盘价）不能跌破那根异动阳线的开盘价"}
+		} else if klines[i].Volume > klines[key2].Volume {
+			return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID,
+				Message: "成交量必须明显萎缩，不能超过异动阳线当天的量"}
+		} else {
+			rate := float64((klines[i].High - klines[i].Low)) / float64(klines[i+1].Close) * 100
+			if rate >= 5 {
 				return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID,
-					Message: "股价（收盘价）不能跌破那根异动阳线的开盘价"}
-			} else if reds[i].Volume > reds[index1].Volume {
-				return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID,
-					Message: "成交量必须明显萎缩，不能超过异动阳线当天的量"}
-			} else {
-				rate := float64((reds[i].High - reds[i].Low)) / float64(reds[i+1].Close) * 100
-				if rate > 5 {
-					return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID,
-						Message: "盘面不能剧烈波动"}
-				}
+					Message: "盘面不能剧烈波动"}
 			}
 		}
 	}

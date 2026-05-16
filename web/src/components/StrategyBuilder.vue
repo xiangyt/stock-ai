@@ -293,7 +293,9 @@
                 <td class="col-cb"><input type="checkbox" :checked="selectedRows.has((currentPage - 1) * pageSize + idx)" @change="toggleRow((currentPage - 1) * pageSize + idx)" /></td>
                 <td>{{ (currentPage - 1) * pageSize + idx + 1 }}</td>
                 <td class="code-col">{{ stock.code }}</td>
-                <td class="name-col">{{ stock.name }}</td>
+                <td class="name-col" @mouseenter="showKLine($event, stock)" @mouseleave="hideKLine">
+                  <span class="stock-name-hover" :title="stock.name + ' — 悬浮查看K线图'">{{ stock.name }}</span>
+                </td>
                 <td>{{ stock.price?.toFixed(2) ?? '-' }}</td>
                 <td>-</td>
                 <td>-</td>
@@ -368,12 +370,24 @@
         </div>
       </div>
     </teleport>
+
+    <!-- K 线图悬浮弹窗 -->
+    <KLineTooltip
+      :visible="klineVisible"
+      :stock-code="klineStockCode"
+      :stock-name="klineStockName"
+      :x="klineX"
+      :y="klineY"
+      @mouseenter="onKLineEnter"
+      @mouseleave="hideKLine"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { reactive, ref, computed, nextTick, onMounted, watch } from 'vue'
 import * as indicatorsApi from '../api/indicators'
+import KLineTooltip from './KLineTooltip.vue'
 import type {
   IndicatorMeta, Category, CompareOperator,
   SignalDef, SignalConfig, SignalOperatorOption, ParamDef, EnumOption,
@@ -1085,6 +1099,45 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const pageSizes = [10, 20, 50, 100]
 
+// ========== K 线图悬浮 ==========
+const klineVisible = ref(false)
+const klineStockCode = ref('')
+const klineStockName = ref('')
+const klineX = ref(0)
+const klineY = ref(0)
+let klineTimer: ReturnType<typeof setTimeout> | null = null   // 显示延迟计时器
+let klineHideTimer: ReturnType<typeof setTimeout> | null = null // 隐藏延迟计时器
+
+function showKLine(e: MouseEvent, stock: any) {
+  // 取消待执行的隐藏（鼠标从弹窗移回名称时）
+  if (klineHideTimer) { clearTimeout(klineHideTimer); klineHideTimer = null }
+  if (klineTimer) clearTimeout(klineTimer)
+  klineTimer = setTimeout(() => {
+    klineStockCode.value = stock.code
+    klineStockName.value = stock.name
+    klineX.value = e.clientX
+    klineY.value = e.clientY
+    klineVisible.value = true
+  }, 350) // 延迟显示，避免快速划过时闪烁
+}
+
+function hideKLine() {
+  // 取消显示计时器
+  if (klineTimer) { clearTimeout(klineTimer); klineTimer = null }
+  // 延迟 200ms 隐藏，给用户时间从名称移动到弹窗
+  if (!klineHideTimer) {
+    klineHideTimer = setTimeout(() => {
+      klineVisible.value = false
+      klineHideTimer = null
+    }, 200)
+  }
+}
+
+/** 弹窗mouseenter时取消隐藏 */
+function onKLineEnter() {
+  if (klineHideTimer) { clearTimeout(klineHideTimer); klineHideTimer = null }
+}
+
 /** 先过滤，后分页 */
 const filteredData = computed(() => {
   if (!screenResult.value) return []
@@ -1563,7 +1616,14 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .col-cb { width: 38px; text-align: center; }
 .col-cb input[type="checkbox"] { accent-color: #1677ff; width: 14px; height: 14px; cursor: pointer; }
 .code-col { font-family: 'SF Mono', Monaco, monospace; font-weight: 600; color: #333; }
-.name-col { font-weight: 600; color: #1a1a2e; }
+.name-col { font-weight: 600; color: #1a1a2e; cursor: pointer; }
+.stock-name-hover {
+  border-bottom: 1px dashed #1677ff;
+  transition: color .12s;
+}
+.stock-name-hover:hover {
+  color: #1677ff;
+}
 .up { color: #cf1322; font-weight: 600; } /* 中国红涨 */
 .down { color: #52c41a; font-weight: 600; } /* 中国绿跌 */
 

@@ -21,6 +21,11 @@ func NewIndicatorHandler(screenSvc *service.ScreenService) *IndicatorHandler {
 	return &IndicatorHandler{registry: reg, screenSvc: screenSvc}
 }
 
+// Registry 返回底层指标注册表（供命令行工具等非 HTTP 场景使用）
+func (h *IndicatorHandler) Registry() *indicator.Registry {
+	return h.registry
+}
+
 // ListIndicators 获取全部指标元数据
 // GET /api/v1/indicators
 func (h *IndicatorHandler) ListIndicators(c *gin.Context) {

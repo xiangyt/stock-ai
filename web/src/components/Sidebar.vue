@@ -84,6 +84,7 @@ const menuItems = computed(() => {
     { key: 'strategy-backtest', label: '策略回测', icon: '📊' },
     { key: 'strategy-subscribe', label: '策略订阅', icon: '🔔' },
     { key: 'my-positions', label: '持仓管理', icon: '💼' },
+    { key: 'push-management', label: '机器人配置', icon: '🤖' },
   ]
   if (props.userInfo?.role === 'admin') {
     base.push({ key: 'account-management', label: '账户管理', icon: '👥' })

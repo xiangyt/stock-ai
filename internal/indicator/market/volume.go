@@ -2,13 +2,13 @@ package market
 
 import (
 	"stock-ai/internal/indicator"
-	"stock-ai/internal/model"
 	signalutil "stock-ai/internal/indicator/signalutil"
+	"stock-ai/internal/model"
 )
 
 // ============================================================================
 //  Volume — 成交量 (数值型)
-//  ID: 020001 = CatCodeMarket("02") + IndVolumeSeq("001")
+//  ID: 02001 = CatCodeMarket("02") + IndVolumeSeq("001")
 //  数据源: GetDailyKline()[0].Volume (int64, 单位: 股)
 //  显示单位: 万手 (1万手 = 100万股)
 // ============================================================================

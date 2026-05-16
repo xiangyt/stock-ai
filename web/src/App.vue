@@ -76,6 +76,11 @@
         <AccountManagementPage />
       </div>
 
+      <!-- ====== 机器人配置页面 ====== -->
+      <div v-else-if="currentPage === 'push-management'" class="page">
+        <PushManagementPage />
+      </div>
+
       <!-- ====== 个人主页 ====== -->
       <div v-else-if="currentPage === 'profile'" class="page">
         <ProfilePage :current-user="currentUser" @saved="onProfileSaved" @goBack="onBackFromProfile" />
@@ -92,6 +97,7 @@ import StrategyBuilder from './components/StrategyBuilder.vue'
 import StrategyList from './components/StrategyList.vue'
 import BacktestPage from './components/BacktestPage.vue'
 import AccountManagementPage from './components/AccountManagementPage.vue'
+import PushManagementPage from './components/PushManagementPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import * as strategyApi from './api/strategies'
 import * as authApi from './api/auth'
