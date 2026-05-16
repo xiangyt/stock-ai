@@ -77,3 +77,12 @@ func UpdateUserStatus(id uint, status int) error {
 	return GetDB().Model(&model.User{}).Where("id = ?", id).
 		Update("status", status).Error
 }
+
+// UpdateUserTradeConfig 更新用户的交易配置（手续费率 + 是否免五）
+func UpdateUserTradeConfig(id uint, commissionRate float64, minCommission bool) error {
+	return GetDB().Model(&model.User{}).Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"commission_rate": commissionRate,
+			"min_commission":  minCommission,
+		}).Error
+}

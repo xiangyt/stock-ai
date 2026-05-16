@@ -58,17 +58,7 @@
 
       <!-- ====== 持仓管理页面 ====== -->
       <div v-else-if="currentPage === 'my-positions'" class="page positions-page">
-        <header class="page-header">
-          <h1>💼 持仓管理</h1>
-          <p>管理你的股票持仓组合，跟踪盈亏表现</p>
-        </header>
-        <div class="placeholder-content">
-          <div class="ph-card">
-            <span class="ph-icon">🚧</span>
-            <p>持仓管理功能开发中...</p>
-            <p class="ph-sub">即将支持：持仓录入 / 盈亏追踪 / 风险预警</p>
-          </div>
-        </div>
+        <PortfolioPage />
       </div>
 
       <!-- ====== 账户管理页面（仅管理员）====== -->
@@ -99,6 +89,7 @@ import BacktestPage from './components/BacktestPage.vue'
 import AccountManagementPage from './components/AccountManagementPage.vue'
 import BotConfigPage from './components/BotConfigPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
+import PortfolioPage from './components/PortfolioPage.vue'
 import * as strategyApi from './api/strategies'
 import * as authApi from './api/auth'
 import { getToken, removeToken, isLoggedIn as checkIsLoggedIn } from './utils/auth'

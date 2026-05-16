@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
     role          VARCHAR(20)     NOT NULL DEFAULT 'user' COMMENT '角色: user/admin',
     status        TINYINT         NOT NULL DEFAULT 1 COMMENT '状态: 0=禁用 1=正常',
     last_login_at DATETIME       COMMENT '最后登录时间',
+    commission_rate  DECIMAL(8,4)  NOT NULL DEFAULT 2.5 COMMENT '交易手续费率(默认万分之2.5)',
+    min_commission   TINYINT(1)     NOT NULL DEFAULT 1      COMMENT '最低手续费免五: 0=免五 1=不免五',
     created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
 

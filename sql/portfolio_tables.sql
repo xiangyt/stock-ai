@@ -44,10 +44,4 @@ CREATE TABLE `position_trades` (
     INDEX `idx_uid`          (`uid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='交易记录表';
 
--- 3. 用户表 — 新增交易配置字段（幂等执行，忽略列已存在的错误）
-ALTER TABLE `users`
-    ADD COLUMN IF NOT EXISTS `commission_rate`  DECIMAL(8,4)  NOT NULL DEFAULT 0.00025 COMMENT '交易手续费率(默认万分之2.5)';
--- 注意：MySQL 5.7 不支持 ADD COLUMN IF NOT EXISTS，如需兼容可改用存储过程或手动执行
--- ALTER TABLE `users`
---     ADD COLUMN `commission_rate`  DECIMAL(8,4)  NOT NULL DEFAULT 0.00025 COMMENT '交易手续费率(默认万分之2.5)',
---     ADD COLUMN `min_commission`   TINYINT(1)     NOT NULL DEFAULT 1      COMMENT '最低手续费免五: 0=免五 1=不免五';
+

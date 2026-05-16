@@ -62,10 +62,13 @@ func AutoMigrate() error {
 		&model.DailyKline{},
 		&model.Strategy{},
 		&model.PushBot{},
-	// 基本面/财务数据表
-	// &model.PerformanceReport{},
-	// &model.ShareholderCount{},
-	// &model.ShareChange{},
+		// 持仓管理
+		&model.Position{},
+		&model.PositionTrade{},
+		// 基本面/财务数据表
+		// &model.PerformanceReport{},
+		// &model.ShareholderCount{},
+		// &model.ShareChange{},
 	)
 }
 
