@@ -117,10 +117,10 @@ func main() {
 		log.Println("⚠️ 无可用数据源，QuoteCache 未启动")
 	}
 
-	// 2. QuoteCache 直接实现 runner.StockSourceProvider 接口
+	// 2. 创建 StockSourceProvider（CachedQuoteProvider 组合 QuoteCache 实现 Runner 接口）
 	var provider runner.StockSourceProvider
 	if quoteCache != nil {
-		provider = quoteCache
+		provider = quotecache.NewCachedQuoteProvider(quoteCache)
 	}
 
 	// 3. 创建指标注册表

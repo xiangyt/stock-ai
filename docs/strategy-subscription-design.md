@@ -83,8 +83,8 @@ internal/subscription/
 │   ├── scheduler.go     # Scheduler + SubscriptionChange 事件 + changeLoop
 │   └── trading.go       # 交易日/交易时段判断
 ├── quotecache/          # 行情缓存（独立子包）
-│   ├── cache.go         # QuoteCache 接口 + 双优先级实现
-│   └── provider.go      # CachedStock（缓存增强 StockSource）
+│   ├── cache.go         # QuoteCache 接口 + 双优先级实现（日/周/月/年四周期缓存）
+│   └── stock.go         # CachedStock（缓存增强 StockSource）+ CachedQuoteProvider
 └── notifier/            # 通知推送（独立子包）
     ├── notifier.go      # Notifier 接口 + 钉钉/飞书/企微实现
     └── template.go      # 通知模板 + 渲染
@@ -106,9 +106,9 @@ subscription/runner
   └── → StockSourceProvider       (接口，由 quotecache 实现)
 
 subscription/quotecache
-  ├── → subscription/runner       (实现 StockSourceProvider 接口，QuoteCache 接口含 BuildStockSources 方法)
-  ├── → indicator/stocksource     (DBStock 嵌入)
-  └── → adapter                   (行情数据源)
+  ├── → subscription/runner       (CachedQuoteProvider 实现 StockSourceProvider 接口)
+  ├── → indicator/stocksource     (CachedStock 嵌入 DBStock)
+  └── → adapter                   (行情数据源：日/周/月/年四周期)
 
 subscription/notifier
   └── → model                     (PushBot)
@@ -435,7 +435,7 @@ Cron 触发 (按预设/cron 表达式)
 - **两个触发入口**:
   - `Scheduler` 定时触发 → `Runner.Run(ctx, sub)`
   - `HTTP TriggerRun` 直调 → `goroutine { Runner.Run(ctx, sub) }`（不经过 Scheduler）
-- **StockSourceProvider 接口**: Runner 不直接依赖 QuoteCache，而是通过注入的 `StockSourceProvider` 接口获取 `[]indicator.StockSource`，由 `quotecache.quoteCacheImpl` 直接实现（QuoteCache 接口包含 `BuildStockSources` 方法）
+- **StockSourceProvider 接口**: Runner 不直接依赖 QuoteCache，而是通过注入的 `StockSourceProvider` 接口获取 `[]indicator.StockSource`，由 `quotecache.CachedQuoteProvider` 实现（组合 `QuoteCache` + `DBStock`，K线拼接缓存当期数据）
 - **超时控制**: 单次执行 10 分钟超时 (`context.WithTimeout`)，由调用方设置
 - **并发策略**:
   - 全量扫描: 每 500 只为一批，最大 50 路并发
@@ -584,8 +584,8 @@ Cron 触发 (按预设/cron 表达式)
 | `internal/subscription/runner/runner.go` | 执行器（单例 + StockSourceProvider 接口） |
 | `internal/subscription/scheduler/scheduler.go` | 调度引擎（cron + changeLoop） |
 | `internal/subscription/scheduler/trading.go` | 交易日/时段判断 |
-| `internal/subscription/quotecache/cache.go` | 行情缓存（双优先级 + StockSourceProvider 实现） |
-| `internal/subscription/quotecache/provider.go` | CachedStock（缓存增强 StockSource） |
+| `internal/subscription/quotecache/cache.go` | 行情缓存（双优先级，日/周/月/年四周期） |
+| `internal/subscription/quotecache/stock.go` | CachedStock（缓存增强 StockSource）+ CachedQuoteProvider |
 | `internal/subscription/notifier/notifier.go` | 通知推送（钉钉/飞书/企微） |
 | `internal/subscription/notifier/template.go` | 通知模板 + 渲染 |
 | `sql/strategy_tables.sql` | 策略表 DDL |

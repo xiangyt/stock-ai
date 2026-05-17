@@ -10,6 +10,7 @@ import (
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
 	"stock-ai/internal/subscription/runner"
+	"stock-ai/utils"
 
 	"github.com/robfig/cron/v3"
 )
@@ -306,11 +307,11 @@ func (s *schedulerImpl) runSubscription(subscriptionID uint) {
 
 	// 检查 trading_hours_only
 	if sub.TradingHoursOnly {
-		if !IsTradingDay() {
+		if !utils.IsTradingDay() {
 			log.Printf("[Scheduler] 今日非交易日，跳过订阅 %d", subscriptionID)
 			return
 		}
-		if !IsTradingHours() {
+		if !utils.IsTradingHours() {
 			log.Printf("[Scheduler] 当前非交易时段，跳过订阅 %d", subscriptionID)
 			return
 		}
