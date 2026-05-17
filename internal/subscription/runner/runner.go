@@ -1,4 +1,4 @@
-package subscription
+package runner
 
 import (
 	"context"
@@ -9,13 +9,24 @@ import (
 
 	"stock-ai/internal/db"
 	"stock-ai/internal/indicator"
-	stocksource "stock-ai/internal/indicator/stocksource"
 	"stock-ai/internal/model"
-	"stock-ai/utils"
+	"stock-ai/internal/subscription/notifier"
 )
 
 // ============================================================================
-//  SubscriptionRunner 订阅执行器
+//  StockSourceProvider 股票数据源构建接口
+//
+//  由 quotecache.CachedQuoteProvider 实现，Runner 通过此接口获取
+//  带缓存增强的 []indicator.StockSource，实现与行情缓存层的解耦。
+// ============================================================================
+
+// StockSourceProvider 为 Runner 提供构建 []indicator.StockSource 的能力
+type StockSourceProvider interface {
+	BuildStockSources(ctx context.Context, codes []string) ([]indicator.StockSource, error)
+}
+
+// ============================================================================
+//  SubscriptionRunner 订阅执行器（单例）
 // ============================================================================
 
 // RunResult 单次执行结果
@@ -32,17 +43,17 @@ type RunResult struct {
 
 // SubscriptionRunner 订阅执行器
 type SubscriptionRunner struct {
-	cache    QuoteCache
+	provider StockSourceProvider     // 注入的股票数据源构建器
 	engine   *indicator.Engine
-	notifier Notifier
+	notifier notifier.Notifier
 }
 
 // NewSubscriptionRunner 创建订阅执行器
-func NewSubscriptionRunner(cache QuoteCache, engine *indicator.Engine, notifier Notifier) *SubscriptionRunner {
+func NewSubscriptionRunner(provider StockSourceProvider, engine *indicator.Engine, ntf notifier.Notifier) *SubscriptionRunner {
 	return &SubscriptionRunner{
-		cache:    cache,
+		provider: provider,
 		engine:   engine,
-		notifier: notifier,
+		notifier: ntf,
 	}
 }
 
@@ -77,16 +88,16 @@ func (r *SubscriptionRunner) Run(ctx context.Context, sub *model.Subscription) (
 
 	result.TotalScanned = len(codes)
 
-	// 3. 构建指标注册表（需要解析 indicator ID → Indicator）
-	// 获取交易日期
-	tradeDate := time.Now().Format("20060102")
-	tradeDateInt := 0
-	fmt.Sscanf(tradeDate, "%d", &tradeDateInt)
+	// 3. 构建 []indicator.StockSource（通过注入的 provider）
+	stocks, err := r.provider.BuildStockSources(ctx, codes)
+	if err != nil {
+		log.Printf("[Runner] 构建 StockSource 失败: %v", err)
+		result.Status = model.LogStatusFailed
+		result.ErrorMsg = fmt.Sprintf("构建数据源失败: %v", err)
+		return result, nil
+	}
 
-	// 4. 构建 []indicator.StockSource
-	stocks := r.buildStockSources(codes, tradeDateInt)
-
-	// 5. 执行选股引擎
+	// 4. 执行选股引擎
 	var allPassed []*indicator.EvaluatedStock
 
 	if sub.Scope == model.ScopeAll {
@@ -99,7 +110,6 @@ func (r *SubscriptionRunner) Run(ctx context.Context, sub *model.Subscription) (
 			}
 			batch := stocks[i:end]
 
-			// 单批超时保护由 runner 外层的 ctx 控制
 			evaluated := r.engine.Execute(batch, configs, 50)
 
 			for _, ev := range evaluated {
@@ -118,7 +128,7 @@ func (r *SubscriptionRunner) Run(ctx context.Context, sub *model.Subscription) (
 		}
 	}
 
-	// 6. 过滤结果，组装 MatchStock
+	// 5. 过滤结果，组装 MatchStock
 	result.MatchStocks = make([]model.MatchStock, 0, len(allPassed))
 	for _, ev := range allPassed {
 		result.MatchStocks = append(result.MatchStocks, model.MatchStock{
@@ -129,13 +139,13 @@ func (r *SubscriptionRunner) Run(ctx context.Context, sub *model.Subscription) (
 	}
 	result.MatchCount = len(result.MatchStocks)
 
-	// 7. 加载关联机器人
+	// 6. 加载关联机器人
 	bots, err := db.GetSubscriptionBots(sub.ID)
 	if err != nil {
-		log.Printf("[SubscriptionRunner] 获取订阅 %d 关联机器人失败: %v", sub.ID, err)
+		log.Printf("[Runner] 获取订阅 %d 关联机器人失败: %v", sub.ID, err)
 	}
 
-	// 8. 渲染通知消息并发送
+	// 7. 渲染通知消息并发送
 	message := r.renderMessage(sub, strategy.Name, result)
 
 	for _, bot := range bots {
@@ -147,10 +157,10 @@ func (r *SubscriptionRunner) Run(ctx context.Context, sub *model.Subscription) (
 		}
 	}
 
-	// 9. 计算耗时
+	// 8. 计算耗时
 	result.DurationMs = int(time.Since(startTime).Milliseconds())
 
-	// 10. 确定状态
+	// 9. 确定状态
 	if result.MatchCount > 0 && len(result.PushStatus) > 0 {
 		allSuccess := true
 		for _, status := range result.PushStatus {
@@ -170,12 +180,12 @@ func (r *SubscriptionRunner) Run(ctx context.Context, sub *model.Subscription) (
 		result.Status = model.LogStatusFailed
 	}
 
-	// 11. 写入 SubscriptionLog
+	// 10. 写入 SubscriptionLog
 	result.LogID = r.writeLog(sub, result)
 
-	// 12. 更新 LastRunAt
+	// 11. 更新 LastRunAt
 	if err := db.UpdateLastRunTime(sub.ID); err != nil {
-		log.Printf("[SubscriptionRunner] 更新订阅 %d 最后运行时间失败: %v", sub.ID, err)
+		log.Printf("[Runner] 更新订阅 %d 最后运行时间失败: %v", sub.ID, err)
 	}
 
 	return result, nil
@@ -194,7 +204,7 @@ func (r *SubscriptionRunner) resolveStockCodes(sub *model.Subscription) []string
 	case model.ScopeHeld:
 		positions, _, err := db.ListPositions(sub.UID, "holding", 1, 1000)
 		if err != nil {
-			log.Printf("[SubscriptionRunner] 获取用户 %d 持仓失败: %v", sub.UID, err)
+			log.Printf("[Runner] 获取用户 %d 持仓失败: %v", sub.UID, err)
 			return nil
 		}
 		codes := make([]string, 0, len(positions))
@@ -206,7 +216,7 @@ func (r *SubscriptionRunner) resolveStockCodes(sub *model.Subscription) []string
 		var codes []string
 		if sub.CustomStocks != "" {
 			if err := json.Unmarshal([]byte(sub.CustomStocks), &codes); err != nil {
-				log.Printf("[SubscriptionRunner] 解析 custom_stocks JSON 失败: %v", err)
+				log.Printf("[Runner] 解析 custom_stocks JSON 失败: %v", err)
 				return nil
 			}
 		}
@@ -216,33 +226,12 @@ func (r *SubscriptionRunner) resolveStockCodes(sub *model.Subscription) []string
 	}
 }
 
-// buildStockSources 构建 []indicator.StockSource 列表
-func (r *SubscriptionRunner) buildStockSources(codes []string, tradeDate int) []indicator.StockSource {
-	stocks := make([]indicator.StockSource, 0, len(codes))
-
-	utils.ConcurrentExec(codes, 20, func(i int, code string) error {
-		stockDetail, err := db.FindStockByCode(code)
-		if err != nil {
-			// 股票不存在则跳过
-			return nil
-		}
-
-		base := stocksource.NewDBStock(&stockDetail, tradeDate)
-		cached := NewCachedStock(base, r.cache)
-		cached.SetTradeDate(tradeDate)
-		stocks = append(stocks, cached)
-		return nil
-	})
-
-	return stocks
-}
-
 // renderMessage 渲染通知消息
 func (r *SubscriptionRunner) renderMessage(sub *model.Subscription, strategyName string, result *RunResult) string {
 	// 选择模板
 	tpl := sub.Template
 	if tpl == "" {
-		tpl = GetDefaultTemplate(result.MatchCount > 0, false)
+		tpl = notifier.GetDefaultTemplate(result.MatchCount > 0, false)
 	}
 
 	// 构建匹配股票列表文本
@@ -297,7 +286,7 @@ func (r *SubscriptionRunner) writeLog(sub *model.Subscription, result *RunResult
 	}
 
 	if err := db.CreateSubscriptionLog(logEntry); err != nil {
-		log.Printf("[SubscriptionRunner] 写入执行日志失败: %v", err)
+		log.Printf("[Runner] 写入执行日志失败: %v", err)
 		return 0
 	}
 	return logEntry.ID

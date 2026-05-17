@@ -1,4 +1,4 @@
-package subscription
+package quotecache
 
 import (
 	"context"
@@ -8,6 +8,10 @@ import (
 	"time"
 
 	"stock-ai/internal/adapter"
+	"stock-ai/internal/db"
+	"stock-ai/internal/indicator"
+	stocksource "stock-ai/internal/indicator/stocksource"
+	"stock-ai/utils"
 )
 
 // ============================================================================
@@ -36,6 +40,10 @@ type QuoteCache interface {
 
 	// Stats 返回缓存统计信息（命中/未命中/大小等）
 	Stats() CacheStats
+
+	// BuildStockSources 根据股票代码列表构建带缓存增强的 StockSource
+	// 实现 runner.StockSourceProvider 接口
+	BuildStockSources(ctx context.Context, codes []string) ([]indicator.StockSource, error)
 }
 
 // CacheStats 缓存统计
@@ -62,6 +70,7 @@ type quoteCacheImpl struct {
 	highChan   chan string           // 高优先级刷新通道（无缓冲）
 	normalChan chan string           // 普通优先级刷新通道（无缓冲）
 	registry   *adapter.Registry    // 数据源注册中心
+	workerCount int                  // 后台 worker 数量
 	highTicker *time.Ticker          // 3 分钟刷新高优先级
 	normalTicker *time.Ticker        // 10 分钟刷新普通优先级
 	highTTL    time.Duration         // 5 分钟
@@ -85,6 +94,7 @@ func NewQuoteCache(reg *adapter.Registry, workerCount int) QuoteCache {
 		highChan:   make(chan string),
 		normalChan: make(chan string),
 		registry:   reg,
+		workerCount: workerCount,
 		highTTL:    5 * time.Minute,
 		normalTTL:  15 * time.Minute,
 		stopCh:     make(chan struct{}),
@@ -94,7 +104,7 @@ func NewQuoteCache(reg *adapter.Registry, workerCount int) QuoteCache {
 // Start 启动后台刷新 worker + 两个 Ticker
 func (q *quoteCacheImpl) Start() {
 	// 启动 worker goroutine
-	for i := 0; i < 3; i++ {
+	for i := 0; i < q.workerCount; i++ {
 		q.wg.Add(1)
 		go q.worker()
 	}
@@ -305,6 +315,32 @@ func (q *quoteCacheImpl) refreshByPriority(priority string) {
 			return
 		}
 	}
+}
+
+// BuildStockSources 实现 runner.StockSourceProvider 接口
+// 根据股票代码列表并发构建带缓存增强的 StockSource
+func (q *quoteCacheImpl) BuildStockSources(ctx context.Context, codes []string) ([]indicator.StockSource, error) {
+	stocks := make([]indicator.StockSource, 0, len(codes))
+
+	// 获取交易日期
+	tradeDate := time.Now().Format("20060102")
+	tradeDateInt := 0
+	fmt.Sscanf(tradeDate, "%d", &tradeDateInt)
+	td := tradeDateInt
+
+	utils.ConcurrentExec(codes, 20, func(i int, code string) error {
+		stockDetail, err := db.FindStockByCode(code)
+		if err != nil {
+			return nil // 股票不存在则跳过
+		}
+		base := stocksource.NewDBStock(&stockDetail, td)
+		cached := NewCachedStock(base, q)
+		cached.SetTradeDate(td)
+		stocks = append(stocks, cached)
+		return nil
+	})
+
+	return stocks, nil
 }
 
 // getTTL 根据优先级返回 TTL

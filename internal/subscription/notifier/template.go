@@ -1,4 +1,4 @@
-package subscription
+package notifier
 
 import (
 	"strings"

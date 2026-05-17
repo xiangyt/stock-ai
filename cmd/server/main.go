@@ -13,14 +13,17 @@ import (
 
 	"stock-ai/internal/adapter"
 	"stock-ai/internal/adapter/eastmoney"
+	"stock-ai/internal/adapter/ths"
 	"stock-ai/internal/api/handler"
 	"stock-ai/internal/api/router"
 	"stock-ai/internal/config"
 	"stock-ai/internal/db"
 	"stock-ai/internal/indicator"
 	"stock-ai/internal/service"
-	"stock-ai/internal/subscription"
-	"stock-ai/internal/adapter/ths"
+	"stock-ai/internal/subscription/notifier"
+	"stock-ai/internal/subscription/quotecache"
+	"stock-ai/internal/subscription/runner"
+	"stock-ai/internal/subscription/scheduler"
 )
 
 func main() {
@@ -48,7 +51,6 @@ func main() {
 
 	// 注册数据源适配器
 	registry := adapter.GetRegistry()
-	var thsInstance *ths.Adapter // 保留THS引用，用于注入快照服务
 
 	for _, dsCfg := range cfg.DataSources {
 		if !dsCfg.Enabled {
@@ -72,11 +74,9 @@ func main() {
 				continue
 			}
 		case "ths":
-			thsInstance = ths.New()
-			ds = thsInstance
+			ds = ths.New()
 			if err := ds.Init(nil); err != nil {
 				log.Printf("初始化 %s 失败: %v", dsCfg.Name, err)
-				thsInstance = nil // 初始化失败则清空
 				continue
 			}
 		default:
@@ -108,49 +108,64 @@ func main() {
 	// ====================================================================
 
 	// 1. 创建 QuoteCache（注入 registry，运行时动态获取数据源）
-	var quoteCache subscription.QuoteCache
+	var quoteCache quotecache.QuoteCache
 	if len(registry.Names()) > 0 {
-		quoteCache = subscription.NewQuoteCache(registry, 3)
+		quoteCache = quotecache.NewQuoteCache(registry, 3)
 		quoteCache.Start()
 		log.Println("✅ QuoteCache 已启动")
 	} else {
 		log.Println("⚠️ 无可用数据源，QuoteCache 未启动")
 	}
 
+	// 2. QuoteCache 直接实现 runner.StockSourceProvider 接口
+	var provider runner.StockSourceProvider
+	if quoteCache != nil {
+		provider = quoteCache
+	}
+
 	// 3. 创建指标注册表
 	reg := indicator.NewRegistry(handler.AllBuiltins())
 
 	// 4. 创建 Notifier
-	notifier := subscription.NewNotifier()
+	ntf := notifier.NewNotifier()
 
-	// 5. 创建 SubscriptionRunner
-	runner := subscription.NewSubscriptionRunner(quoteCache, reg.Engine(), notifier)
-
-	// 6. 创建 Scheduler
-	scheduler := subscription.NewScheduler(runner)
-
-	// 7. 设置 SubscriptionLoader（解耦 scheduler 对 db 的直接依赖）
-	subscription.SetSubscriptionLoader(&dbSubscriptionLoader{})
-
-	// 8. 启动 Scheduler
-	if err := scheduler.Start(); err != nil {
-		log.Printf("⚠️ Scheduler 启动失败: %v（订阅功能不可用）", err)
+	// 5. 创建 SubscriptionRunner（单例）
+	var r *runner.SubscriptionRunner
+	if provider != nil {
+		r = runner.NewSubscriptionRunner(provider, reg.Engine(), ntf)
+		log.Println("✅ Runner 已创建")
 	} else {
-		log.Println("✅ Scheduler 已启动")
+		log.Println("⚠️ 无数据源，Runner 未创建")
 	}
 
-	// 9. 设置 Router（router 内部创建 subSvc，通过 SubscriptionServiceRef 获取）
-	r := router.SetupRouter()
+	// 6. 创建 Scheduler（只需 Runner）
+	var sch scheduler.Scheduler
+	if r != nil {
+		sch = scheduler.NewScheduler(r)
+		if err := sch.Start(); err != nil {
+			log.Printf("⚠️ Scheduler 启动失败: %v（订阅功能不可用）", err)
+		} else {
+			log.Println("✅ Scheduler 已启动")
+		}
+	}
 
-	// 注入 Scheduler 到 router 层创建的 SubscriptionService
+	// 8. 设置 Router（router 内部创建 subSvc，通过 SubscriptionServiceRef 获取）
+	rtr := router.SetupRouter()
+
+	// 注入 Runner 和 NotifyChange 回调到 SubscriptionService
 	if router.SubscriptionServiceRef != nil {
-		router.SubscriptionServiceRef.SetScheduler(scheduler)
+		router.SubscriptionServiceRef.SetRunner(r)
+		if sch != nil {
+			router.SubscriptionServiceRef.SetNotifyChange(func(ct scheduler.ChangeType, id uint) {
+				sch.NotifyChange(scheduler.SubscriptionChange{Type: ct, ID: id})
+			})
+		}
 	}
 
 	// 启动 HTTP 服务
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:      r,
+		Handler:      rtr,
 		ReadTimeout:  time.Duration(cfg.Server.ReadTimeout) * time.Second,
 		WriteTimeout: time.Duration(cfg.Server.WriteTimeout) * time.Second,
 	}
@@ -166,8 +181,10 @@ func main() {
 		defer cancel()
 
 		// 优先停止 Scheduler
-		log.Println("正在停止 Scheduler...")
-		scheduler.Stop()
+		if sch != nil {
+			log.Println("正在停止 Scheduler...")
+			sch.Stop()
+		}
 
 		// 停止 QuoteCache
 		if quoteCache != nil {
@@ -191,56 +208,4 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("HTTP 服务启动失败: %v", err)
 	}
-}
-
-// ============================================================================
-//  dbSubscriptionLoader 实现 subscription.SubscriptionLoader 接口
-// ============================================================================
-
-type dbSubscriptionLoader struct{}
-
-// LoadActive 加载所有活跃订阅
-func (l *dbSubscriptionLoader) LoadActive() ([]subscription.SubscriptionLoadResult, error) {
-	subs, err := db.GetActiveSubscriptions()
-	if err != nil {
-		return nil, err
-	}
-	results := make([]subscription.SubscriptionLoadResult, len(subs))
-	for i, sub := range subs {
-		results[i] = subscription.SubscriptionLoadResult{
-			ID:               sub.ID,
-			UID:              sub.UID,
-			Name:             sub.Name,
-			StrategyID:       sub.StrategyID,
-			Scope:            string(sub.Scope),
-			CustomStocks:     sub.CustomStocks,
-			PresetType:       string(sub.PresetType),
-			CronExpr:         sub.CronExpr,
-			TradingHoursOnly: sub.TradingHoursOnly,
-			IsActive:         sub.IsActive,
-			Template:         sub.Template,
-		}
-	}
-	return results, nil
-}
-
-// LoadByID 根据 ID 加载订阅
-func (l *dbSubscriptionLoader) LoadByID(id uint) (*subscription.SubscriptionLoadResult, error) {
-	sub, err := db.GetSubscriptionByIDForScheduler(id)
-	if err != nil {
-		return nil, err
-	}
-	return &subscription.SubscriptionLoadResult{
-		ID:               sub.ID,
-		UID:              sub.UID,
-		Name:             sub.Name,
-		StrategyID:       sub.StrategyID,
-		Scope:            string(sub.Scope),
-		CustomStocks:     sub.CustomStocks,
-		PresetType:       string(sub.PresetType),
-		CronExpr:         sub.CronExpr,
-		TradingHoursOnly: sub.TradingHoursOnly,
-		IsActive:         sub.IsActive,
-		Template:         sub.Template,
-	}, nil
 }

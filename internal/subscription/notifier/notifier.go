@@ -1,4 +1,4 @@
-package subscription
+package notifier
 
 import (
 	"bytes"
@@ -120,7 +120,7 @@ func FeishuPayload(content string) interface{} {
 func WecomPayload(content string) interface{} {
 	return map[string]interface{}{
 		"msgtype": "text",
-		"text": map[string]interface{}{
+		"text": map[string]string{
 			"content": content,
 		},
 	}

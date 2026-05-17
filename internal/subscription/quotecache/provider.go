@@ -1,4 +1,4 @@
-package subscription
+package quotecache
 
 import (
 	"context"
@@ -36,11 +36,11 @@ func NewCachedStock(base *stocksource.DBStock, cache QuoteCache) *CachedStock {
 		DBStock:   base,
 		cache:     cache,
 		code:      base.GetCode(),
-		tradeDate: 0, // 由 Run 方法在构建时设置
+		tradeDate: 0, // 由 Provider 在构建时设置
 	}
 }
 
-// SetTradeDate 设置交易日期（由 Runner 在构建时调用）
+// SetTradeDate 设置交易日期（由 Provider 在构建时调用）
 func (c *CachedStock) SetTradeDate(tradeDate int) {
 	c.tradeDate = tradeDate
 }

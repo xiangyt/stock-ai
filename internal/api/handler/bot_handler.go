@@ -9,7 +9,7 @@ import (
 
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
-	subPkg "stock-ai/internal/subscription"
+	"stock-ai/internal/subscription/notifier"
 
 	"github.com/gin-gonic/gin"
 )
@@ -280,17 +280,17 @@ func (h *BotHandler) Test(c *gin.Context) {
 
 	switch cfg.Channel {
 	case "dingtalk":
-		payload := subPkg.DingTalkPayload(msg)
+		payload := notifier.DingTalkPayload(msg)
 		jsonBytes, _ := json.Marshal(payload)
-		httpErr = subPkg.SendDingTalk(cfg.WebhookURL, cfg.Secret, jsonBytes)
+		httpErr = notifier.SendDingTalk(cfg.WebhookURL, cfg.Secret, jsonBytes)
 	case "feishu":
-		payload := subPkg.FeishuPayload(msg)
+		payload := notifier.FeishuPayload(msg)
 		jsonBytes, _ := json.Marshal(payload)
-		httpErr = subPkg.PostJSON(cfg.WebhookURL, jsonBytes)
+		httpErr = notifier.PostJSON(cfg.WebhookURL, jsonBytes)
 	case "wecom":
-		payload := subPkg.WecomPayload(msg)
+		payload := notifier.WecomPayload(msg)
 		jsonBytes, _ := json.Marshal(payload)
-		httpErr = subPkg.PostJSON(cfg.WebhookURL, jsonBytes)
+		httpErr = notifier.PostJSON(cfg.WebhookURL, jsonBytes)
 	default:
 		httpErr = fmt.Errorf("不支持的渠道: %s", cfg.Channel)
 	}

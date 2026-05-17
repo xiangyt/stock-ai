@@ -1,16 +1,20 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
-	subPkg "stock-ai/internal/subscription"
+	"stock-ai/internal/subscription/runner"
+	"stock-ai/internal/subscription/scheduler"
 )
 
 // ============================================================================
@@ -25,7 +29,8 @@ const maxBotsPerSubscription = 5
 
 // SubscriptionService 订阅业务逻辑层
 type SubscriptionService struct {
-	scheduler subPkg.Scheduler
+	notifyChangeFn func(scheduler.ChangeType, uint) // 通知 Scheduler 变更的回调
+	runner         *runner.SubscriptionRunner
 }
 
 // NewSubscriptionService 创建订阅服务
@@ -33,9 +38,14 @@ func NewSubscriptionService() *SubscriptionService {
 	return &SubscriptionService{}
 }
 
-// SetScheduler 设置调度器引用（由 main.go 注入）
-func (s *SubscriptionService) SetScheduler(scheduler subPkg.Scheduler) {
-	s.scheduler = scheduler
+// SetNotifyChange 设置变更通知回调（由 main.go 注入）
+func (s *SubscriptionService) SetNotifyChange(fn func(scheduler.ChangeType, uint)) {
+	s.notifyChangeFn = fn
+}
+
+// SetRunner 设置执行器引用（由 main.go 注入）
+func (s *SubscriptionService) SetRunner(r *runner.SubscriptionRunner) {
+	s.runner = r
 }
 
 // ============================================================================
@@ -243,6 +253,9 @@ func (s *SubscriptionService) Create(req *CreateSubscriptionReq, uid uint) (*Sub
 		}
 	}
 
+	// 通知 Scheduler 注册新订阅
+	s.notifyChange(scheduler.ChangeCreated, sub.ID)
+
 	// 返回详情
 	return s.GetByID(sub.ID, uid)
 }
@@ -441,6 +454,9 @@ func (s *SubscriptionService) Update(id, uid uint, req *UpdateSubscriptionReq) (
 		return nil, fmt.Errorf("更新订阅失败: %w", err)
 	}
 
+	// 通知 Scheduler 重新加载
+	s.notifyChange(scheduler.ChangeUpdated, id)
+
 	return s.GetByID(id, uid)
 }
 
@@ -454,7 +470,14 @@ func (s *SubscriptionService) Delete(id, uid uint) error {
 		return fmt.Errorf("查询订阅失败: %w", err)
 	}
 
-	return db.DeleteSubscription(id, uid)
+	if err := db.DeleteSubscription(id, uid); err != nil {
+		return fmt.Errorf("删除订阅失败: %w", err)
+	}
+
+	// 通知 Scheduler 移除 cron job
+	s.notifyChange(scheduler.ChangeDeleted, id)
+
+	return nil
 }
 
 // SetActive 切换订阅启停状态
@@ -467,7 +490,18 @@ func (s *SubscriptionService) SetActive(id, uid uint, active bool) error {
 		return fmt.Errorf("查询订阅失败: %w", err)
 	}
 
-	return db.SetActive(id, uid, active)
+	if err := db.SetActive(id, uid, active); err != nil {
+		return fmt.Errorf("切换状态失败: %w", err)
+	}
+
+	// 通知 Scheduler
+	if active {
+		s.notifyChange(scheduler.ChangeEnabled, id)
+	} else {
+		s.notifyChange(scheduler.ChangeDisabled, id)
+	}
+
+	return nil
 }
 
 // UpdateBots 更新订阅关联的机器人
@@ -552,7 +586,7 @@ func (s *SubscriptionService) GetLogs(id, uid uint, page, pageSize int, status s
 	}, nil
 }
 
-// TriggerRun 手动触发订阅执行
+// TriggerRun 手动触发订阅执行（直接调用 Runner，不经过 Scheduler）
 func (s *SubscriptionService) TriggerRun(id, uid uint) (*TriggerResult, error) {
 	sub, err := db.GetSubscriptionByID(id, uid)
 	if err != nil {
@@ -566,13 +600,23 @@ func (s *SubscriptionService) TriggerRun(id, uid uint) (*TriggerResult, error) {
 		return nil, fmt.Errorf("订阅已停用，请先启用")
 	}
 
-	if s.scheduler == nil {
-		return nil, fmt.Errorf("调度引擎未初始化")
+	if s.runner == nil {
+		return nil, fmt.Errorf("执行器未初始化")
 	}
 
-	if err := s.scheduler.Trigger(id); err != nil {
-		return nil, fmt.Errorf("触发执行失败: %w", err)
-	}
+	// 异步执行，立即返回
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+
+		result, err := s.runner.Run(ctx, sub)
+		if err != nil {
+			log.Printf("[TriggerRun] 订阅 %d 执行失败: %v", id, err)
+			return
+		}
+		log.Printf("[TriggerRun] 订阅 %d 执行完成: 扫描 %d, 匹配 %d, 耗时 %dms, 状态 %s",
+			id, result.TotalScanned, result.MatchCount, result.DurationMs, result.Status)
+	}()
 
 	return &TriggerResult{
 		Message: "已触发执行",
@@ -580,8 +624,15 @@ func (s *SubscriptionService) TriggerRun(id, uid uint) (*TriggerResult, error) {
 }
 
 // ============================================================================
-//  辅助函数
+//  辅助方法
 // ============================================================================
+
+// notifyChange 安全地通知 Scheduler（回调为 nil 时不报错）
+func (s *SubscriptionService) notifyChange(changeType scheduler.ChangeType, id uint) {
+	if s.notifyChangeFn != nil {
+		s.notifyChangeFn(changeType, id)
+	}
+}
 
 // isValidStockCode 校验股票代码（6 位纯数字）
 var stockCodeRegex = regexp.MustCompile(`^\d{6}$`)
