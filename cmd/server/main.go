@@ -11,14 +11,16 @@ import (
 	"syscall"
 	"time"
 
-	"stock-ai/internal/api/router"
-	"stock-ai/internal/adapter/eastmoney"
-	"stock-ai/internal/adapter/ths"
 	"stock-ai/internal/adapter"
+	"stock-ai/internal/adapter/eastmoney"
+	"stock-ai/internal/api/handler"
+	"stock-ai/internal/api/router"
 	"stock-ai/internal/config"
 	"stock-ai/internal/db"
-	// "stock-ai/internal/mcp" // TODO: 待升级到新版 mcpkit API 后启用
+	"stock-ai/internal/indicator"
 	"stock-ai/internal/service"
+	"stock-ai/internal/subscription"
+	"stock-ai/internal/adapter/ths"
 )
 
 func main() {
@@ -101,7 +103,49 @@ func main() {
 		return
 	}
 
+	// ====================================================================
+	//  初始化策略订阅模块
+	// ====================================================================
+
+	// 1. 创建 QuoteCache（注入 registry，运行时动态获取数据源）
+	var quoteCache subscription.QuoteCache
+	if len(registry.Names()) > 0 {
+		quoteCache = subscription.NewQuoteCache(registry, 3)
+		quoteCache.Start()
+		log.Println("✅ QuoteCache 已启动")
+	} else {
+		log.Println("⚠️ 无可用数据源，QuoteCache 未启动")
+	}
+
+	// 3. 创建指标注册表
+	reg := indicator.NewRegistry(handler.AllBuiltins())
+
+	// 4. 创建 Notifier
+	notifier := subscription.NewNotifier()
+
+	// 5. 创建 SubscriptionRunner
+	runner := subscription.NewSubscriptionRunner(quoteCache, reg.Engine(), notifier)
+
+	// 6. 创建 Scheduler
+	scheduler := subscription.NewScheduler(runner)
+
+	// 7. 设置 SubscriptionLoader（解耦 scheduler 对 db 的直接依赖）
+	subscription.SetSubscriptionLoader(&dbSubscriptionLoader{})
+
+	// 8. 启动 Scheduler
+	if err := scheduler.Start(); err != nil {
+		log.Printf("⚠️ Scheduler 启动失败: %v（订阅功能不可用）", err)
+	} else {
+		log.Println("✅ Scheduler 已启动")
+	}
+
+	// 9. 设置 Router（router 内部创建 subSvc，通过 SubscriptionServiceRef 获取）
 	r := router.SetupRouter()
+
+	// 注入 Scheduler 到 router 层创建的 SubscriptionService
+	if router.SubscriptionServiceRef != nil {
+		router.SubscriptionServiceRef.SetScheduler(scheduler)
+	}
 
 	// 启动 HTTP 服务
 	srv := &http.Server{
@@ -110,19 +154,6 @@ func main() {
 		ReadTimeout:  time.Duration(cfg.Server.ReadTimeout) * time.Second,
 		WriteTimeout: time.Duration(cfg.Server.WriteTimeout) * time.Second,
 	}
-
-	// 启动 MCP Server (如果启用)
-	// TODO: 待升级到新版 mcpkit API 后启用
-	// var mcpServer *mcp.StockMCPServer
-	// if cfg.MCP.Enabled {
-	// 	mcpServer = mcp.NewStockMCPServer(cfg.MCP.Name, cfg.MCP.Version)
-	// 	go func() {
-	// 		log.Printf("MCP Server 启动: %s v%s", cfg.MCP.Name, cfg.MCP.Version)
-	// 		if err := mcpServer.Start(); err != nil {
-	// 			log.Printf("MCP Server 错误: %v", err)
-	// 		}
-	// 	}()
-	// }
 
 	// 优雅关闭
 	go func() {
@@ -134,16 +165,19 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
+		// 优先停止 Scheduler
+		log.Println("正在停止 Scheduler...")
+		scheduler.Stop()
+
+		// 停止 QuoteCache
+		if quoteCache != nil {
+			log.Println("正在停止 QuoteCache...")
+			quoteCache.Stop()
+		}
+
 		if err := srv.Shutdown(ctx); err != nil {
 			log.Printf("HTTP 服务关闭错误: %v", err)
 		}
-
-		// TODO: 待升级到新版 mcpkit API 后启用
-		// if mcpServer != nil {
-		// 	if err := mcpServer.Stop(); err != nil {
-		// 		log.Printf("MCP Server 关闭错误: %v", err)
-		// 	}
-		// }
 
 		// 关闭数据源适配器
 		log.Println("正在关闭数据源连接...")
@@ -157,4 +191,56 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("HTTP 服务启动失败: %v", err)
 	}
+}
+
+// ============================================================================
+//  dbSubscriptionLoader 实现 subscription.SubscriptionLoader 接口
+// ============================================================================
+
+type dbSubscriptionLoader struct{}
+
+// LoadActive 加载所有活跃订阅
+func (l *dbSubscriptionLoader) LoadActive() ([]subscription.SubscriptionLoadResult, error) {
+	subs, err := db.GetActiveSubscriptions()
+	if err != nil {
+		return nil, err
+	}
+	results := make([]subscription.SubscriptionLoadResult, len(subs))
+	for i, sub := range subs {
+		results[i] = subscription.SubscriptionLoadResult{
+			ID:               sub.ID,
+			UID:              sub.UID,
+			Name:             sub.Name,
+			StrategyID:       sub.StrategyID,
+			Scope:            string(sub.Scope),
+			CustomStocks:     sub.CustomStocks,
+			PresetType:       string(sub.PresetType),
+			CronExpr:         sub.CronExpr,
+			TradingHoursOnly: sub.TradingHoursOnly,
+			IsActive:         sub.IsActive,
+			Template:         sub.Template,
+		}
+	}
+	return results, nil
+}
+
+// LoadByID 根据 ID 加载订阅
+func (l *dbSubscriptionLoader) LoadByID(id uint) (*subscription.SubscriptionLoadResult, error) {
+	sub, err := db.GetSubscriptionByIDForScheduler(id)
+	if err != nil {
+		return nil, err
+	}
+	return &subscription.SubscriptionLoadResult{
+		ID:               sub.ID,
+		UID:              sub.UID,
+		Name:             sub.Name,
+		StrategyID:       sub.StrategyID,
+		Scope:            string(sub.Scope),
+		CustomStocks:     sub.CustomStocks,
+		PresetType:       string(sub.PresetType),
+		CronExpr:         sub.CronExpr,
+		TradingHoursOnly: sub.TradingHoursOnly,
+		IsActive:         sub.IsActive,
+		Template:         sub.Template,
+	}, nil
 }

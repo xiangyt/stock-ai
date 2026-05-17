@@ -416,11 +416,12 @@ onMounted(loadBots)
   box-shadow: 0 1px 4px rgba(0,0,0,.06);
 }
 .push-table th {
-  background: #fafafa; padding: 10px 14px; text-align: left;
+  background: #fafafa; padding: 10px 14px; text-align: center;
   font-size: 13px; font-weight: 600; color: #666; border-bottom: 1px solid #eee;
 }
 .push-table td {
   padding: 10px 14px; font-size: 13.5px; border-bottom: 1px solid #f3f3f3;
+  text-align: center;
 }
 .push-table tr:hover td { background: #f9fbff; }
 .push-table tr.disabled-row td { opacity: .45; }

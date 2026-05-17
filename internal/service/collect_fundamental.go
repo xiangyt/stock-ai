@@ -165,15 +165,15 @@ func (s *DataCollectService) CollectShareChangesBatch(sourceName string) (*Colle
 // ========== 基本面批量写入辅助函数（包级函数）==========
 
 // clampDecimal 将浮点值钳制到 DECIMAL(p,s) 的合法范围
-// p=总精度位数, s=小数位位数 → 范围 [-10^(p-s), 10^(p-s)]
-// 例如 DECIMAL(10,4) → 范围 [-99999.9999, 99999.9999]
+// p=总精度位数, s=小数位位数 → 范围 [-(10^(p-s)-10^(-s)), 10^(p-s)-10^(-s)]
+// 例如 DECIMAL(10,4) → 范围 [-999999.9999, 999999.9999]
 func clampDecimal(v float64, precision, scale int) float64 {
-	maxIntPart := float64(intPow10(precision - scale))
-	if v > maxIntPart {
-		return maxIntPart
+	maxVal := float64(intPow10(precision-scale)) - 1.0/float64(intPow10(scale))
+	if v > maxVal {
+		return maxVal
 	}
-	if v < -maxIntPart {
-		return -maxIntPart
+	if v < -maxVal {
+		return -maxVal
 	}
 	return v
 }

@@ -1,0 +1,86 @@
+## 4.1 单次订阅执行完整流程
+
+```mermaid
+sequenceDiagram
+    participant S as Scheduler
+    participant R as Runner
+    participant DB as DAO(db)
+    participant QC as QuoteCache
+    participant E as Engine
+    participant N as Notifier
+
+    S->>DB: 加载订阅配置 (subscription + strategy + bots)
+    DB-->>S: Subscription, []PushBot
+    S->>R: Run(subscription)
+
+    alt trading_hours_only && 非交易时段
+        R-->>S: 跳过执行
+    end
+
+    R->>DB: 按 scope 获取股票代码列表
+    alt scope=all
+        DB-->>R: 全量股票 (~5000)
+    else scope=held
+        DB-->>R: 持仓股列表
+    else scope=custom
+        R-->>R: 解析 custom_stocks JSON
+    end
+
+    alt scope=all
+        loop 每 500 只为一批
+            R->>R: 构建 CachedStock 列表
+            R->>E: Execute(batchStocks, signalConfigs, 50)
+            E-->>R: []*EvaluatedStock (passed)
+        end
+    else scope=held | custom
+        R->>R: 构建 CachedStock 列表
+        R->>E: Execute(stocks, signalConfigs, 10)
+        E-->>R: []*EvaluatedStock (passed)
+    end
+
+    R->>R: 过滤 ResultPassed，统计匹配数
+
+    loop 每个 PushBot
+        R->>N: Render(template, vars)
+        N-->>R: 格式化消息文本
+        R->>N: Send(bot, message)
+        N->>N: dingTalkPayload / feishuPayload / wecomPayload
+        N->>N: postJSON(webhookURL, payload)
+        N-->>R: nil / error
+    end
+
+    R->>DB: 写入 SubscriptionLog
+    DB-->>R: logID
+    R-->>S: 执行完成
+```
+
+## 4.2 QuoteCache 刷新流程
+
+```mermaid
+sequenceDiagram
+    participant T1 as HighTicker(3min)
+    participant T2 as NormalTicker(10min)
+    participant W as Worker(goroutine)
+    participant C as QuoteCache
+    participant DS as DataSource(adapter)
+
+    Note over C: Start() 启动 N 个 worker goroutine
+
+    loop 每次循环
+        W->>W: select { case highChan: ... case normalChan: ... }
+    end
+
+    T1->>C: 每 3 分钟触发
+    C->>C: 遍历 highSet，逐个发送 code 到 highChan
+    Note over C: highChan 无缓冲，worker 优先消费
+
+    T2->>C: 每 10 分钟触发
+    C->>C: 遍历 items[非 highSet]，逐个发送 code 到 normalChan
+
+    W->>C: 从 highChan/normalChan 接收 code
+    W->>C: 检查 TTL，未过期则跳过
+    W->>DS: GetTodayData(ctx, code)
+    DS-->>W: *StockPriceDaily
+    W->>C: 更新 cache[code]
+    Note over C: adapter 层已有令牌桶限速，QuoteCache 不内置限速
+```

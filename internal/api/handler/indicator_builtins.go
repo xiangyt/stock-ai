@@ -13,7 +13,14 @@ import (
 //
 //	子包(financial等) → indicator(NumberFieldIndicator/BaseIndicator)
 //	handler → 所有子包 (单向，无回路)
+//
+// AllBuiltins 是 allBuiltins 的导出版本，供 main.go 使用
 func allBuiltins() []indicator.Indicator {
+	return AllBuiltins()
+}
+
+// AllBuiltins 聚合所有内置指标实例（导出版本，供 main.go 使用）
+func AllBuiltins() []indicator.Indicator {
 	var result []indicator.Indicator
 	result = append(result, technical.All()...)
 	result = append(result, market.All()...)

@@ -8,6 +8,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// SubscriptionServiceRef 保存路由层创建的订阅服务引用，供 main.go 注入 Scheduler
+var SubscriptionServiceRef *service.SubscriptionService
+
 // SetupRouter 创建路由并返回 gin.Engine 实例
 func SetupRouter() *gin.Engine {
 	r := gin.Default()
@@ -33,6 +36,10 @@ func SetupRouter() *gin.Engine {
 	cfg := config.Get()
 	authSvc := service.NewAuthService(cfg.Auth.JWTSecret)
 	screenSvc := service.NewScreenService()
+	subSvc := service.NewSubscriptionService()
+
+	// 保存订阅服务引用，供 main.go 注入 Scheduler
+	SubscriptionServiceRef = subSvc
 
 	// API v1 路由组
 	apiV1 := r.Group("/api/v1")
@@ -45,6 +52,7 @@ func SetupRouter() *gin.Engine {
 		RegisterKLineRoutes(apiV1)
 		RegisterBotRoutes(apiV1, authSvc)
 		RegisterPortfolioRoutes(apiV1, authSvc)
+		RegisterSubscriptionRoutes(apiV1, authSvc, subSvc)
 	}
 
 	return r

@@ -1,19 +1,15 @@
 package handler
 
 import (
-	"bytes"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"time"
 
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
+	subPkg "stock-ai/internal/subscription"
 
 	"github.com/gin-gonic/gin"
 )
@@ -284,17 +280,17 @@ func (h *BotHandler) Test(c *gin.Context) {
 
 	switch cfg.Channel {
 	case "dingtalk":
-		payload := dingTalkPayload(msg)
+		payload := subPkg.DingTalkPayload(msg)
 		jsonBytes, _ := json.Marshal(payload)
-		httpErr = sendDingTalk(cfg.WebhookURL, cfg.Secret, jsonBytes)
+		httpErr = subPkg.SendDingTalk(cfg.WebhookURL, cfg.Secret, jsonBytes)
 	case "feishu":
-		payload := feishuPayload(msg)
+		payload := subPkg.FeishuPayload(msg)
 		jsonBytes, _ := json.Marshal(payload)
-		httpErr = postJSON(cfg.WebhookURL, jsonBytes)
+		httpErr = subPkg.PostJSON(cfg.WebhookURL, jsonBytes)
 	case "wecom":
-		payload := wecomPayload(msg)
+		payload := subPkg.WecomPayload(msg)
 		jsonBytes, _ := json.Marshal(payload)
-		httpErr = postJSON(cfg.WebhookURL, jsonBytes)
+		httpErr = subPkg.PostJSON(cfg.WebhookURL, jsonBytes)
 	default:
 		httpErr = fmt.Errorf("不支持的渠道: %s", cfg.Channel)
 	}
@@ -313,71 +309,6 @@ func (h *BotHandler) Test(c *gin.Context) {
 	}})
 }
 
-// ============================================================
-//  钉钉 Webhook（带加签）
-// ============================================================
-
-// dingTalkPayload 构建钉钉消息体
-func dingTalkPayload(content string) interface{} {
-	return map[string]interface{}{
-		"msgtype": "text",
-		"text": map[string]string{
-			"content": content,
-		},
-	}
-}
-
-// sendDingTalk 钉钉推送（带加签）
-func sendDingTalk(webhook, secret string, body []byte) error {
-	url := webhook
-	if secret != "" {
-		timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-		sign := dingTalkSign(timestamp, secret)
-		url = fmt.Sprintf("%s&timestamp=%s&sign=%s", webhook, timestamp, sign)
-	}
-	return postJSON(url, body)
-}
-
-// dingTalkSign 计算钉钉加签
-func dingTalkSign(timestamp, secret string) string {
-	stringToSign := timestamp + "\n" + secret
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(stringToSign))
-	return hex.EncodeToString(mac.Sum(nil))
-}
-
-// ============================================================
-//  飞书 Webhook
-// ============================================================
-
-// feishuPayload 构建飞书消息体
-func feishuPayload(content string) interface{} {
-	return map[string]interface{}{
-		"msg_type": "text",
-		"content": map[string]string{
-			"text": content,
-		},
-	}
-}
-
-// ============================================================
-//  企业微信 Webhook
-// ============================================================
-
-// wecomPayload 构建企微消息体
-func wecomPayload(content string) interface{} {
-	return map[string]interface{}{
-		"msgtype": "text",
-		"text": map[string]interface{}{
-			"content": content,
-		},
-	}
-}
-
-// ============================================================
-//  通用工具
-// ============================================================
-
 // parseID 从 URL 参数解析 ID，出错时直接写响应并返回 0
 func parseID(c *gin.Context) uint {
 	idStr := c.Param("id")
@@ -387,19 +318,4 @@ func parseID(c *gin.Context) uint {
 		return 0
 	}
 	return uint(id)
-}
-
-// postJSON 通用的 JSON POST 请求
-func postJSON(url string, body []byte) error {
-	resp, err := http.Post(url, "application/json; charset=utf-8", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
-	}
-	return nil
 }

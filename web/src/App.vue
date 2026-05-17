@@ -42,18 +42,8 @@
       </div>
 
       <!-- ====== 策略订阅页面 ====== -->
-      <div v-else-if="currentPage === 'strategy-subscribe'" class="page subscribe-page">
-        <header class="page-header">
-          <h1>🔔 策略订阅</h1>
-          <p>订阅社区策略或接收信号推送</p>
-        </header>
-        <div class="placeholder-content">
-          <div class="ph-card">
-            <span class="ph-icon">🚧</span>
-            <p>策略订阅功能开发中...</p>
-            <p class="ph-sub">即将支持：策略市场浏览 / 信号订阅 / 推送通知</p>
-          </div>
-        </div>
+      <div v-else-if="currentPage === 'strategy-subscribe'" class="page">
+        <SubscriptionPage />
       </div>
 
       <!-- ====== 持仓管理页面 ====== -->
@@ -88,6 +78,7 @@ import StrategyList from './components/StrategyList.vue'
 import BacktestPage from './components/BacktestPage.vue'
 import AccountManagementPage from './components/AccountManagementPage.vue'
 import BotConfigPage from './components/BotConfigPage.vue'
+import SubscriptionPage from './components/SubscriptionPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import PortfolioPage from './components/PortfolioPage.vue'
 import * as strategyApi from './api/strategies'
@@ -361,29 +352,6 @@ body {
   font-size: 14px;
   color: #999;
 }
-
-/* 占位内容 */
-.placeholder-content {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 400px;
-}
-.ph-card {
-  text-align: center;
-  background: #fff;
-  border: 1px solid #eee;
-  border-radius: 16px;
-  padding: 56px 48px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.04);
-}
-.ph-icon { font-size: 48px; display: block; margin-bottom: 16px; }
-.ph-card p {
-  font-size: 15px;
-  color: #666;
-  margin-bottom: 6px;
-}
-.ph-sub { font-size: 13px !important; color: #aaa !important; }
 
 /* 编辑页不需要额外 header */
 .strategy-edit-page .page-header { display: none; }

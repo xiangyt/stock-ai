@@ -173,6 +173,11 @@
             </label>
           </div>
           <label class="form-group">
+            <span class="form-label">建仓价格</span>
+            <input v-model.number="formOpen.entry_price" type="number" step="0.01" min="0.01" placeholder="记录计划建仓价格，选填" class="form-input" />
+            <span class="form-desc">用于记录你的目标建仓价位，方便后续对比实际成交价格</span>
+          </label>
+          <label class="form-group">
             <span class="form-label">交易日期 *</span>
             <input v-model="formOpen.trade_date" type="date" class="form-input" required />
           </label>
@@ -368,6 +373,7 @@ const formOpen = reactive({
   stock_code: '',
   quantity: undefined as number | undefined,
   price: undefined as number | undefined,
+  entry_price: undefined as number | undefined,
   trade_date: todayStr(),
   note: '',
 })
@@ -463,7 +469,7 @@ function goPage(p: number) {
 // ========== 弹窗操作 ==========
 
 function resetForms() {
-  Object.assign(formOpen, { stock_code: '', quantity: undefined, price: undefined, trade_date: todayStr(), note: '' })
+  Object.assign(formOpen, { stock_code: '', quantity: undefined, price: undefined, entry_price: undefined, trade_date: todayStr(), note: '' })
   Object.assign(formTrade, { quantity: undefined, price: undefined, trade_date: todayStr(), note: '' })
   Object.assign(formClose, { price: undefined, trade_date: todayStr(), note: '' })
   submitting.value = false
@@ -748,7 +754,7 @@ onMounted(() => {
 .portfolio-table th {
   background: #fafafa;
   padding: 10px 14px;
-  text-align: left;
+  text-align: center;
   font-weight: 600;
   color: #666;
   border-bottom: 1px solid #eee;
@@ -759,11 +765,12 @@ onMounted(() => {
   border-bottom: 1px solid #f5f5f5;
   color: #333;
   vertical-align: middle;
+  text-align: center;
 }
 .portfolio-table tbody tr:hover { background: #f9fbfd; }
 .row-closed td { opacity: 0.55; }
-.num-col { text-align: right; }
-.col-actions { text-align: right; white-space: nowrap; }
+.num-col { text-align: center; }
+.col-actions { text-align: center; white-space: nowrap; }
 
 .code-cell { font-family: 'SF Mono', Monaco, Consolas, monospace; font-weight: 600; letter-spacing: 0.5px; cursor: pointer; user-select: none; }
 .name-cell { font-weight: 500; cursor: pointer; }

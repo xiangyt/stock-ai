@@ -61,6 +61,7 @@ export interface OpenPositionPayload {
   stock_code: string
   quantity: number
   price: number
+  entry_price?: number
   trade_date: string        // YYYY-MM-DD
   note?: string
 }

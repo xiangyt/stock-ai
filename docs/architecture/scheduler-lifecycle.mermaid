@@ -1,0 +1,27 @@
+## 4.3 Scheduler 生命周期
+
+```mermaid
+flowchart TD
+    A[main.go: 初始化] --> B[NewQuoteCache dataSource]
+    B --> C[NewScheduler cache, engine, notifier]
+    C --> D[scheduler.Start]
+    D --> E[从 DB 加载所有 is_active=true 的订阅]
+    E --> F{遍历每个订阅}
+    F --> G[解析 cron 表达式 preset_type → cron 或用户自定义 cron]
+    G --> H[注册 cron job jobFunc: scheduler.runSubscription]
+    H --> F
+    F -->|遍历完毕| I[调度引擎运行中 cron 按表达式触发 job]
+
+    I --> J{job 触发}
+    J --> K[从 DB 重新加载订阅配置 热更新]
+    K --> L{is_active?}
+    L -->|false| M[跳过此订阅]
+    L -->|true| N[调用 runner.Run]
+    N --> O[记录执行日志]
+    O --> I
+
+    I -->|收到 SIGINT/SIGTERM| P[scheduler.Stop]
+    P --> Q[cron.Stop 等待当前 job 完成]
+    Q --> R[quoteCache.Stop 停止 worker]
+    R --> S[优雅关闭完成]
+```

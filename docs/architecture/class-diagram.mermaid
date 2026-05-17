@@ -1,0 +1,196 @@
+## 3. 数据结构和接口设计（类图）
+
+```mermaid
+classDiagram
+    direction TB
+
+    class Subscription {
+        +uint ID
+        +uint UID
+        +string Name
+        +uint StrategyID
+        +MonitorScope Scope
+        +string CustomStocks
+        +PresetType PresetType
+        +string CronExpr
+        +bool TradingHoursOnly
+        +bool IsActive
+        +string Template
+        +time Time LastRunAt
+        +time Time CreatedAt
+        +time Time UpdatedAt
+        +gorm DeletedAt DeletedAt
+        +TableName() string
+    }
+
+    class SubscriptionBot {
+        +uint ID
+        +uint SubscriptionID
+        +uint BotID
+        +time Time CreatedAt
+        +TableName() string
+    }
+
+    class SubscriptionLog {
+        +uint ID
+        +uint SubscriptionID
+        +time Time RunTime
+        +time Time FinishedAt
+        +MonitorScope Scope
+        +int TotalScanned
+        +int MatchCount
+        +string MatchStocks
+        +int DurationMs
+        +LogStatus Status
+        +string ErrorMsg
+        +string PushStatus
+        +time Time CreatedAt
+        +TableName() string
+    }
+
+    class MatchStock {
+        +string Code
+        +string Name
+        +float64 Price
+    }
+
+    class QuoteCache {
+        <<interface>>
+        +Get(ctx, code) *StockPriceDaily, error
+        +Promote(code)
+        +Demote(code)
+        +Refresh(ctx, code) *StockPriceDaily, error
+        +Start()
+        +Stop()
+        +Stats() CacheStats
+    }
+
+    class quoteCacheImpl {
+        -sync RWMutex mu
+        -map cache items
+        -map highSet
+        -chan string highChan
+        -chan string normalChan
+        -DataSource dataSource
+        -time Ticker highTicker
+        -time Ticker normalTicker
+        -Duration highTTL
+        -Duration normalTTL
+        -chan struct stopCh
+        -sync WaitGroup wg
+        +NewQuoteCache(ds, workerCount) QuoteCache
+        +Start()
+        +Stop()
+        +Get(ctx, code) *StockPriceDaily, error
+        +Promote(code)
+        +Demote(code)
+        -worker(id)
+        -refreshHighPriority()
+        -refreshNormalPriority()
+    }
+
+    class CacheStats {
+        +int Size
+        +int HighCount
+        +int NormalCount
+        +int64 HitCount
+        +int64 MissCount
+    }
+
+    class Notifier {
+        <<interface>>
+        +Send(ctx, bot, message) error
+        +Render(template, vars) string
+    }
+
+    class notifierImpl {
+        +Send(ctx, bot, message) error
+        +Render(template, vars) string
+    }
+
+    class Scheduler {
+        <<interface>>
+        +Start() error
+        +Stop()
+        +Trigger(subscriptionID) error
+    }
+
+    class schedulerImpl {
+        -cron Cron
+        -QuoteCache cache
+        -SubscriptionRunner runner
+        -map entryMap
+        +NewScheduler(cache, engine, notifier)
+        +Start() error
+        +Stop()
+        +Trigger(subscriptionID) error
+        -runSubscription(subscriptionID)
+        -presetTypeToCron(preset) string
+        -IsTradingDay() bool
+        -IsTradingHours() bool
+    }
+
+    class SubscriptionRunner {
+        -QuoteCache cache
+        -Engine engine
+        -Notifier notifier
+        +NewSubscriptionRunner(cache, engine, notifier)
+        +Run(ctx, sub) *RunResult, error
+        -resolveStockCodes(sub) []Stock
+        -buildStockSources(codes, tradeDate) []StockSource
+    }
+
+    class CachedStock {
+        -DBStock dbStock
+        -QuoteCache cache
+        -string code
+        -int tradeDate
+        +NewCachedStock(base, cache) *CachedStock
+        +GetDailySnapshot() *StockDailySnapshot, error
+        +GetDailyKline() []*DailyKline, error
+    }
+
+    class SubscriptionService {
+        +Create(req, uid) *SubscriptionDetail, error
+        +GetByID(id, uid) *SubscriptionDetail, error
+        +List(uid, page, pageSize, isActive) *SubscriptionListResp, error
+        +Update(id, uid, req) *SubscriptionDetail, error
+        +Delete(id, uid) error
+        +SetActive(id, uid, active) error
+        +UpdateBots(id, uid, botIDs) error
+        +GetLogs(id, uid, page, pageSize, status) *LogListResp, error
+        +TriggerRun(id, uid) *TriggerResult, error
+    }
+
+    class SubscriptionHandler {
+        -SubscriptionService svc
+        +NewSubscriptionHandler(svc) *SubscriptionHandler
+        +Create(c *gin.Context)
+        +List(c *gin.Context)
+        +GetByID(c *gin.Context)
+        +Update(c *gin.Context)
+        +Delete(c *gin.Context)
+        +SetActive(c *gin.Context)
+        +TriggerRun(c *gin.Context)
+        +UpdateBots(c *gin.Context)
+    }
+
+    Subscription "1" --> "*" SubscriptionBot : subscription_id
+    Subscription "1" --> "*" SubscriptionLog : subscription_id
+    SubscriptionLog --> "*" MatchStock : match_stocks JSON
+    Subscription --> "1" Strategy : strategy_id
+
+    QuoteCache <|.. quoteCacheImpl : implements
+    Notifier <|.. notifierImpl : implements
+    Scheduler <|.. schedulerImpl : implements
+
+    schedulerImpl --> SubscriptionRunner : uses
+    SubscriptionRunner --> QuoteCache : uses
+    SubscriptionRunner --> CachedStock : creates
+    CachedStock --> quoteCacheImpl : delegates
+    schedulerImpl --> Notifier : uses
+    SubscriptionRunner --> Notifier : uses
+
+    SubscriptionHandler --> SubscriptionService : uses
+    SubscriptionService --> Subscription : CRUD
+```

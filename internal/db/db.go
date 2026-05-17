@@ -65,6 +65,10 @@ func AutoMigrate() error {
 		// 持仓管理
 		&model.Position{},
 		&model.PositionTrade{},
+		// 策略订阅
+		&model.Subscription{},
+		&model.SubscriptionBot{},
+		&model.SubscriptionLog{},
 		// 基本面/财务数据表
 		// &model.PerformanceReport{},
 		// &model.ShareholderCount{},
