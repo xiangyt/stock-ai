@@ -142,9 +142,6 @@ func NewScheduler(r *runner.SubscriptionRunner) Scheduler {
 
 // Start 启动调度引擎
 func (s *schedulerImpl) Start() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	// 创建 cron 实例（秒级精度，6 段格式）
 	s.cron = cron.New(cron.WithSeconds())
 
