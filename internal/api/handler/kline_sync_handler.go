@@ -8,6 +8,7 @@ import (
 
 	"stock-ai/internal/db"
 	"stock-ai/internal/service"
+	"stock-ai/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -108,10 +109,10 @@ func (h *KLineSyncHandler) RunFill(c *gin.Context) {
 	}
 	periods := parsePeriods(req.Periods)
 
-	if time.Now().Hour() > 6 && time.Now().Hour() < 16 {
+	if utils.IsTradingDay() && time.Now().Hour() > 6 && time.Now().Hour() < 16 {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": "补全金额任务仅在16点-第二天6点执行",
+			"message": "补全金额任务在交易日7-16点不执行",
 		})
 		return
 	}

@@ -309,7 +309,7 @@ func parseInt64(s string) int64 {
 // formatTradeDate 格式化交易日期
 func formatTradeDate(dateInt int) string {
 	if dateInt == 0 {
-		return time.Now().Format("2006-01-02")
+		return ""
 	}
 	dateStr := strconv.Itoa(dateInt)
 	if len(dateStr) == 8 {

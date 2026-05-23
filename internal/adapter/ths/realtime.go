@@ -88,7 +88,9 @@ func (a *Adapter) parseTodayDataResponse(tsCode, thsCode, body string) (*adapter
 	amountStr := getString(dataMap, "19")
 
 	td, _ := strconv.Atoi(tradeDateStr)
-
+	if td == 0 {
+		return nil, fmt.Errorf("body is invalid")
+	}
 	return &adapter.StockPriceDaily{
 		Code:   tsCode,
 		Date:   formatTradeDate(td),
