@@ -77,16 +77,19 @@ const props = defineProps<{
 
 const emit = defineEmits<{ change: [key: string]; logout: []; profile: [] }>()
 
-// 扁平化一级菜单（管理员可见账户管理）
+// 扁平化一级菜单（管理员不展示策略订阅和持仓管理）
 const menuItems = computed(() => {
-  const base = [
+  const isAdmin = props.userInfo?.role === 'admin'
+  const base: { key: string; label: string; icon: string }[] = [
     { key: 'strategy-list', label: '策略列表', icon: '📂' },
     { key: 'strategy-backtest', label: '策略回测', icon: '📊' },
-    { key: 'strategy-subscribe', label: '策略订阅', icon: '🔔' },
-    { key: 'my-positions', label: '持仓管理', icon: '💼' },
-    { key: 'bot-config', label: '机器人配置', icon: '🤖' },
   ]
-  if (props.userInfo?.role === 'admin') {
+  if (!isAdmin) {
+    base.push({ key: 'strategy-subscribe', label: '策略订阅', icon: '🔔' })
+    base.push({ key: 'my-positions', label: '持仓管理', icon: '💼' })
+  }
+  base.push({ key: 'bot-config', label: '机器人配置', icon: '🤖' })
+  if (isAdmin) {
     base.push({ key: 'account-management', label: '账户管理', icon: '👥' })
     base.push({ key: 'data-collect', label: '数据采集', icon: '📡' })
   }

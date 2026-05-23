@@ -205,7 +205,7 @@ func (r *DataCollectRunner) handleStockDetailSync(ctx context.Context, task *mod
 func (r *DataCollectRunner) handleDailyKlineInc(ctx context.Context, task *model.DataCollectTask) (string, error) {
 	periods := parsePeriodsFromParams(task.Params)
 	results := GetSyncKLineService().SyncDailyForAll(ctx, periods)
-	return formatSyncResults(results), nil
+	return formatSyncResults(periods, results), nil
 }
 
 // handleEastmoneyFull 处理【东财数据全量补全】(Task 3)
@@ -216,7 +216,7 @@ func (r *DataCollectRunner) handleEastmoneyFull(ctx context.Context, task *model
 	}
 	periods := parsePeriodsFromParams(task.Params)
 	results := GetSyncKLineService().FillMissingAmount(ctx, periods)
-	return formatSyncResults(results), nil
+	return formatSyncResults(periods, results), nil
 }
 
 // handleFinanceReportSync 处理【财报同步】(Task 4)
@@ -323,10 +323,10 @@ func parsePeriodsFromParams(paramsJSON string) []db.KLinePeriod {
 }
 
 // formatSyncResults 格式化批量同步结果，每个周期一行，用 \n 拼接。
-func formatSyncResults(results []SyncBatchResult) string {
+func formatSyncResults(periods []db.KLinePeriod, results []SyncBatchResult) string {
 	lines := make([]string, 0, len(results))
-	for _, r := range results {
-		lines = append(lines, fmt.Sprintf("成功=%d 跳过=%d 失败=%d", r.Success, r.SkipNoDelta, r.Fail))
+	for i, r := range results {
+		lines = append(lines, fmt.Sprintf("[%s]成功=%d 跳过=%d 失败=%d", periods[i], r.Success, r.SkipNoDelta, r.Fail))
 	}
 	return strings.Join(lines, "\n")
 }
