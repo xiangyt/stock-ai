@@ -48,7 +48,7 @@ type redTopResult struct {
 	DEA []float64
 
 	// KDJ
-	K []float64
+	K  []float64
 	D_ []float64
 
 	// Raw prices (oldest-first) for pattern signals
@@ -341,27 +341,27 @@ func NewSignalRedTopExtremeBottom() *SignalRedTopExtremeBottom {
 		BaseSignal: indicator.NewBaseSignal(
 			"01",
 			"极底",
-			"Info三连阴转阳且平均线<0.5，出现极端底部信号",
+			"极底",
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedTopExtremeBottomLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramRedTopExtremeBottomLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
-				Params:   map[string]any{paramRedTopExtremeBottomLookback: float64(5)},
+				Params:   map[string]any{paramRedTopExtremeBottomLookback: float64(1)},
 			},
 		),
 	}
 }
 
 func (s *SignalRedTopExtremeBottom) Evaluate(r *redTopResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedTopExtremeBottomLookback, 5))
+	lookback := int(config.GetFloat64(paramRedTopExtremeBottomLookback, 1))
 	n := len(r.Info)
 	ref1 := refBool(r.Info, 1)
 	ref2 := refBool(r.Info, 2)
@@ -402,20 +402,20 @@ func NewSignalRedTopRise() *SignalRedTopRise {
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedTopRiseLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramRedTopRiseLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
-				Params:   map[string]any{paramRedTopRiseLookback: float64(5)},
+				Params:   map[string]any{paramRedTopRiseLookback: float64(1)},
 			},
 		),
 	}
 }
 
 func (s *SignalRedTopRise) Evaluate(r *redTopResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedTopRiseLookback, 5))
+	lookback := int(config.GetFloat64(paramRedTopRiseLookback, 1))
 	n := len(r.Info)
 	refInfo1 := refBool(r.Info, 1)
 	refInfo2 := refBool(r.Info, 2)
@@ -466,20 +466,20 @@ func NewSignalRedTopBottom() *SignalRedTopBottom {
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedTopBottomLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramRedTopBottomLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
-				Params:   map[string]any{paramRedTopBottomLookback: float64(5)},
+				Params:   map[string]any{paramRedTopBottomLookback: float64(1)},
 			},
 		),
 	}
 }
 
 func (s *SignalRedTopBottom) Evaluate(r *redTopResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedTopBottomLookback, 5))
+	lookback := int(config.GetFloat64(paramRedTopBottomLookback, 1))
 	n := len(r.Closes)
 	refOpens := ref(r.Opens, 1)
 	refCloses := ref(r.Closes, 1)
@@ -526,20 +526,20 @@ func NewSignalRedTopAbsoluteBottom() *SignalRedTopAbsoluteBottom {
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedTopAbsoluteBottomLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramRedTopAbsoluteBottomLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
-				Params:   map[string]any{paramRedTopAbsoluteBottomLookback: float64(5)},
+				Params:   map[string]any{paramRedTopAbsoluteBottomLookback: float64(1)},
 			},
 		),
 	}
 }
 
 func (s *SignalRedTopAbsoluteBottom) Evaluate(r *redTopResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedTopAbsoluteBottomLookback, 5))
+	lookback := int(config.GetFloat64(paramRedTopAbsoluteBottomLookback, 1))
 	n := len(r.Closes)
 
 	signals := make([]float64, n)
@@ -582,20 +582,20 @@ func NewSignalRedTopSeeRise() *SignalRedTopSeeRise {
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedTopSeeRiseLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramRedTopSeeRiseLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
-				Params:   map[string]any{paramRedTopSeeRiseLookback: float64(5)},
+				Params:   map[string]any{paramRedTopSeeRiseLookback: float64(1)},
 			},
 		),
 	}
 }
 
 func (s *SignalRedTopSeeRise) Evaluate(r *redTopResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedTopSeeRiseLookback, 5))
+	lookback := int(config.GetFloat64(paramRedTopSeeRiseLookback, 1))
 	n := len(r.Closes)
 	refCloses := ref(r.Closes, 1)
 	refVolumes := ref(r.Volumes, 1)
@@ -655,20 +655,20 @@ func NewSignalRedTopGoldenCross() *SignalRedTopGoldenCross {
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedTopGoldenCrossLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramRedTopGoldenCrossLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
-				Params:   map[string]any{paramRedTopGoldenCrossLookback: float64(5)},
+				Params:   map[string]any{paramRedTopGoldenCrossLookback: float64(1)},
 			},
 		),
 	}
 }
 
 func (s *SignalRedTopGoldenCross) Evaluate(r *redTopResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedTopGoldenCrossLookback, 5))
+	lookback := int(config.GetFloat64(paramRedTopGoldenCrossLookback, 1))
 	n := len(r.DIF)
 
 	signals := make([]float64, n)

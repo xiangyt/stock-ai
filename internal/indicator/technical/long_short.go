@@ -386,14 +386,14 @@ func NewSignalLongShortPrepareBuy() *SignalLongShortPrepareBuy {
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
 				Params: map[string]any{
-					paramLongShortLookback: float64(5),
+					paramLongShortLookback: float64(1),
 				},
 			},
 		),
@@ -426,14 +426,14 @@ func NewSignalLongShortReadyBuy() *SignalLongShortReadyBuy {
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
 				Params: map[string]any{
-					paramLongShortLookback: float64(5),
+					paramLongShortLookback: float64(1),
 				},
 			},
 		),
@@ -466,14 +466,14 @@ func NewSignalLongShortActualBuy() *SignalLongShortActualBuy {
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
 				Params: map[string]any{
-					paramLongShortLookback: float64(5),
+					paramLongShortLookback: float64(1),
 				},
 			},
 		),
@@ -506,14 +506,14 @@ func NewSignalLongShortBuyStars() *SignalLongShortBuyStars {
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
 				Params: map[string]any{
-					paramLongShortLookback: float64(5),
+					paramLongShortLookback: float64(1),
 				},
 			},
 		),
@@ -546,14 +546,14 @@ func NewSignalLongShortPrepareSell() *SignalLongShortPrepareSell {
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
 				Params: map[string]any{
-					paramLongShortLookback: float64(5),
+					paramLongShortLookback: float64(1),
 				},
 			},
 		),
@@ -586,14 +586,14 @@ func NewSignalLongShortReadySell() *SignalLongShortReadySell {
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
 				Params: map[string]any{
-					paramLongShortLookback: float64(5),
+					paramLongShortLookback: float64(1),
 				},
 			},
 		),
@@ -626,14 +626,14 @@ func NewSignalLongShortActualSell() *SignalLongShortActualSell {
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
 				Params: map[string]any{
-					paramLongShortLookback: float64(5),
+					paramLongShortLookback: float64(1),
 				},
 			},
 		),
@@ -666,14 +666,14 @@ func NewSignalLongShortSellStars() *SignalLongShortSellStars {
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
 				Params: map[string]any{
-					paramLongShortLookback: float64(5),
+					paramLongShortLookback: float64(1),
 				},
 			},
 		),
@@ -692,7 +692,7 @@ func (s *SignalLongShortSellStars) Evaluate(r *longShortResult, config *indicato
 // ============================================================================
 
 func evalLongShortSignal(signalData []float64, signalName string, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramLongShortLookback, 5))
+	lookback := int(config.GetFloat64(paramLongShortLookback, 1))
 	n := len(signalData)
 
 	start := n - lookback
