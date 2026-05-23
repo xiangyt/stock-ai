@@ -29,11 +29,14 @@ const (
 
 // SnapshotBatchResult 批量计算汇总
 type SnapshotBatchResult struct {
-	Mode        SnapshotMode `json:"mode"`
-	Total       int          `json:"total"`
-	Success     int          `json:"success"`
-	Fail        int          `json:"fail"`
-	CostSeconds float64      `json:"cost_seconds"`
+	Mode               SnapshotMode `json:"mode"`
+	TotalStocks        int          `json:"total_stocks"`        // 总股票数（有快照数据的股票数）
+	SuccessStocks      int          `json:"success_stocks"`      // 成功处理的股票数（快照全部写入成功）
+	FailStocks         int          `json:"fail_stocks"`         // 失败股票数（获取K线或计算失败）
+	TotalSnapshots     int          `json:"total_snapshots"`     // 总快照条数
+	SuccessSnapshots   int          `json:"success_snapshots"`   // 成功写入的快照条数
+	FailSnapshots      int          `json:"fail_snapshots"`      // 写入失败的快照条数
+	CostSeconds        float64      `json:"cost_seconds"`
 }
 
 // ========== 服务入口 ==========
@@ -96,7 +99,7 @@ func (s *SnapshotService) calcSingleStockAllDates(ctx context.Context, code stri
 		Mode: SnapshotSingleStockAllDates,
 	}
 
-	// ---- Step 1.5: 从DB加载快照数据，获取trade_date最大的那条记录----
+	// ---- Step1.5: 从DB加载快照数据，获取trade_date最大的那条记录----
 	ss, _ := db.FindSnapshotsByStock(code, 0, 0, 1, false)
 	var maxDate int
 	if len(ss) > 0 {
@@ -105,7 +108,7 @@ func (s *SnapshotService) calcSingleStockAllDates(ctx context.Context, code stri
 
 	snapshots, err := s.calcStockAfterDate(ctx, code, maxDate)
 	if err != nil {
-		result.Fail = 1
+		result.FailStocks = 1
 		result.CostSeconds = time.Since(start).Seconds()
 		return result
 	}
@@ -121,14 +124,24 @@ func (s *SnapshotService) calcSingleStockAllDates(ctx context.Context, code stri
 		}
 	}
 
-	result.Total = len(snapshots)
-	result.Success = successCount
-	result.Fail = result.Total - successCount
+	result.TotalSnapshots = len(snapshots)
+	result.SuccessSnapshots = successCount
+	result.FailSnapshots = result.TotalSnapshots - successCount
 	result.CostSeconds = time.Since(start).Seconds()
 
-	if result.Total > 0 {
-		log.Printf("[snapshot] 单股票全日期完成 [%s]: 快照=%d 成功=%d 失败=%d 耗时=%.1fs",
-			code, len(snapshots), result.Success, result.Fail, result.CostSeconds)
+	// 股票维度：有快照且全部写入成功才算成功，否则算失败
+	if result.TotalSnapshots > 0 {
+		result.TotalStocks = 1
+		if result.FailSnapshots == 0 {
+			result.SuccessStocks = 1
+		} else {
+			result.FailStocks = 1
+		}
+	}
+
+	if result.TotalSnapshots > 0 {
+		log.Printf("[snapshot] 单股票全日期完成 [%s]: 快照=%d 写入成功=%d 写入失败=%d 耗时=%.1fs",
+			code, result.TotalSnapshots, result.SuccessSnapshots, result.FailSnapshots, result.CostSeconds)
 	}
 	return result
 }
@@ -220,14 +233,20 @@ func (s *SnapshotService) calcAllStocksAllDates(ctx context.Context) SnapshotBat
 		}
 
 		br := s.calcSingleStockAllDates(ctx, stock.Code)
-		result.Total += br.Total
-		result.Success += br.Success
-		result.Fail += br.Fail
+		result.TotalStocks += br.TotalStocks
+		result.SuccessStocks += br.SuccessStocks
+		result.FailStocks += br.FailStocks
+		result.TotalSnapshots += br.TotalSnapshots
+		result.SuccessSnapshots += br.SuccessSnapshots
+		result.FailSnapshots += br.FailSnapshots
 	}
 
 	result.CostSeconds = time.Since(allStart).Seconds()
 	log.Println("==============================")
-	log.Printf("全量快照计算完成! 成功=%d 失败=%d 耗时=%.1fs", result.Success, result.Fail, result.CostSeconds)
+	log.Printf("全量快照计算完成! 股票:总数=%d 成功=%d 失败=%d | 快照:总数=%d 写入成功=%d 写入失败=%d | 耗时=%.1fs",
+		result.TotalStocks, result.SuccessStocks, result.FailStocks,
+		result.TotalSnapshots, result.SuccessSnapshots, result.FailSnapshots,
+		result.CostSeconds)
 	log.Println("==============================")
 
 	return result

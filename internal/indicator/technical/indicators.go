@@ -9,5 +9,9 @@ func All() []indicator.Indicator {
 	return []indicator.Indicator{
 		NewMa(),
 		NewPattern(),
+		NewRedThree(),
+		NewChanLongShort(),
+		NewTopBottom(),
+		NewRedTop(),
 	}
 }

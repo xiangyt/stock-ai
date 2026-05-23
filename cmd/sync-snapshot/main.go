@@ -107,10 +107,14 @@ func initAll(configPath string) error {
 func printResult(result datacollect.SnapshotBatchResult) {
 	if result.Mode == "all_stocks_all_dates" {
 		fmt.Println("==============================")
-		fmt.Printf("全部完成! 成功=%d 失败=%d 耗时=%.1fs\n", result.Success, result.Fail, result.CostSeconds)
+		fmt.Printf("全部完成! 股票:成功=%d 失败=%d | 快照:写入成功=%d 写入失败=%d | 耗时=%.1fs\n",
+			result.SuccessStocks, result.FailStocks,
+			result.SuccessSnapshots, result.FailSnapshots,
+			result.CostSeconds)
 		fmt.Println("==============================")
 	} else {
-		fmt.Printf("[单股票] 成功=%d 失败=%d 耗时=%.1fs\n",
-			result.Success, result.Fail, result.CostSeconds)
+		fmt.Printf("[单股票] 快照=%d 写入成功=%d 写入失败=%d 耗时=%.1fs\n",
+			result.TotalSnapshots, result.SuccessSnapshots, result.FailSnapshots,
+			result.CostSeconds)
 	}
 }

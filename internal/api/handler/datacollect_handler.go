@@ -616,8 +616,10 @@ func (h *DataCollectHandler) Calc(c *gin.Context) {
 
 	go func() {
 		result := datacollect.GetSnapshotService().Calc(context.Background(), strings.TrimSpace(req.Code))
-		log.Printf("[snapshot] 全部完成! 成功=%d 失败=%d 耗时=%.1fs",
-			result.Success, result.Fail, result.CostSeconds)
+		log.Printf("[snapshot] 全部完成! 股票:成功=%d 失败=%d | 快照:写入成功=%d 写入失败=%d | 耗时=%.1fs",
+			result.SuccessStocks, result.FailStocks,
+			result.SuccessSnapshots, result.FailSnapshots,
+			result.CostSeconds)
 	}()
 
 	c.JSON(http.StatusOK, gin.H{
