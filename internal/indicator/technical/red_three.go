@@ -230,7 +230,7 @@ func calcRedThree(klines []*model.DailyKline) *redThreeResult {
 //  SignalRedThreeBuy — 买入信号
 //
 //  判定规则: QUSHI 上穿 JIANDI(1)，即 MAIRU == 100
-//  参数: lookback_days — 回看天数（默认 5），在近 N 日内出现买入信号即通过
+//  参数: lookback_days — 回看天数（默认 1），在近 N 日内出现买入信号即通过
 //
 //  Seq: "01" → 完整内置SignalID = 01101001
 // ============================================================================
@@ -245,22 +245,22 @@ func NewSignalRedThreeBuy() *SignalRedThreeBuy {
 	return &SignalRedThreeBuy{
 		BaseSignal: indicator.NewBaseSignal(
 			"01",
-			"买入",
-			"QUSHI上穿JIANDI，出现红三角金叉买入信号",
+			"红三角",
+			"红三角",
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedThreeBuyLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramRedThreeBuyLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
 				Params: map[string]any{
-					paramRedThreeBuyLookback: float64(5),
+					paramRedThreeBuyLookback: float64(1),
 				},
 			},
 		),
@@ -268,7 +268,7 @@ func NewSignalRedThreeBuy() *SignalRedThreeBuy {
 }
 
 func (s *SignalRedThreeBuy) Evaluate(r *redThreeResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedThreeBuyLookback, 5))
+	lookback := int(config.GetFloat64(paramRedThreeBuyLookback, 1))
 	n := len(r.MAIRU)
 
 	// 检查最近 lookback 天（data[n-1]=最新）是否有买入信号
@@ -292,7 +292,7 @@ func (s *SignalRedThreeBuy) Evaluate(r *redThreeResult, config *indicator.Signal
 //  SignalRedThreeDaDi — 大底信号
 //
 //  判定规则: (MA5-Close)/Close > 4% 且 (MA10-MA5)/MA5 > 4%，即 DADI == 100
-//  参数: lookback_days — 回看天数（默认 5），在近 N 日内出现大底信号即通过
+//  参数: lookback_days — 回看天数（默认 1），在近 N 日内出现大底信号即通过
 //
 //  Seq: "02" → 完整内置SignalID = 01101002
 // ============================================================================
@@ -307,22 +307,22 @@ func NewSignalRedThreeDaDi() *SignalRedThreeDaDi {
 	return &SignalRedThreeDaDi{
 		BaseSignal: indicator.NewBaseSignal(
 			"02",
-			"大底",
-			"价格严重偏离均线，MA5低于收盘价4%以上且MA10低于MA5 4%以上",
+			"红箭头",
+			"红箭头",
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedThreeDaDiLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramRedThreeDaDiLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
 				Params: map[string]any{
-					paramRedThreeDaDiLookback: float64(5),
+					paramRedThreeDaDiLookback: float64(1),
 				},
 			},
 		),
@@ -330,7 +330,7 @@ func NewSignalRedThreeDaDi() *SignalRedThreeDaDi {
 }
 
 func (s *SignalRedThreeDaDi) Evaluate(r *redThreeResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedThreeDaDiLookback, 5))
+	lookback := int(config.GetFloat64(paramRedThreeDaDiLookback, 1))
 	n := len(r.DADI)
 
 	start := n - lookback
@@ -354,7 +354,7 @@ func (s *SignalRedThreeDaDi) Evaluate(r *redThreeResult, config *indicator.Signa
 //
 //  判定规则: 100 下穿 QUSHI（即 QUSHI 从 >=100 跌到 <100，出现死叉）
 //  计算方式: CROSS(100, QUSHI)，即前一日 100 <= QUSHI 且 今日 100 > QUSHI
-//  参数: lookback_days — 回看天数（默认 5），在近 N 日内出现警告信号即通过
+//  参数: lookback_days — 回看天数（默认 1），在近 N 日内出现警告信号即通过
 //
 //  Seq: "03" → 完整内置SignalID = 01101003
 // ============================================================================
@@ -369,8 +369,8 @@ func NewSignalRedThreeWarning() *SignalRedThreeWarning {
 	return &SignalRedThreeWarning{
 		BaseSignal: indicator.NewBaseSignal(
 			"03",
-			"警告",
-			"QUSHI下穿100，出现红三角死叉警告信号",
+			"注意",
+			"注意",
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
@@ -384,7 +384,7 @@ func NewSignalRedThreeWarning() *SignalRedThreeWarning {
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
 				Params: map[string]any{
-					paramRedThreeWarningLookback: float64(5),
+					paramRedThreeWarningLookback: float64(1),
 				},
 			},
 		),
@@ -392,7 +392,7 @@ func NewSignalRedThreeWarning() *SignalRedThreeWarning {
 }
 
 func (s *SignalRedThreeWarning) Evaluate(r *redThreeResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedThreeWarningLookback, 5))
+	lookback := int(config.GetFloat64(paramRedThreeWarningLookback, 1))
 	n := len(r.QUSHI)
 
 	// 构造恒为 100 的数组，调用 CROSS(100, QUSHI) — 100 上穿 QUSHI，即 QUSHI 从 >=100 跌破 100
