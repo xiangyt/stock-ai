@@ -303,7 +303,7 @@ func vecCap(a []float64, cap float64) []float64 {
 //  SignalTopBottomRed — 红柱信号
 //
 //  判定规则: A > 5（红色柱状有效买入信号，参考原公式 Buy 阈值）
-//  参数: lookback_days — 回看天数（默认 5），在近 N 日内出现红柱信号即通过
+//  参数: lookback_days — 回看天数（默认 1），在近 N 日内出现红柱信号即通过
 //
 //  Seq: "01" → 完整内置SignalID = 01100001
 // ============================================================================
@@ -364,7 +364,7 @@ func (s *SignalTopBottomRed) Evaluate(r *topBottomResult, config *indicator.Sign
 //  SignalTopBottomGreen — 绿柱信号
 //
 //  判定规则: A1 > 0（绿色柱状出现）
-//  参数: lookback_days — 回看天数（默认 5），在近 N 日内出现绿柱信号即通过
+//  参数: lookback_days — 回看天数（默认 1），在近 N 日内出现绿柱信号即通过
 //
 //  Seq: "02" → 完整内置SignalID = 01100002
 // ============================================================================
