@@ -69,7 +69,7 @@ func (a *Adapter) GetIndexDailyKLine(ctx context.Context, code string, startTime
 	results := make([][]adapter.StockPriceDaily, len(tasks))
 	err := utils.ConcurrentExec(tasks, 4, func(i int, t yearTask) error {
 		url := fmt.Sprintf("https://d.10jqka.com.cn/v4/line/%s/%s/%s.js", zsCode, klineType, t.year)
-		body, err := a.makeTHSRequest(url)
+		body, err := a.makeTHSRequest(context.Background(), url)
 		if err != nil {
 			return fmt.Errorf("year %s request failed: %w", t.year, err)
 		}

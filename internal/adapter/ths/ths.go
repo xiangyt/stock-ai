@@ -89,25 +89,25 @@ func (a *Adapter) GetQuotaInfo() adapter.QuotaInfo { return a.quota }
 // ========== 财务数据（空实现）==========
 
 func (a *Adapter) GetPerformanceReports(_ context.Context, _ string) ([]adapter.PerformanceReport, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, adapter.ErrNotImplemented
 }
 
 func (a *Adapter) GetLatestPerformanceReport(_ context.Context, _ string) (*adapter.PerformanceReport, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, adapter.ErrNotImplemented
 }
 
 func (a *Adapter) GetShareholderCounts(_ context.Context, _ string) ([]adapter.ShareholderCount, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, adapter.ErrNotImplemented
 }
 
 func (a *Adapter) GetLatestShareholderCount(_ context.Context, _ string) (*adapter.ShareholderCount, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, adapter.ErrNotImplemented
 }
 
 func (a *Adapter) GetShareChanges(_ context.Context, _ string) ([]adapter.ShareChange, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, adapter.ErrNotImplemented
 }
 
 func (a *Adapter) GetInstitutionalHoldings(_ context.Context, _ string) ([]adapter.InstitutionalHolding, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, adapter.ErrNotImplemented
 }

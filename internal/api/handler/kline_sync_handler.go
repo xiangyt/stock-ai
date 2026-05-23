@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"strings"
@@ -68,7 +69,7 @@ func (h *KLineSyncHandler) RunInit(c *gin.Context) {
 	periods := parsePeriods(req.Periods)
 
 	go func() {
-		results := h.service.InitAllStocks(c.Request.Context(), periods)
+		results := h.service.InitAllStocks(context.Background(), periods)
 		logSyncResults("init", results)
 	}()
 
@@ -89,7 +90,7 @@ func (h *KLineSyncHandler) RunDaily(c *gin.Context) {
 	periods := parsePeriods(req.Periods)
 
 	go func() {
-		results := h.service.SyncDailyForAll(c.Request.Context(), periods)
+		results := h.service.SyncDailyForAll(context.Background(), periods)
 		logSyncResults("daily", results)
 	}()
 
@@ -117,7 +118,7 @@ func (h *KLineSyncHandler) RunFill(c *gin.Context) {
 		return
 	}
 	go func() {
-		results := h.service.FillMissingAmount(c.Request.Context(), periods)
+		results := h.service.FillMissingAmount(context.Background(), periods)
 		logSyncResults("fill", results)
 	}()
 

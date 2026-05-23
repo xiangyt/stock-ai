@@ -41,10 +41,15 @@ data_sources:
     provider: eastmoney
     cookie: ""  # 从浏览器F12复制完整Cookie字符串，或设置 EM_COOKIE 环境变量
 
-  # - name: ths
-  #   enabled: true
-  #   provider: ths
-  #   cookie: ""  # 设置 THS_COOKIE 环境变量
+  - name: ths
+    enabled: true
+    provider: ths
+    cookie: ""  # 设置 THS_COOKIE 环境变量
+  
+  - name: tencentstock
+    enabled: true
+    provider: tencentstock
+    cookie: ""  # 设置 THS_COOKIE 环境变量
 
 auth:
   jwt_secret: "change-me-to-a-random-secret"   # JWT 签名密钥（生产环境务必修改）

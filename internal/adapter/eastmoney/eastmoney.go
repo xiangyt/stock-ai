@@ -99,5 +99,5 @@ func (a *Adapter) GetQuotaInfo() adapter.QuotaInfo {
 }
 
 func (a *Adapter) GetIndexDailyKLine(_ context.Context, _ string, _, _ time.Time, _ string) ([]adapter.StockPriceDaily, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, adapter.ErrNotImplemented
 }

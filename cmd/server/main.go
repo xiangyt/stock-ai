@@ -13,6 +13,7 @@ import (
 
 	"stock-ai/internal/adapter"
 	"stock-ai/internal/adapter/eastmoney"
+	"stock-ai/internal/adapter/tencentstock"
 	"stock-ai/internal/adapter/ths"
 	"stock-ai/internal/api/handler"
 	"stock-ai/internal/api/router"
@@ -75,6 +76,12 @@ func main() {
 			}
 		case ths.AdapterName:
 			ds = ths.New()
+			if err := ds.Init(nil); err != nil {
+				log.Printf("初始化 %s 失败: %v", dsCfg.Name, err)
+				continue
+			}
+		case tencentstock.AdapterName:
+			ds = tencentstock.New()
 			if err := ds.Init(nil); err != nil {
 				log.Printf("初始化 %s 失败: %v", dsCfg.Name, err)
 				continue

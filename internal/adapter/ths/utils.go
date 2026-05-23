@@ -17,8 +17,8 @@ import (
 // ========== HTTP 请求辅助 ==========
 
 // doRequest 发送请求并处理限流、gzip解压
-func (a *Adapter) doRequest(req *http.Request) (*http.Response, error) {
-	if err := a.limiter.Wait(context.Background()); err != nil {
+func (a *Adapter) doRequest(ctx context.Context, req *http.Request) (*http.Response, error) {
+	if err := a.limiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("rate limit wait failed: %v", err)
 	}
 
@@ -52,10 +52,10 @@ func (a *Adapter) readBody(resp *http.Response) ([]byte, error) {
 }
 
 // makeTHSRequest 发送同花顺通用请求
-func (a *Adapter) makeTHSRequest(url string) (string, error) {
-	req, _ := http.NewRequest("GET", url, nil)
+func (a *Adapter) makeTHSRequest(ctx context.Context, url string) (string, error) {
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 	a.setTHSHeaders(req, "https://stockpage.10jqka.com.cn/")
-	resp, err := a.doRequest(req)
+	resp, err := a.doRequest(ctx, req)
 	if err != nil {
 		return "", err
 	}
@@ -68,13 +68,13 @@ func (a *Adapter) makeTHSRequest(url string) (string, error) {
 }
 
 // makeTodayDataRequest 发送当日数据请求（完整cookie + hexin-v）
-func (a *Adapter) makeTodayDataRequest(url string) (string, error) {
-	req, _ := http.NewRequest("GET", url, nil)
+func (a *Adapter) makeTodayDataRequest(ctx context.Context, url string) (string, error) {
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 	a.setTHSTodayHeaders(req)
 	hexinV := generateWencaiToken()
 	a.setTHSCookie(req, hexinV)
 	req.Header.Set("Hexin-V", hexinV)
-	resp, err := a.doRequest(req)
+	resp, err := a.doRequest(ctx, req)
 	if err != nil {
 		return "", err
 	}

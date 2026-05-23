@@ -9,6 +9,7 @@ import (
 
 	"stock-ai/internal/adapter"
 	"stock-ai/internal/adapter/eastmoney"
+	"stock-ai/internal/adapter/tencentstock"
 	"stock-ai/internal/adapter/ths"
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
@@ -254,8 +255,8 @@ func (s *SyncKLineService) syncSingleInit(ctx context.Context, code string, peri
 // ---------- Daily 模式 ----------
 //
 // 策略：以全量数据为基准，对齐截断重写 + 当期精刷
-//   ① 同花顺全量采集 → 完整数据集 A
-//   ② DB 最新 N 条      → 本地窗口 W（默认取尾部5条做匹配）
+//   ① DB 最新 N 条      → 本地窗口 W（默认取尾部5条做匹配）
+//   ② 同花顺全量采集 → 完整数据集 A
 //   ③ A ∩ W 匹配找锚定日期 D（W 中能在 A 里找到对应的那条）
 //   ④ DELETE trade_date > D 的所有记录（清除脏/过期数据）
 //   ⑤ A 全量 upsert（补齐缺口 + 覆盖旧值）
@@ -267,7 +268,34 @@ const dailyAlignWindow = 5 // 对齐窗口大小：DB 取最新 N 条和全量�
 
 // syncSingleDaily 每日增量：全量对齐截断 + 当期精刷
 func (s *SyncKLineService) syncSingleDaily(ctx context.Context, code string, period db.KLinePeriod, result *SyncResult) SyncResult {
-	// Step ①: 同花顺全量采集
+	// Step ①: DB 最新 N 条
+	log.Printf("  [%s][%s] Step ① 查询DB最新%d条...", code, db.KLineLabel(period), dailyAlignWindow)
+	dbDates, dbErr := db.FindLatestNKlinesAny(period, code, dailyAlignWindow)
+	if dbErr != nil {
+		result.Error = fmt.Errorf("查询DB最新数据失败: %w", dbErr)
+		return *result
+	}
+	log.Printf("  [%s][%s] Step ① 完成, dbDates=%v", code, db.KLineLabel(period), dbDates)
+
+	// Step ②: 当期数据采集
+	log.Printf("  [%s][%s] Step ② 调用腾讯 GetTodayData...", code, db.KLineLabel(period))
+	currentItem, currErr := s.fetchCurrentPeriodData(ctx, tencentstock.AdapterName, code, period)
+	if currErr != nil {
+		log.Printf("  [%s][%s] 腾讯失败: %s, 尝试同花顺...", code, db.KLineLabel(period), currErr)
+		currentItem, currErr = s.fetchCurrentPeriodData(ctx, ths.AdapterName, code, period)
+		if currErr != nil {
+			result.Error = fmt.Errorf("同花顺当期采集失败: %w", currErr)
+			return *result
+		}
+	}
+	log.Printf("  [%s][%s] Step ② 完成, date=%s", code, db.KLineLabel(period), currentItem.Date)
+	if len(dbDates) > 0 && parseTradeDate(currentItem.Date) == dbDates[0] {
+		log.Printf("  [%s][%s] 无需更新 (DB最新=%d, 当期=%s)", code, db.KLineLabel(period), dbDates[0], currentItem.Date)
+		result.SourceUsed = "ths"
+		return *result
+	}
+
+	log.Printf("  [%s][%s] Step ③ 采集同花顺全量数据...", code, db.KLineLabel(period))
 	fullData, fetchErr := s.fetchFullKLines(ctx, ths.AdapterName, code, period, "")
 	if fetchErr != nil {
 		result.Error = fmt.Errorf("同花顺全量采集失败: %w", fetchErr)
@@ -276,25 +304,12 @@ func (s *SyncKLineService) syncSingleDaily(ctx context.Context, code string, per
 		result.Error = fmt.Errorf("同花顺全量采集结果为空")
 		return *result
 	}
-	currentItem, currErr := s.fetchCurrentPeriodData(ctx, ths.AdapterName, code, period)
-	if currErr != nil {
-		result.Error = fmt.Errorf("同花顺当期采集失败: %w", currErr)
-		return *result
-	}
+
 	// 同花顺有时候最后一条数据有问题,日k追加，其他覆盖
 	if period == db.KLinePeriodDaily && fullData[len(fullData)-1].Date != currentItem.Date {
 		fullData = append(fullData, *currentItem)
 	} else {
 		fullData[len(fullData)-1] = *currentItem
-	}
-
-	// Step ②: DB 最新 N 条
-	dbDates, dbErr := db.FindLatestNKlinesAny(period, code, dailyAlignWindow)
-	if dbErr != nil {
-		if !errors.Is(dbErr, gorm.ErrRecordNotFound) {
-			result.Error = fmt.Errorf("查询DB最新数据失败: %w", dbErr)
-			return *result
-		}
 	}
 
 	// Step ③: 找锚定日期 — DB 尾部数据在 fullData 中能找到的最近一条

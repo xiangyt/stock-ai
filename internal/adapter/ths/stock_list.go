@@ -49,7 +49,7 @@ func (a *Adapter) fetchStockListPage(page int) ([]adapter.StockBasic, bool, erro
 	a.setTHSCookie(req, hexinV)
 	req.Header.Set("Hexin-V", hexinV)
 
-	resp, err := a.doRequest(req)
+	resp, err := a.doRequest(context.Background(), req)
 	if err != nil {
 		return nil, false, err
 	}
