@@ -84,7 +84,6 @@ func (i *TopBottom) Evaluate(stock indicator.StockSource, config []*indicator.Si
 	}
 
 	result := calcTopBottom(klines)
-
 	for _, v := range config {
 		if s, ok := i.Signal[v.SignalID]; ok {
 			switch vv := s.(type) {
@@ -320,21 +319,21 @@ func NewSignalTopBottomRed() *SignalTopBottomRed {
 		BaseSignal: indicator.NewBaseSignal(
 			"01",
 			"红柱",
-			"顶底信号红柱，A>5 出现红色柱状买入信号",
+			"出现红柱",
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramTopBottomRedLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramTopBottomRedLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
 				Params: map[string]any{
-					paramTopBottomRedLookback: float64(5),
+					paramTopBottomRedLookback: float64(1),
 				},
 			},
 		),
@@ -357,7 +356,7 @@ func (s *SignalTopBottomRed) Evaluate(r *topBottomResult, config *indicator.Sign
 	return &indicator.EvaluatedStock{
 		Result:   indicator.ResultRejected,
 		SignalID: config.SignalID,
-		Message:  fmt.Sprintf("近%d日内未出现红柱信号（A>5）", lookback),
+		Message:  fmt.Sprintf("近%d日内未出现红柱信号", lookback),
 	}
 }
 
@@ -381,21 +380,21 @@ func NewSignalTopBottomGreen() *SignalTopBottomGreen {
 		BaseSignal: indicator.NewBaseSignal(
 			"02",
 			"绿柱",
-			"顶底信号绿柱，A1>0 出现绿色柱状卖出信号",
+			"出现绿柱",
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
 					Operator: indicator.OpRising,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramTopBottomGreenLookback, Label: "回看天数", Type: "number", Required: false, Default: 5, Min: 1, Max: 20, Unit: "日"},
+						{Key: paramTopBottomGreenLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
 				Operator: indicator.OpRising,
 				Params: map[string]any{
-					paramTopBottomGreenLookback: float64(5),
+					paramTopBottomGreenLookback: float64(1),
 				},
 			},
 		),
@@ -411,13 +410,14 @@ func (s *SignalTopBottomGreen) Evaluate(r *topBottomResult, config *indicator.Si
 		start = 0
 	}
 	for i := start; i < n; i++ {
-		if r.GreenLine[i] > 0 {
+		val := r.GreenLine[i] * 15
+		if val > 5 && val > r.RedLine[i] {
 			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
 		}
 	}
 	return &indicator.EvaluatedStock{
 		Result:   indicator.ResultRejected,
 		SignalID: config.SignalID,
-		Message:  fmt.Sprintf("近%d日内未出现绿柱信号（A1>0）", lookback),
+		Message:  fmt.Sprintf("近%d日内未出现绿柱信号", lookback),
 	}
 }
