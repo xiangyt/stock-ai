@@ -18,9 +18,9 @@ import (
 	"stock-ai/internal/api/handler"
 	"stock-ai/internal/api/router"
 	"stock-ai/internal/config"
+	"stock-ai/internal/datacollect"
 	"stock-ai/internal/db"
 	"stock-ai/internal/indicator"
-	"stock-ai/internal/service"
 	"stock-ai/internal/subscription/notifier"
 	"stock-ai/internal/subscription/quotecache"
 	"stock-ai/internal/subscription/runner"
@@ -30,7 +30,6 @@ import (
 func main() {
 	// 命令行参数
 	configPath := flag.String("config", "config.yaml", "配置文件路径")
-	initData := flag.Bool("init-data", false, "初始化模拟数据")
 	flag.Parse()
 
 	// 加载配置
@@ -48,6 +47,13 @@ func main() {
 	// 自动迁移表结构
 	if err := db.AutoMigrate(); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
+	}
+
+	// 初始化数据采集内置任务
+	if err := db.InitDataCollectTasks(); err != nil {
+		log.Printf("⚠️ 初始化数据采集任务失败: %v", err)
+	} else {
+		log.Println("✅ 数据采集任务初始化完成")
 	}
 
 	// 注册数据源适配器
@@ -100,16 +106,6 @@ func main() {
 
 	log.Printf("已注册数据源: %v", registry.Names())
 
-	// 初始化模拟数据
-	if *initData {
-		stockService := service.NewStockService()
-		if err := stockService.InitMockData(); err != nil {
-			log.Fatalf("初始化模拟数据失败: %v", err)
-		}
-		log.Println("模拟数据初始化完成")
-		return
-	}
-
 	// ====================================================================
 	//  初始化策略订阅模块
 	// ====================================================================
@@ -156,8 +152,11 @@ func main() {
 		}
 	}
 
-	// 8. 设置 Router（router 内部创建 subSvc，通过 SubscriptionServiceRef 获取）
-	rtr := router.SetupRouter()
+	// 8. 初始化数据采集运行器（供前端手动触发执行 + 调度器使用）
+	dcRunner := datacollect.NewDataCollectRunner()
+
+	// 9. 设置 Router（router 内部创建 subSvc，通过 SubscriptionServiceRef 获取）
+	rtr := router.SetupRouter(dcRunner)
 
 	// 注入 Runner 和 NotifyChange 回调到 SubscriptionService
 	if router.SubscriptionServiceRef != nil {
@@ -167,6 +166,25 @@ func main() {
 				sch.NotifyChange(scheduler.SubscriptionChange{Type: ct, ID: id})
 			})
 		}
+	}
+
+	// ====================================================================
+	//  初始化数据采集调度模块
+	// ====================================================================
+
+	var dcSch datacollect.Scheduler
+	dcSch = datacollect.NewScheduler(dcRunner)
+	if err := dcSch.Start(); err != nil {
+		log.Printf("⚠️ DataCollect Scheduler 启动失败: %v", err)
+	} else {
+		log.Println("✅ DataCollect Scheduler 已启动")
+	}
+
+	// 注入 NotifyChange 回调到 DataCollectService
+	if router.DataCollectServiceRef != nil {
+		router.DataCollectServiceRef.SetNotifyChange(func(ct datacollect.ChangeType, id uint) {
+			dcSch.NotifyChange(datacollect.TaskChange{Type: ct, TaskID: id})
+		})
 	}
 
 	// 启动 HTTP 服务
@@ -191,6 +209,12 @@ func main() {
 		if sch != nil {
 			log.Println("正在停止 Scheduler...")
 			sch.Stop()
+		}
+
+		// 停止 DataCollect Scheduler
+		if dcSch != nil {
+			log.Println("正在停止 DataCollect Scheduler...")
+			dcSch.Stop()
 		}
 
 		// 停止 QuoteCache

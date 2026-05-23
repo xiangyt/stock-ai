@@ -1,4 +1,4 @@
-package service
+package datacollect
 
 import (
 	"context"
@@ -10,40 +10,73 @@ import (
 	"stock-ai/internal/model"
 )
 
-// ========== 基本面/财务面采集 ==========
+// ============================================================================
+//  基本信息采集结果（财报/股东户数/股本变动共用）
+// ============================================================================
 
-// CollectPerformanceReports 采集单只股票的财报数据
-func (s *DataCollectService) CollectPerformanceReports(sourceName, code string) (*CollectResult, error) {
-	ctx := context.Background()
-	adp, err := s.getAdapter(sourceName)
-	if err != nil {
-		return nil, fmt.Errorf("获取数据源失败: %w", err)
-	}
+// CollectResult 批量采集结果汇总
+type CollectResult struct {
+	Total     int `json:"total"`      // 总股票数/总条数
+	NewCount  int `json:"new_count"`  // 新增记录数
+	UpdCount  int `json:"upd_count"`  // 更新记录数
+	FailCount int `json:"fail_count"` // 失败股票数
+}
 
+// ============================================================================
+//  单只股票采集入口（供 HTTP Handler 使用）
+// ============================================================================
+
+// RunPerformanceReports 采集单只股票的财报
+func RunPerformanceReports(ctx context.Context, adp adapter.DataSource, code string) (*CollectResult, error) {
 	reports, err := adp.GetPerformanceReports(ctx, code)
 	if err != nil {
 		return nil, fmt.Errorf("获取财报失败 [%s]: %w", code, err)
 	}
-
 	result := upsertPerformanceReports(code, reports)
 	log.Printf("[采集-财报] 完成 [%s]: total=%d, new=%d, upd=%d", code, result.Total, result.NewCount, result.UpdCount)
 	return result, nil
 }
 
-// CollectPerformanceReportsBatch 全量采集所有股票的财报
-func (s *DataCollectService) CollectPerformanceReportsBatch(sourceName string) (*CollectResult, error) {
-	adp, err := s.getAdapter(sourceName)
+// RunShareholderCounts 采集单只股票的股东户数
+func RunShareholderCounts(ctx context.Context, adp adapter.DataSource, code string) (*CollectResult, error) {
+	counts, err := adp.GetShareholderCounts(ctx, code)
 	if err != nil {
-		return nil, fmt.Errorf("获取数据源失败: %w", err)
+		return nil, fmt.Errorf("获取股东户数失败 [%s]: %w", code, err)
 	}
-	stocks := s.loadAllStockCodes()
+	result := upsertShareholderCounts(code, counts)
+	log.Printf("[采集-股东户数] 完成 [%s]: total=%d, new=%d, upd=%d", code, result.Total, result.NewCount, result.UpdCount)
+	return result, nil
+}
+
+// RunShareChanges 采集单只股票的股本变动
+func RunShareChanges(ctx context.Context, adp adapter.DataSource, code string) (*CollectResult, error) {
+	changes, err := adp.GetShareChanges(ctx, code)
+	if err != nil {
+		return nil, fmt.Errorf("获取股本变动失败 [%s]: %w", code, err)
+	}
+	result := upsertShareChanges(code, changes)
+	log.Printf("[采集-股本变动] 完成 [%s]: total=%d, new=%d, upd=%d", code, result.Total, result.NewCount, result.UpdCount)
+	return result, nil
+}
+
+// ============================================================================
+//  全量批量采集入口（供 Scheduler 和 HTTP Handler 共用）
+// ============================================================================
+
+// RunPerformanceReportsBatch 全量采集所有股票的财报
+func RunPerformanceReportsBatch(ctx context.Context, adp adapter.DataSource) (*CollectResult, error) {
+	stocks := db.LoadAllStockCodes()
 	if len(stocks) == 0 {
 		return &CollectResult{}, nil
 	}
 
-	ctx := context.Background()
 	result := &CollectResult{Total: len(stocks)}
 	for i, stock := range stocks {
+		select {
+		case <-ctx.Done():
+			return result, ctx.Err()
+		default:
+		}
 		reports, fetchErr := adp.GetPerformanceReports(ctx, stock.Code)
 		if fetchErr != nil {
 			log.Printf("[采集-财报] 获取失败 [%s]: %v", stock.Code, fetchErr)
@@ -53,47 +86,28 @@ func (s *DataCollectService) CollectPerformanceReportsBatch(sourceName string) (
 		partial := upsertPerformanceReports(stock.Code, reports)
 		result.NewCount += partial.NewCount
 		result.UpdCount += partial.UpdCount
-
 		if (i+1)%100 == 0 || i == len(stocks)-1 {
-			log.Printf("[采集-财报] 全量进度: %d/%d (新增%d, 更新%d)", i+1, len(stocks), result.NewCount, result.UpdCount)
+			log.Printf("[采集-财报] 全量进度: %d/%d (新增=%d, 更新=%d)", i+1, len(stocks), result.NewCount, result.UpdCount)
 		}
 	}
 	log.Printf("[采集-财报] 全量完成: total=%d, new=%d, upd=%d, fail=%d", result.Total, result.NewCount, result.UpdCount, result.FailCount)
 	return result, nil
 }
 
-// CollectShareholderCounts 采集单只股票的股东户数
-func (s *DataCollectService) CollectShareholderCounts(sourceName, code string) (*CollectResult, error) {
-	ctx := context.Background()
-	adp, err := s.getAdapter(sourceName)
-	if err != nil {
-		return nil, fmt.Errorf("获取数据源失败: %w", err)
-	}
-
-	counts, err := adp.GetShareholderCounts(ctx, code)
-	if err != nil {
-		return nil, fmt.Errorf("获取股东户数失败 [%s]: %w", code, err)
-	}
-
-	result := upsertShareholderCounts(code, counts)
-	log.Printf("[采集-股东户数] 完成 [%s]: total=%d, new=%d, upd=%d", code, result.Total, result.NewCount, result.UpdCount)
-	return result, nil
-}
-
-// CollectShareholderCountsBatch 全量采集所有股票的股东户数
-func (s *DataCollectService) CollectShareholderCountsBatch(sourceName string) (*CollectResult, error) {
-	adp, err := s.getAdapter(sourceName)
-	if err != nil {
-		return nil, fmt.Errorf("获取数据源失败: %w", err)
-	}
-	stocks := s.loadAllStockCodes()
+// RunShareholderCountsBatch 全量采集所有股票的股东户数
+func RunShareholderCountsBatch(ctx context.Context, adp adapter.DataSource) (*CollectResult, error) {
+	stocks := db.LoadAllStockCodes()
 	if len(stocks) == 0 {
 		return &CollectResult{}, nil
 	}
 
-	ctx := context.Background()
 	result := &CollectResult{Total: len(stocks)}
 	for i, stock := range stocks {
+		select {
+		case <-ctx.Done():
+			return result, ctx.Err()
+		default:
+		}
 		counts, fetchErr := adp.GetShareholderCounts(ctx, stock.Code)
 		if fetchErr != nil {
 			log.Printf("[采集-股东户数] 获取失败 [%s]: %v", stock.Code, fetchErr)
@@ -103,47 +117,28 @@ func (s *DataCollectService) CollectShareholderCountsBatch(sourceName string) (*
 		partial := upsertShareholderCounts(stock.Code, counts)
 		result.NewCount += partial.NewCount
 		result.UpdCount += partial.UpdCount
-
 		if (i+1)%100 == 0 || i == len(stocks)-1 {
-			log.Printf("[采集-股东户数] 全量进度: %d/%d (新增%d, 更新%d)", i+1, len(stocks), result.NewCount, result.UpdCount)
+			log.Printf("[采集-股东户数] 全量进度: %d/%d (新增=%d, 更新=%d)", i+1, len(stocks), result.NewCount, result.UpdCount)
 		}
 	}
 	log.Printf("[采集-股东户数] 全量完成: total=%d, new=%d, upd=%d, fail=%d", result.Total, result.NewCount, result.UpdCount, result.FailCount)
 	return result, nil
 }
 
-// CollectShareChanges 采集单只股票的股本变动
-func (s *DataCollectService) CollectShareChanges(sourceName, code string) (*CollectResult, error) {
-	ctx := context.Background()
-	adp, err := s.getAdapter(sourceName)
-	if err != nil {
-		return nil, fmt.Errorf("获取数据源失败: %w", err)
-	}
-
-	changes, err := adp.GetShareChanges(ctx, code)
-	if err != nil {
-		return nil, fmt.Errorf("获取股本变动失败 [%s]: %w", code, err)
-	}
-
-	result := upsertShareChanges(code, changes)
-	log.Printf("[采集-股本变动] 完成 [%s]: total=%d, new=%d, upd=%d", code, result.Total, result.NewCount, result.UpdCount)
-	return result, nil
-}
-
-// CollectShareChangesBatch 全量采集所有股票的股本变动
-func (s *DataCollectService) CollectShareChangesBatch(sourceName string) (*CollectResult, error) {
-	adp, err := s.getAdapter(sourceName)
-	if err != nil {
-		return nil, fmt.Errorf("获取数据源失败: %w", err)
-	}
-	stocks := s.loadAllStockCodes()
+// RunShareChangesBatch 全量采集所有股票的股本变动
+func RunShareChangesBatch(ctx context.Context, adp adapter.DataSource) (*CollectResult, error) {
+	stocks := db.LoadAllStockCodes()
 	if len(stocks) == 0 {
 		return &CollectResult{}, nil
 	}
 
-	ctx := context.Background()
 	result := &CollectResult{Total: len(stocks)}
 	for i, stock := range stocks {
+		select {
+		case <-ctx.Done():
+			return result, ctx.Err()
+		default:
+		}
 		changes, fetchErr := adp.GetShareChanges(ctx, stock.Code)
 		if fetchErr != nil {
 			log.Printf("[采集-股本变动] 获取失败 [%s]: %v", stock.Code, fetchErr)
@@ -153,44 +148,21 @@ func (s *DataCollectService) CollectShareChangesBatch(sourceName string) (*Colle
 		partial := upsertShareChanges(stock.Code, changes)
 		result.NewCount += partial.NewCount
 		result.UpdCount += partial.UpdCount
-
 		if (i+1)%100 == 0 || i == len(stocks)-1 {
-			log.Printf("[采集-股本变动] 全量进度: %d/%d (新增%d, 更新%d)", i+1, len(stocks), result.NewCount, result.UpdCount)
+			log.Printf("[采集-股本变动] 全量进度: %d/%d (新增=%d, 更新=%d)", i+1, len(stocks), result.NewCount, result.UpdCount)
 		}
 	}
 	log.Printf("[采集-股本变动] 全量完成: total=%d, new=%d, upd=%d, fail=%d", result.Total, result.NewCount, result.UpdCount, result.FailCount)
 	return result, nil
 }
 
-// ========== 基本面批量写入辅助函数（包级函数）==========
-
-// clampDecimal 将浮点值钳制到 DECIMAL(p,s) 的合法范围
-// p=总精度位数, s=小数位位数 → 范围 [-(10^(p-s)-10^(-s)), 10^(p-s)-10^(-s)]
-// 例如 DECIMAL(10,4) → 范围 [-999999.9999, 999999.9999]
-func clampDecimal(v float64, precision, scale int) float64 {
-	maxVal := float64(intPow10(precision-scale)) - 1.0/float64(intPow10(scale))
-	if v > maxVal {
-		return maxVal
-	}
-	if v < -maxVal {
-		return -maxVal
-	}
-	return v
-}
-
-// intPow10 计算 10^n
-func intPow10(n int) int64 {
-	r := int64(1)
-	for i := 0; i < n; i++ {
-		r *= 10
-	}
-	return r
-}
+// ============================================================================
+//  批量写入辅助函数
+// ============================================================================
 
 // upsertPerformanceReports 批量写入财报数据
 func upsertPerformanceReports(code string, reports []adapter.PerformanceReport) *CollectResult {
 	result := &CollectResult{Total: len(reports)}
-
 	for _, r := range reports {
 		m := model.PerformanceReport{
 			StockCode:          code,
@@ -239,7 +211,6 @@ func upsertPerformanceReports(code string, reports []adapter.PerformanceReport) 
 // upsertShareholderCounts 批量写入股东户数数据
 func upsertShareholderCounts(code string, counts []adapter.ShareholderCount) *CollectResult {
 	result := &CollectResult{Total: len(counts)}
-
 	for _, c := range counts {
 		m := model.ShareholderCount{
 			StockCode:           code,
@@ -271,7 +242,6 @@ func upsertShareholderCounts(code string, counts []adapter.ShareholderCount) *Co
 // upsertShareChanges 批量写入股本变动数据
 func upsertShareChanges(code string, changes []adapter.ShareChange) *CollectResult {
 	result := &CollectResult{Total: len(changes)}
-
 	for _, c := range changes {
 		m := model.ShareChange{
 			StockCode:       code,
@@ -293,4 +263,29 @@ func upsertShareChanges(code string, changes []adapter.ShareChange) *CollectResu
 		}
 	}
 	return result
+}
+
+// ============================================================================
+//  数值工具函数
+// ============================================================================
+
+// clampDecimal 将浮点值钳制到 DECIMAL(p,s) 的合法范围
+func clampDecimal(v float64, precision, scale int) float64 {
+	maxVal := float64(intPow10(precision-scale)) - 1.0/float64(intPow10(scale))
+	if v > maxVal {
+		return maxVal
+	}
+	if v < -maxVal {
+		return -maxVal
+	}
+	return v
+}
+
+// intPow10 计算 10^n
+func intPow10(n int) int64 {
+	r := int64(1)
+	for i := 0; i < n; i++ {
+		r *= 10
+	}
+	return r
 }

@@ -12,8 +12,8 @@ import (
 	"stock-ai/internal/adapter/eastmoney"
 	"stock-ai/internal/adapter/ths"
 	"stock-ai/internal/config"
+	"stock-ai/internal/datacollect"
 	"stock-ai/internal/db"
-	"stock-ai/internal/service"
 )
 
 // ========== 用法说明 ==========
@@ -67,10 +67,10 @@ func main() {
 	if modeStr == "" {
 		modeStr = "daily" // 默认 daily 模式
 	}
-	mode, ok := map[string]service.SyncMode{
-		"init":  service.SyncModeInit,
-		"daily": service.SyncModeDaily,
-		"fill":  service.SyncModeFill,
+	mode, ok := map[string]datacollect.SyncMode{
+		"init":  datacollect.SyncModeInit,
+		"daily": datacollect.SyncModeDaily,
+		"fill":  datacollect.SyncModeFill,
 	}[modeStr]
 	if !ok {
 		log.Fatalf("未知子命令: %s\n支持的命令: init, daily, fill\n", modeStr)
@@ -94,16 +94,16 @@ func main() {
 	}
 	defer db.Close()
 	ctx := context.Background()
-	svc := service.NewSyncKLineService()
+	svc := datacollect.GetSyncKLineService()
 
 	// 执行对应模式
-	var results []service.SyncBatchResult
+	var results []datacollect.SyncBatchResult
 	switch mode {
-	case service.SyncModeInit:
+	case datacollect.SyncModeInit:
 		results = svc.InitAllStocks(ctx, periods)
-	case service.SyncModeDaily:
+	case datacollect.SyncModeDaily:
 		results = svc.SyncDailyForAll(ctx, periods)
-	case service.SyncModeFill:
+	case datacollect.SyncModeFill:
 		results = svc.FillMissingAmount(ctx, periods)
 	default:
 		log.Fatal("未实现的模式")
@@ -199,7 +199,7 @@ func parsePeriods(s string) []db.KLinePeriod {
 }
 
 // printSummary 打印批量结果汇总
-func printSummary(results []service.SyncBatchResult) {
+func printSummary(results []datacollect.SyncBatchResult) {
 	totalS, totalSk, totalF := 0, 0, 0
 	for _, r := range results {
 		totalS += r.Success

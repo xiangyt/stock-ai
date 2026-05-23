@@ -56,3 +56,13 @@ func UpdatePushStatus(id, userID uint, status int) error {
 	}
 	return result.Error
 }
+
+// GetBotByID 根据 ID 查询机器人（无归属校验，供全局模块使用）
+func GetBotByID(id uint) (*model.PushBot, error) {
+	var cfg model.PushBot
+	err := GetDB().Where("id = ?", id).First(&cfg).Error
+	if err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}

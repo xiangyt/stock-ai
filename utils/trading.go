@@ -1,6 +1,9 @@
 package utils
 
 import (
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -44,6 +47,15 @@ func IsTradingHours() bool {
 		return true
 	}
 	return false
+}
+
+// ParseDateToTradeDate 将 "2026-04-12" 或 "20260412" 格式转为 20260412 整数
+func ParseDateToTradeDate(dateStr string) (int, error) {
+	clean := strings.ReplaceAll(dateStr, "-", "")
+	if len(clean) != 8 {
+		return 0, fmt.Errorf("日期格式错误: %s", dateStr)
+	}
+	return strconv.Atoi(clean)
 }
 
 // getHolidays A 股法定节假日列表

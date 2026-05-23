@@ -61,6 +61,11 @@
         <BotConfigPage />
       </div>
 
+      <!-- ====== 数据采集页面（仅管理员）====== -->
+      <div v-else-if="currentPage === 'data-collect'" class="page">
+        <DataCollectPage />
+      </div>
+
       <!-- ====== 个人主页 ====== -->
       <div v-else-if="currentPage === 'profile'" class="page">
         <ProfilePage :current-user="currentUser" @saved="onProfileSaved" @goBack="onBackFromProfile" />
@@ -78,6 +83,7 @@ import StrategyList from './components/StrategyList.vue'
 import BacktestPage from './components/BacktestPage.vue'
 import AccountManagementPage from './components/AccountManagementPage.vue'
 import BotConfigPage from './components/BotConfigPage.vue'
+import DataCollectPage from './components/DataCollectPage.vue'
 import SubscriptionPage from './components/SubscriptionPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import PortfolioPage from './components/PortfolioPage.vue'

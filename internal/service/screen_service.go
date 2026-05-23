@@ -24,7 +24,7 @@ func (s *ScreenService) BuildAll(maxConcurrency int, date string) ([]indicator.S
 		return nil, nil
 	}
 
-	tradeDate, _ := parseDateToTradeDate(date)
+	tradeDate, _ := utils.ParseDateToTradeDate(date)
 	result := make([]indicator.StockSource, len(stocks))
 	err := utils.ConcurrentExec(stocks, maxConcurrency, func(i int, stock model.Stock) error {
 		result[i] = stocksource.NewDBStock(&stock, tradeDate)

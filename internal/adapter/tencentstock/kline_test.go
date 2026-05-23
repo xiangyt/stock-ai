@@ -13,7 +13,7 @@ func TestGetDailyKLine_Unsupported(t *testing.T) {
 	if err == nil {
 		t.Fatal("预期返回错误，实际 nil")
 	}
-	if !strings.Contains(err.Error(), "不可用") {
+	if !strings.Contains(err.Error(), "not implemented") {
 		t.Fatalf("错误信息不匹配: %v", err)
 	}
 }

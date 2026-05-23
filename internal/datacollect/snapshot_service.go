@@ -1,18 +1,18 @@
-package service
+package datacollect
 
 import (
 	"context"
 	"fmt"
 	"log"
 	"sort"
-	"strconv"
-	"strings"
+	"sync"
 	"time"
 
 	"stock-ai/internal/adapter"
 	"stock-ai/internal/adapter/ths"
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
+	"stock-ai/utils"
 )
 
 // ========== 快照计算模式 ==========
@@ -43,11 +43,23 @@ type SnapshotService struct {
 	registry *adapter.Registry // 数据源注册中心
 }
 
-// NewSnapshotService 创建快照服务
-func NewSnapshotService() *SnapshotService {
-	return &SnapshotService{
-		registry: adapter.GetRegistry(),
-	}
+// ============================================================================
+//  全局单例
+// ============================================================================
+
+var (
+	snapOnce     sync.Once
+	snapInstance *SnapshotService
+)
+
+// GetSnapshotService 返回 SnapshotService 全局单例（线程安全）。
+func GetSnapshotService() *SnapshotService {
+	snapOnce.Do(func() {
+		snapInstance = &SnapshotService{
+			registry: adapter.GetRegistry(),
+		}
+	})
+	return snapInstance
 }
 
 // ========== 统一入口 ==========
@@ -456,7 +468,7 @@ func (s *SnapshotService) fetchKlinesFromTHS(ctx context.Context, code string, t
 
 	records := make([]thsKlineRecord, 0, len(raw))
 	for _, r := range raw {
-		td, err := parseDateToTradeDate(r.Date)
+		td, err := utils.ParseDateToTradeDate(r.Date)
 		if err != nil {
 			// 跳过无法解析日期的记录
 			log.Printf("[snapshot] 跳过无效日期 %s [%s]", r.Date, code)
@@ -473,7 +485,7 @@ func (s *SnapshotService) fetchKlinesFromTHS(ctx context.Context, code string, t
 	if err != nil {
 		return nil, fmt.Errorf("同花顺获取日K失败 [%s]: %w", code, err)
 	}
-	td, err := parseDateToTradeDate(today.Date)
+	td, err := utils.ParseDateToTradeDate(today.Date)
 	if err != nil {
 		// 跳过无法解析日期的记录
 		log.Printf("[snapshot] 跳过无效日期 %s [%s]", today.Date, code)
@@ -490,16 +502,6 @@ func (s *SnapshotService) fetchKlinesFromTHS(ctx context.Context, code string, t
 	}
 
 	return records, nil
-}
-
-// parseDateToTradeDate 将 "2026-04-12" 格式转为 20260412 整数
-func parseDateToTradeDate(dateStr string) (int, error) {
-	// 支持 "2026-04-12" 和 "20260412" 两种格式
-	clean := strings.ReplaceAll(dateStr, "-", "")
-	if len(clean) != 8 {
-		return 0, fmt.Errorf("日期格式错误: %s", dateStr)
-	}
-	return strconv.Atoi(clean)
 }
 
 // ================================================================

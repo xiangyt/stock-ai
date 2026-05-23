@@ -2,11 +2,9 @@ package service
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
-	"stock-ai/internal/adapter/eastmoney"
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
 
@@ -296,45 +294,6 @@ func (s *StockService) GetAllStocks() ([]interface{}, error) {
 		result[i] = &stk
 	}
 	return result, nil
-}
-
-// InitMockData 初始化模拟数据(开发测试使用DataCollectService的mock适配器)
-func (s *StockService) InitMockData() error {
-	var count int64
-	s.db.Model(&model.Stock{}).Count(&count)
-	if count > 0 { return nil }
-
-	log.Println("开始初始化模拟数据...")
-
-	collector := NewDataCollectService()
-	task, err := collector.CollectStockList("mock")
-	if err != nil { return fmt.Errorf("获取股票列表失败: %w", err) }
-
-	topics := []model.HotTopic{
-		{Name: "人形机器人", Tag: "热门", Description: "AI赋能机器人产业加速落地，关注核心零部件与系统集成商", Keywords: "机器人,AI,智能硬件", RelatedCodes: "002230,300124,002049", Heat: 95, Trend: "up"},
-		{Name: "商业航天", Tag: "政策", Description: "商业航天政策持续催化，卫星互联网产业链迎来爆发期", Keywords: "卫星,航天,低轨轨道", RelatedCodes: "600118,300455,002025", Heat: 88, Trend: "up"},
-		{Name: "短视频游戏", Tag: "游戏", Description: "短剧+游戏融合新赛道，IP变现模式持续创新", Keywords: "游戏,短视频,元宇宙", RelatedCodes: "300413,002624,300031", Heat: 82, Trend: "stable"},
-		{Name: "存储芯片", Tag: "芯片", Description: "存储芯片周期底部已现，AI算力需求驱动复苏", Keywords: "存储,NAND,DRAM", RelatedCodes: "603986,603501,300223", Heat: 78, Trend: "up"},
-		{Name: "创新药", Tag: "医药", Description: "国产创新药出海加速，关注临床管线进展", Keywords: "新药,临床,CRO", RelatedCodes: "600276,300122,688235", Heat: 75, Trend: "stable"},
-	}
-
-	for _, topic := range topics {
-		s.db.Create(&topic)
-	}
-
-	defaultSources := []model.DataSourceConfig{
-		{Name: "mock", DisplayName: "模拟数据(开发测试)", Type: "sdk", Status: "active", Priority: 100, Config: `{}`, Description: "用于开发和测试的模拟数据源"},
-		{Name: "tushare", DisplayName: "Tushare Pro", Type: "api", Status: "disabled", Priority: 1, DailyQuota: 5000, Description: "Tushare Pro金融数据接口"},
-		{Name: eastmoney.AdapterName, DisplayName: "东方财富", Type: "web_crawl", Status: "disabled", Priority: 2, Description: "东方财富网数据爬取"},
-		{Name: "akshare", DisplayName: "AKShare", Type: "sdk", Status: "disabled", Priority: 3, Description: "开源金融数据接口库"},
-	}
-
-	for _, src := range defaultSources {
-		s.db.Create(&src)
-	}
-
-	log.Printf("模拟数据初始化完成: %d 只股票, %d 个题材, %d 个数据源", task.Total, len(topics), len(defaultSources))
-	return nil
 }
 
 func parseFloat(v interface{}) float64 {

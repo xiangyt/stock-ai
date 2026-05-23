@@ -1,10 +1,12 @@
-package service
+package datacollect
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
+	"sync"
 	"time"
 
 	"stock-ai/internal/adapter"
@@ -67,10 +69,24 @@ type SyncKLineService struct {
 	registry *adapter.Registry
 }
 
-func NewSyncKLineService() *SyncKLineService {
-	return &SyncKLineService{
-		registry: adapter.GetRegistry(),
-	}
+// ============================================================================
+//  全局单例
+// ============================================================================
+
+var (
+	syncKLineOnce     sync.Once
+	syncKLineInstance *SyncKLineService
+)
+
+// GetSyncKLineService 返回 SyncKLineService 全局单例（线程安全）。
+// 所有组件应通过此函数获取实例，而非各自 new。
+func GetSyncKLineService() *SyncKLineService {
+	syncKLineOnce.Do(func() {
+		syncKLineInstance = &SyncKLineService{
+			registry: adapter.GetRegistry(),
+		}
+	})
+	return syncKLineInstance
 }
 
 // ========== 三种模式入口 ==========
@@ -613,8 +629,7 @@ func filterNonZeroAmount(data []adapter.StockPriceDaily) []adapter.StockPriceDai
 	return result
 }
 
-// parseInt 安全解析正整数字符串（复用 collect_kline 的风格）
-// 注意: parseTradeDate 已在 collect_kline.go 中定义，此处直接引用
+// parseInt 安全解析正整数字符串
 func parseInt(s string) int {
 	n := 0
 	for _, c := range s {
@@ -625,4 +640,14 @@ func parseInt(s string) int {
 		}
 	}
 	return n
+}
+
+// parseTradeDate 将 YYYY-MM-DD 格式日期转为 YYYYMMDD 整数
+func parseTradeDate(dateStr string) int {
+	if len(dateStr) >= 10 {
+		if v, err := strconv.Atoi(dateStr[:4] + dateStr[5:7] + dateStr[8:10]); err == nil {
+			return v
+		}
+	}
+	return 0
 }

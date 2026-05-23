@@ -11,8 +11,8 @@ import (
 	"stock-ai/internal/adapter"
 	"stock-ai/internal/adapter/ths"
 	"stock-ai/internal/config"
+	"stock-ai/internal/datacollect"
 	"stock-ai/internal/db"
-	"stock-ai/internal/service"
 )
 
 // ========== 用法说明 ==========
@@ -61,7 +61,7 @@ func main() {
 	ctx := context.Background()
 
 	// 创建服务
-	svc := service.NewSnapshotService()
+	svc := datacollect.GetSnapshotService()
 
 	// 统一调用
 	startTime := time.Now()
@@ -104,7 +104,7 @@ func initAll(configPath string) error {
 
 // ========== 输出 ==========
 
-func printResult(result service.SnapshotBatchResult) {
+func printResult(result datacollect.SnapshotBatchResult) {
 	if result.Mode == "all_stocks_all_dates" {
 		fmt.Println("==============================")
 		fmt.Printf("全部完成! 成功=%d 失败=%d 耗时=%.1fs\n", result.Success, result.Fail, result.CostSeconds)

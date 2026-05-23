@@ -69,6 +69,9 @@ func AutoMigrate() error {
 		&model.Subscription{},
 		&model.SubscriptionBot{},
 		&model.SubscriptionLog{},
+		// 数据采集
+		&model.DataCollectTask{},
+		&model.DataCollectBot{},
 		// 基本面/财务数据表
 		// &model.PerformanceReport{},
 		// &model.ShareholderCount{},

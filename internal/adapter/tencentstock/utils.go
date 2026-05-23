@@ -69,13 +69,14 @@ func setHeaders(req *http.Request, ua, referer string) {
 // toTencentCode 将6位纯数字代码转为腾讯格式（sh600519 / sz000001 / bj830946）
 func toTencentCode(code string) string {
 	code = strings.TrimSpace(code)
-	// 已带前缀则直接返回
-	if strings.HasPrefix(code, "sh") || strings.HasPrefix(code, "sz") ||
-		strings.HasPrefix(code, "bj") || strings.HasPrefix(code, "hk") ||
-		strings.HasPrefix(code, "us") {
-		return strings.ToLower(code)
+	// 已带前缀则直接返回（大小写不敏感）
+	lower := strings.ToLower(code)
+	if strings.HasPrefix(lower, "sh") || strings.HasPrefix(lower, "sz") ||
+		strings.HasPrefix(lower, "bj") || strings.HasPrefix(lower, "hk") ||
+		strings.HasPrefix(lower, "us") {
+		return lower
 	}
-	return detectPrefix(code) + code
+	return detectPrefix(code) + lower
 }
 
 // detectPrefix 根据代码前缀推断市场前缀

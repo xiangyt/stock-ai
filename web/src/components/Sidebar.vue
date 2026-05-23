@@ -88,6 +88,7 @@ const menuItems = computed(() => {
   ]
   if (props.userInfo?.role === 'admin') {
     base.push({ key: 'account-management', label: '账户管理', icon: '👥' })
+    base.push({ key: 'data-collect', label: '数据采集', icon: '📡' })
   }
   return base
 })
