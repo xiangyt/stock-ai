@@ -265,7 +265,10 @@ func (r *DataCollectRunner) handleShareholderSync(ctx context.Context, task *mod
 // handleDailySnapshotSync 处理【每日快照计算】(Task 7)
 func (r *DataCollectRunner) handleDailySnapshotSync(ctx context.Context, task *model.DataCollectTask) (string, error) {
 	res := GetSnapshotService().calcAllStocksAllDates(ctx)
-	return fmt.Sprintf("total=%d, 成功=%d, 失败=%d, 耗时=%.1fs", res.Total, res.Success, res.Fail, res.CostSeconds), nil
+	return fmt.Sprintf("股票:总数=%d 成功=%d 失败=%d | 快照:总数=%d 写入成功=%d 写入失败=%d | 耗时=%.1fs",
+		res.TotalStocks, res.SuccessStocks, res.FailStocks,
+		res.TotalSnapshots, res.SuccessSnapshots, res.FailSnapshots,
+		res.CostSeconds), nil
 }
 
 // parseSourceFromParams 从任务 params JSON 中提取 source 参数
@@ -522,11 +525,20 @@ func (s *schedulerImpl) changeLoop() {
 }
 
 // addTask 注册单个任务到 cron
+// 如果该 taskID 已存在，先移除旧的 cron entry 再重新注册（防止重复注册导致任务并行执行）
 func (s *schedulerImpl) addTask(task *model.DataCollectTask) bool {
 	if task.CronExpr == "" {
 		log.Printf("[DataCollect] 任务 %d(%s) cron 表达式为空，跳过", task.ID, task.Name)
 		return false
 	}
+
+	// 防止重复注册：如果已存在，先移除旧的
+	s.mu.Lock()
+	if oldEntryID, ok := s.entryMap[task.ID]; ok {
+		s.cron.Remove(oldEntryID)
+		delete(s.entryMap, task.ID)
+	}
+	s.mu.Unlock()
 
 	taskID := task.ID
 	entryID, err := s.cron.AddFunc(task.CronExpr, func() {
