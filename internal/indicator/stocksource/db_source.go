@@ -38,9 +38,10 @@ type DBStock struct {
 	weeklyKlineVal  []*model.WeeklyKline
 	monthlyKlineVal []*model.MonthlyKline
 	yearlyKlineVal  []*model.YearlyKline
-	perfReportVal   []*model.PerformanceReport
-	shareholderVal  *model.ShareholderCount
-	snapshotVal     *model.StockDailySnapshot
+	perfReportVal     []*model.PerformanceReport
+	shareholderVal    *model.ShareholderCount
+	snapshotVal       *model.StockDailySnapshot
+	shareChangesVal   []*model.ShareChange
 }
 
 // NewDBStock 构造一个 DB 懒加载 StockData。
@@ -181,4 +182,25 @@ func (s *DBStock) GetDailySnapshot() (*model.StockDailySnapshot, error) {
 		}
 	}
 	return s.snapshotVal, nil
+}
+
+func (s *DBStock) GetShareChanges() ([]*model.ShareChange, error) {
+	if s.shareChangesVal == nil {
+		var err error
+		var changes []model.ShareChange
+		changes, err = db.FindShareChanges(s.code, 0)
+		if err != nil {
+			return nil, indicator.ErrDatabase
+		}
+		// DAO 返回 DESC，反转 ASC 用于双指针遍历
+		for i := len(changes)/2 - 1; i >= 0; i-- {
+			opp := len(changes) - 1 - i
+			changes[i], changes[opp] = changes[opp], changes[i]
+		}
+		s.shareChangesVal = make([]*model.ShareChange, len(changes))
+		for i := range changes {
+			s.shareChangesVal[i] = &changes[i]
+		}
+	}
+	return s.shareChangesVal, nil
 }

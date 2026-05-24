@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -256,88 +257,12 @@ func (s *SnapshotService) calcAllStocksAllDates(ctx context.Context) SnapshotBat
 //  核心计算：从 THS K线 数据构建快照（批量路径）
 // ================================================================
 
-// buildSnapshotFromTHSKline 从同花顺日K线 + 股本 + 预处理财报组 构建快照（批量路径）
+// buildSnapshotFromTHSKline 从同花顺日K线（分） + 股本 + 财报组 构建快照
 //
-// share:  当日有效股本（可为 nil）
-// groups: 预处理后的财报分组（季度组+年报组），内部自行查找当日有效财报
+// 薄封装：将 closePriceCents(分) 转为 closePriceYuan(元) 后委托 buildStockSnapshot。
 func (s *SnapshotService) buildSnapshotFromTHSKline(code string, tradeDate int, closePriceCents int64,
 	share *model.ShareChange, groups *reportGroups) model.StockDailySnapshot {
-
-	snap := model.StockDailySnapshot{
-		StockCode: code,
-		TradeDate: tradeDate,
-	}
-
-	closePriceYuan := float64(closePriceCents) / 100.0 // 分 → 元
-
-	// --- 市值计算：收盘价 × 股本 ---
-	var totalShares, floatShares int64
-	if share != nil {
-		totalShares = share.TotalShares
-		floatShares = share.FloatAShares
-	}
-	snap.TotalShares = totalShares
-	snap.FloatShares = floatShares
-
-	if totalShares > 0 {
-		snap.TotalMarketCap = float64(totalShares) * closePriceYuan
-	}
-	if floatShares > 0 {
-		snap.CirculateMarketCap = float64(floatShares) * closePriceYuan
-	}
-
-	// --- 估值指标：从预处理分组中查找当日有效财报 ---
-	report := groups.findLatest(tradeDate)
-	if report != nil && snap.TotalMarketCap > 0 {
-		marketCap := snap.TotalMarketCap
-
-		// 每股净资产 & 市净率（取混合组最新财报的 BVPS）
-		snap.BVPS = report.BVPS
-		if report.BVPS > 0 {
-			snap.PB = closePriceYuan / report.BVPS
-		}
-
-		// 盈利能力指标：直接取混合组最新财报原始值
-		snap.ROE = report.ROEW                // 净资产收益率-加权(%)
-		snap.ROA = report.ROA                 // 总资产收益率(%)
-		snap.GrossMargin = report.GrossMargin // 销售毛利率(%)
-		snap.NetMargin = report.NetMargin     // 销售净利率(%)
-
-		// 每股指标
-		snap.BasicEPS = report.BasicEPS // 基本每股收益(元)
-
-		// 财报当期数据：取混合组最新一期财报值
-		snap.ParentNetProfit = report.ParentNetProfit // 归母净利润
-		snap.DeductNetProfit = report.DeductNetProfit // 扣非净利润
-		snap.TotalRevenue = report.TotalRevenue       // 营业总收入
-
-		// 偿债能力指标
-		snap.DebtRatio = report.DebtRatio // 资产负债率(%)
-
-		// 市盈率(动态): 总市值 / (最新财报归母净利润 × 年化系数)
-		//   季报 → 按类型年化（一季报×4 / 中报×2 / 三季报÷3×4）
-		//   年报 → 直接用全年利润（无需年化，此时三种 PE 一致）
-		snap.PEDynamic = s.calcDynamicPE(marketCap, report)
-
-		// 市盈率(静态): 总市值 / tradeDate 之前最新年报的归母净利润
-		snap.PEStatic = s.calcStaticPE(marketCap, groups, tradeDate)
-
-		// TTM 值（利润+营收）：只计算一次，PETTM 和 PSTTM 共用
-		// 公式: 最新累计 + (上年年报 - 上年同期)
-		ttm := s.calcTTMValues(report, groups)
-
-		// 市盈率(TTM): 总市值 / TTM 归母净利润
-		if ttm.Profit != 0 {
-			snap.PETTM = marketCap / ttm.Profit // 允许负值 → 负PE
-		}
-
-		// 市销率(TTM): 总市值 / TTM 营业总收入（与 TTM PE 同规则）
-		if ttm.Revenue > 0 {
-			snap.PSTTM = marketCap / ttm.Revenue
-		}
-	}
-
-	return snap
+	return buildStockSnapshot(code, tradeDate, float64(closePriceCents)/100.0, share, groups)
 }
 
 // ================================================================
@@ -357,7 +282,7 @@ func (s *SnapshotService) buildSnapshotFromTHSKline(code string, tradeDate int, 
 //
 // 注意：年报本身就是全年利润，不需要年化。当最新有效财报是年报
 // （通常意味着一季报尚未发布）时，动态PE与静态PE、TTM PE 一致。
-func (s *SnapshotService) calcDynamicPE(marketCap float64, r *model.PerformanceReport) float64 {
+func calcDynamicPE(marketCap float64, r *model.PerformanceReport) float64 {
 	var annualizedProfit float64
 	switch r.ReportType {
 	case "一季报":
@@ -384,7 +309,7 @@ func (s *SnapshotService) calcDynamicPE(marketCap float64, r *model.PerformanceR
 //
 //	用其归母净利润作为"全年净利润"，总市值 ÷ 该值。
 //	如果当日之前无可用的年报（如新股上市不足一年），返回 0。
-func (s *SnapshotService) calcStaticPE(marketCap float64, groups *reportGroups, tradeDate int) float64 {
+func calcStaticPE(marketCap float64, groups *reportGroups, tradeDate int) float64 {
 	annual := groups.findLatestAnnual(tradeDate)
 	if annual == nil || annual.ParentNetProfit == 0 {
 		return 0
@@ -421,7 +346,7 @@ type ttmValues struct {
 //	最新=年报   → TTM = 年报(=全年)                    ← 四种 PE 一致
 //
 // 返回零值表示数据不足无法计算。
-func (s *SnapshotService) calcTTMValues(latest *model.PerformanceReport, groups *reportGroups) ttmValues {
+func calcTTMValues(latest *model.PerformanceReport, groups *reportGroups) ttmValues {
 	if latest == nil {
 		return ttmValues{}
 	}
@@ -432,8 +357,8 @@ func (s *SnapshotService) calcTTMValues(latest *model.PerformanceReport, groups 
 		return ttmValues{Profit: latest.ParentNetProfit, Revenue: latest.TotalRevenue}
 
 	case "一季报", "中报", "三季报":
-		prevAnnual := s.findReportByYearAndType(groups, latest.ReportDate/10000-1, "年报")
-		prevSame := s.findReportByYearAndType(groups, latest.ReportDate/10000-1, latest.ReportType)
+		prevAnnual := findReportByYearAndType(groups, latest.ReportDate/10000-1, "年报")
+		prevSame := findReportByYearAndType(groups, latest.ReportDate/10000-1, latest.ReportType)
 
 		if prevAnnual == nil || prevSame == nil {
 			return ttmValues{} // 缺上年数据，无法计算
@@ -452,7 +377,7 @@ func (s *SnapshotService) calcTTMValues(latest *model.PerformanceReport, groups 
 // findReportByYearAndType 从混合组中按报告期年份+报表类型查找指定财报
 //
 // 用于 TTM 计算中定位"上年年报"和"上年同期季报"。
-func (s *SnapshotService) findReportByYearAndType(groups *reportGroups, year int, reportType string) *model.PerformanceReport {
+func findReportByYearAndType(groups *reportGroups, year int, reportType string) *model.PerformanceReport {
 	for i := range groups.All {
 		if groups.All[i].ReportDate/10000 == year && groups.All[i].ReportType == reportType {
 			return &groups.All[i]
@@ -623,4 +548,167 @@ func (g *reportGroups) findLatestAnnual(tradeDate int) *model.PerformanceReport 
 // 不区分季报/年报。
 func (g *reportGroups) findLatest(tradeDate int) *model.PerformanceReport {
 	return findLatestFromList(g.All, tradeDate)
+}
+
+// ================================================================
+//  实时快照构建（供 quotecache 等外部调用）
+// ================================================================
+
+// BuildDailySnapshot 从 adapter 实时行情 + DB 财报/股本 构建完整实时快照
+//
+// 供 CachedStock.GetDailySnapshot() 调用，消除 quotecache 与 datacollect 之间的
+// 快照计算代码重复。
+//
+// 流程: 加载 DB 财报 → 加载 DB 股本 → 预处理分组 → 查找当日有效股本 → 构建快照
+// 无财报时降级为基础转换（仅 PE/PB/市值）。
+func BuildDailySnapshot(code string, price *adapter.StockPriceDaily) (*model.StockDailySnapshot, error) {
+	if price == nil || price.Close == 0 {
+		return nil, fmt.Errorf("invalid price data for %s", code)
+	}
+
+	// 从 DB 加载财报数据
+	reports, _ := loadAllReportsForSnapshot(code)
+
+	// 无财报则降级为仅 PE/PB/市值的基础快照
+	if len(reports) == 0 {
+		return convertToSnapshot(price), nil
+	}
+
+	// 从 DB 加载股本变动数据
+	shares, _ := loadAllShareChangesForSnapshot(code)
+
+	groups := preprocessReports(reports)
+	tradeDate := parseDateToTradeInt(price.Date)
+	closePriceYuan := float64(price.Close) / 100.0 // 分 → 元
+
+	// 查找当日有效股本（双指针：找到 <= tradeDate 的最新一条）
+	var currentShare *model.ShareChange
+	for i := len(shares) - 1; i >= 0; i-- {
+		if shares[i].ChangeDate <= tradeDate {
+			currentShare = &shares[i]
+			break
+		}
+	}
+
+	snap := buildStockSnapshot(code, tradeDate, closePriceYuan, currentShare, &groups)
+	return &snap, nil
+}
+
+// loadAllReportsForSnapshot 加载指定股票的全部财报数据（按 notice_date 升序）
+// 用于 BuildDailySnapshot，不依赖 SnapshotService receiver。
+func loadAllReportsForSnapshot(code string) ([]model.PerformanceReport, error) {
+	var reports []model.PerformanceReport
+	err := db.GetDB().
+		Where("stock_code = ?", code).
+		Order("notice_date ASC").
+		Find(&reports).Error
+	return reports, err
+}
+
+// loadAllShareChangesForSnapshot 加载指定股票的全部股本变动（按 change_date 升序）
+// 用于 BuildDailySnapshot，不依赖 SnapshotService receiver。
+func loadAllShareChangesForSnapshot(code string) ([]model.ShareChange, error) {
+	var shares []model.ShareChange
+	err := db.GetDB().
+		Where("stock_code = ?", code).
+		Order("change_date ASC").
+		Find(&shares).Error
+	return shares, err
+}
+
+// convertToSnapshot 将 adapter.StockPriceDaily 转换为基础 StockDailySnapshot
+// 仅包含 PETTM/PB/TotalMarketCap，用于无财报时的降级返回。
+func convertToSnapshot(price *adapter.StockPriceDaily) *model.StockDailySnapshot {
+	return &model.StockDailySnapshot{
+		StockCode:      price.Code,
+		TradeDate:      parseDateToTradeInt(price.Date),
+		PETTM:          price.Pe,
+		PB:             price.Pb,
+		TotalMarketCap: price.MarketCap * 1e8,
+	}
+}
+
+// parseDateToTradeInt 将日期字符串 "2025-07-09" 转换为整数 20250709
+func parseDateToTradeInt(dateStr string) int {
+	if len(dateStr) < 10 {
+		return 0
+	}
+	clean := dateStr[0:4] + dateStr[5:7] + dateStr[8:10]
+	val, err := strconv.Atoi(clean)
+	if err != nil {
+		return 0
+	}
+	return val
+}
+
+// buildStockSnapshot 从收盘价(元) + 股本 + 财报组 构建完整快照（纯函数，无 DB 依赖）
+//
+// 统一入口：buildSnapshotFromTHSKline(批量路径) 和 BuildDailySnapshot(实时路径)
+// 最终都调用此函数完成全部计算。
+//
+// 输入均为纯数据（无 DB / cache 引用），可独立单测。
+func buildStockSnapshot(code string, tradeDate int, closePriceYuan float64,
+	share *model.ShareChange, groups *reportGroups) model.StockDailySnapshot {
+
+	snap := model.StockDailySnapshot{
+		StockCode: code,
+		TradeDate: tradeDate,
+	}
+
+	// --- 市值计算：收盘价 × 股本 ---
+	var totalShares, floatShares int64
+	if share != nil {
+		totalShares = share.TotalShares
+		floatShares = share.FloatAShares
+	}
+	snap.TotalShares = totalShares
+	snap.FloatShares = floatShares
+
+	if totalShares > 0 {
+		snap.TotalMarketCap = float64(totalShares) * closePriceYuan
+	}
+	if floatShares > 0 {
+		snap.CirculateMarketCap = float64(floatShares) * closePriceYuan
+	}
+
+	// --- 估值指标：从预处理分组中查找当日有效财报 ---
+	report := groups.findLatest(tradeDate)
+	if report != nil && snap.TotalMarketCap > 0 {
+		marketCap := snap.TotalMarketCap
+
+		snap.BVPS = report.BVPS
+		if report.BVPS > 0 {
+			snap.PB = closePriceYuan / report.BVPS
+		}
+
+		snap.ROE = report.ROEW
+		snap.ROA = report.ROA
+		snap.GrossMargin = report.GrossMargin
+		snap.NetMargin = report.NetMargin
+
+		snap.BasicEPS = report.BasicEPS
+
+		snap.ParentNetProfit = report.ParentNetProfit
+		snap.DeductNetProfit = report.DeductNetProfit
+		snap.TotalRevenue = report.TotalRevenue
+
+		snap.DebtRatio = report.DebtRatio
+
+		// 市盈率(动态)
+		snap.PEDynamic = calcDynamicPE(marketCap, report)
+
+		// 市盈率(静态)
+		snap.PEStatic = calcStaticPE(marketCap, groups, tradeDate)
+
+		// TTM
+		ttm := calcTTMValues(report, groups)
+		if ttm.Profit != 0 {
+			snap.PETTM = marketCap / ttm.Profit
+		}
+		if ttm.Revenue > 0 {
+			snap.PSTTM = marketCap / ttm.Revenue
+		}
+	}
+
+	return snap
 }

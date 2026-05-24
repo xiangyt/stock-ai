@@ -113,7 +113,7 @@ func main() {
 	// 1. 创建 QuoteCache（注入 registry，运行时动态获取数据源）
 	var quoteCache quotecache.QuoteCache
 	if len(registry.Names()) > 0 {
-		quoteCache = quotecache.NewQuoteCache(registry, 3)
+		quoteCache = quotecache.NewQuoteCache(registry)
 		quoteCache.Start()
 		log.Println("✅ QuoteCache 已启动")
 	} else {

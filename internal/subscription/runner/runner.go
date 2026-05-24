@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"time"
 
 	"stock-ai/internal/db"
@@ -97,36 +98,25 @@ func (r *SubscriptionRunner) Run(ctx context.Context, sub *model.Subscription) (
 		return result, nil
 	}
 
-	// 4. 执行选股引擎
+	// 4. 执行选股引擎（Engine 内部有并发控制，不同 Scope 设置不同并发量）
 	var allPassed []*indicator.EvaluatedStock
 
+	concurrency := 10 // 持仓/自选默认并发
 	if sub.Scope == model.ScopeAll {
-		// 全量扫描：每 500 只为一批
-		const batchSize = 500
-		for i := 0; i < len(stocks); i += batchSize {
-			end := i + batchSize
-			if end > len(stocks) {
-				end = len(stocks)
-			}
-			batch := stocks[i:end]
+		concurrency = 50 // 全量扫描高并发
+	}
 
-			evaluated := r.engine.Execute(batch, configs, 50)
-
-			for _, ev := range evaluated {
-				if ev.Result == indicator.ResultPassed {
-					allPassed = append(allPassed, ev)
-				}
-			}
-		}
-	} else {
-		// 持仓/自选：直接执行
-		evaluated := r.engine.Execute(stocks, configs, 10)
-		for _, ev := range evaluated {
-			if ev.Result == indicator.ResultPassed {
-				allPassed = append(allPassed, ev)
-			}
+	evaluated := r.engine.Execute(stocks, configs, concurrency)
+	for _, ev := range evaluated {
+		if ev.Result == indicator.ResultPassed {
+			allPassed = append(allPassed, ev)
 		}
 	}
+
+	// 按 code 字符顺序排序，保证结果稳定可重现
+	sort.Slice(allPassed, func(i, j int) bool {
+		return allPassed[i].Code < allPassed[j].Code
+	})
 
 	// 5. 过滤结果，组装 MatchStock
 	result.MatchStocks = make([]model.MatchStock, 0, len(allPassed))
