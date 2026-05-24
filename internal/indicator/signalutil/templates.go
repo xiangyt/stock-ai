@@ -266,6 +266,53 @@ func SeriesSignalCrossAbove(fastName, slowName string) indicator.Signal {
 	return &sig
 }
 
+// ============================================================================
+//  lookback 窗口参数 — 信号时间窗口的公共工具
+// ============================================================================
+
+// ParamLookbackStart 创建 lookback_start 参数定义（窗口起点，更早的N天前）。
+func ParamLookbackStart(def float64, unit string) indicator.ParamDef {
+	return ParamNumber(indicator.ParamKeyLookbackStart, "始于", def, unit)
+}
+
+// ParamLookbackEnd 创建 lookback_end 参数定义（窗口终点，更近的N天前）。
+func ParamLookbackEnd(def float64, unit string) indicator.ParamDef {
+	return ParamNumber(indicator.ParamKeyLookbackEnd, "截止", def, unit)
+}
+
+// NormalizeLookback 将 lookback_start/end（N天前）映射为 oldest-first 数组索引，返回半开区间 [idxStart, idxEnd)。
+//
+// 映射规则：
+//
+//	0天前（今天）→ dataLen-1
+//	1天前         → dataLen-2
+//	N天前         → dataLen-1-N
+//
+// 自动容错交换（start < end 时交换，保证 start >= end）。
+// 支持单日检查：start == end 时返回 1 元素的窗口。
+// 若 idxStart >= idxEnd（窗口为空），返回错误。
+func NormalizeLookback(start, end, dataLen int) (idxStart, idxEnd int, err error) {
+	if start < end {
+		start, end = end, start
+	}
+	// "N天前" 映射为 oldest-first 索引
+	idxStart = dataLen - 1 - start
+	idxEnd = dataLen - end // 半开区间哨兵（不包含 idxEnd 位置的元素）
+
+	// 越界裁剪
+	if idxStart < 0 {
+		idxStart = 0
+	}
+	if idxEnd > dataLen {
+		idxEnd = dataLen
+	}
+
+	if idxStart >= idxEnd {
+		return 0, 0, fmt.Errorf("参数错误：信号窗口为空（start=%d, end=%d, dataLen=%d）", start, end, dataLen)
+	}
+	return idxStart, idxEnd, nil
+}
+
 // SeriesSignalCrossBelow 创建下穿(死叉)序列信号 (序号=02)
 func SeriesSignalCrossBelow(fastName, slowName string) indicator.Signal {
 	sig := indicator.NewBaseSignal(

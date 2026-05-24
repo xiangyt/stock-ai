@@ -42,6 +42,7 @@ export type CompareOperator =
   | 'cross_above' | 'cross_below'
   | 'divergence_pos' | 'divergence_neg'
   | 'rising' | 'falling'
+  | 'custom'
 
 /** PresetMode 内置信号执行模式 */
 export type PresetMode = 'simple' | 'combo' | 'custom'
@@ -283,6 +284,28 @@ export function findSignalOperator(signal: SignalDef, op: CompareOperator): Sign
   return signal.operators.find(o => o.operator === op)
 }
 
+/** 查找信号参数定义中的 unit 字段 */
+function findParamUnit(ind: IndicatorMeta, paramKey: string): string | undefined {
+  for (const sig of ind.signals) {
+    for (const op of sig.operators) {
+      const p = op.params.find(p => p.key === paramKey)
+      if (p) return p.unit
+    }
+  }
+  return undefined
+}
+
+/** 查找信号参数定义中的 label 和 unit */
+function findParamMeta(ind: IndicatorMeta, paramKey: string): { label: string; unit: string } | undefined {
+  for (const sig of ind.signals) {
+    for (const op of sig.operators) {
+      const p = op.params.find(p => p.key === paramKey)
+      if (p) return { label: p.label, unit: p.unit }
+    }
+  }
+  return undefined
+}
+
 /** 将 SignalConfig 转为可读描述（用于 chip 显示） */
 export function formatSignalConfig(
   _signalId: string,
@@ -302,6 +325,17 @@ export function formatSignalConfig(
       return `[${config.params.min ?? ''}~${config.params.max ?? ''}]${indicator.unit}`
     case 'in': case 'not_in':
       return `{${(config.params.values as string[])?.join(',') || ''}}`
+    case 'custom': {
+      const start = config.params.lookback_start
+      const end = config.params.lookback_end
+      const startMeta = findParamMeta(ind, 'lookback_start')
+      const endMeta = findParamMeta(ind, 'lookback_end')
+      const sLabel = startMeta?.label ?? '起始天数'
+      const eLabel = endMeta?.label ?? '结束天数'
+      const sUnit = startMeta?.unit || '天前'
+      const eUnit = endMeta?.unit || '天前'
+      return `${sLabel}${start ?? 0}${sUnit}, ${eLabel}${end ?? 0}${eUnit}`
+    }
     default:
       return Object.entries(config.params).map(([k, v]) => `${k}=${v}`).join(', ')
   }
@@ -316,6 +350,7 @@ export const operatorSymbols: Record<CompareOperator, string> = {
   cross_above: '↑↑', cross_below: '↓↓',
   divergence_pos: '↘', divergence_neg: '↗',
   rising: '⤒', falling: '⤓',
+  custom: '',
 }
 
 /** 分类 → 中文标签映射 */

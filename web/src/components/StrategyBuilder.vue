@@ -142,40 +142,48 @@
             <!-- 步骤3: 根据选中操作符动态渲染参数输入框 -->
             <div class="qf-params">
               <template v-for="p in currentOpParams" :key="p.key">
-                <!-- 数值型参数 → 数字输入框 -->
-                <input
-                  v-if="isNumberLike(p.type)"
-                  type="number"
-                  v-model.number="paramValues[p.key]"
-                  :placeholder="`${p.label} (${p.unit || '默认:' + p.default})`"
-                  class="qf-input"
-                  step="any"
-                  :min="p.min" :max="p.max"
-                />
-                <!-- 单选枚举 → 下拉框 -->
-                <select
-                  v-else-if="p.type === 'select'"
-                  v-model="paramValues[p.key]"
-                  class="qf-input qf-select"
-                >
-                  <option value="">请选择...</option>
-                  <option v-for="o in p.options" :key="o.value" :value="o.value">{{ o.label }}</option>
-                </select>
-                <!-- 多选枚举 → checkbox 组 -->
-                <div v-else-if="isMultiSelect(p.type)" class="qf-multi-select">
-                  <label
-                    v-for="o in p.options" :key="o.value"
-                    class="qf-checkbox"
-                    :class="{ checked: (multiVals[p.key] || []).includes(o.value) }"
+                <!-- 数值型参数 → 标签 + 数字输入框 + 单位 -->
+                <div v-if="isNumberLike(p.type)" class="qf-param-field">
+                  <span class="qf-param-label">{{ p.label }}</span>
+                  <input
+                    type="number"
+                    v-model.number="paramValues[p.key]"
+                    :placeholder="'默认' + p.default"
+                    class="qf-input"
+                    step="any"
+                    :min="p.min" :max="p.max"
+                  />
+                  <span v-if="p.unit" class="qf-param-unit">{{ p.unit }}</span>
+                </div>
+                <!-- 单选枚举 → 标签 + 下拉框 -->
+                <div v-else-if="p.type === 'select'" class="qf-param-field">
+                  <span class="qf-param-label">{{ p.label }}</span>
+                  <select
+                    v-model="paramValues[p.key]"
+                    class="qf-input qf-select"
                   >
-                    <input
-                      type="checkbox"
-                      :value="o.value"
-                      :checked="(multiVals[p.key] || []).includes(o.value)"
-                      @change="toggleMultiVal(p.key, o.value)"
-                    />
-                    {{ o.label }}
-                  </label>
+                    <option value="">请选择...</option>
+                    <option v-for="o in p.options" :key="o.value" :value="o.value">{{ o.label }}</option>
+                  </select>
+                </div>
+                <!-- 多选枚举 → 标签 + checkbox 组 -->
+                <div v-else-if="isMultiSelect(p.type)" class="qf-param-field">
+                  <span class="qf-param-label">{{ p.label }}</span>
+                  <div class="qf-multi-select">
+                    <label
+                      v-for="o in p.options" :key="o.value"
+                      class="qf-checkbox"
+                      :class="{ checked: (multiVals[p.key] || []).includes(o.value) }"
+                    >
+                      <input
+                        type="checkbox"
+                        :value="o.value"
+                        :checked="(multiVals[p.key] || []).includes(o.value)"
+                        @change="toggleMultiVal(p.key, o.value)"
+                      />
+                      {{ o.label }}
+                    </label>
+                  </div>
                 </div>
               </template>
               <span v-if="currentOpParams.length === 0" class="qf-no-params">该操作符无需额外参数</span>
@@ -940,6 +948,24 @@ function formatSignalParamText(cfg: SignalConfig, ind: IndicatorMeta): string {
       }
       return `{${vals.join(',')}}`
     }
+    case 'custom': {
+      const start = cfg.params.lookback_start
+      const end = cfg.params.lookback_end
+      // 从信号定义中动态读取参数的 label 和 unit
+      let sLabel = '起始天数', eLabel = '结束天数'
+      let sUnit = '天前', eUnit = '天前'
+      for (const sig of ind.signals) {
+        if (sig.signal_id === cfg.signal_id) {
+          for (const op of sig.operators) {
+            for (const p of op.params) {
+              if (p.key === 'lookback_start') { if (p.label) sLabel = p.label; if (p.unit) sUnit = p.unit }
+              if (p.key === 'lookback_end')   { if (p.label) eLabel = p.label; if (p.unit) eUnit = p.unit }
+            }
+          }
+        }
+      }
+      return `${sLabel}${start ?? 0}${sUnit}, ${eLabel}${end ?? 0}${eUnit}`
+    }
     default:
       return Object.entries(cfg.params).map(([k, v]) => `${k}=${v}`).join(', ')
   }
@@ -1461,7 +1487,10 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
   background: #fff; min-width: 80px;
 }
 .qf-op-select:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.06); }
-.qf-params { display: flex; gap: 6px; flex: 1; align-items: center; flex-wrap: wrap; }
+.qf-params { display: flex; gap: 8px; flex: 1; align-items: center; flex-wrap: wrap; }
+.qf-param-field { display: flex; align-items: center; gap: 4px; }
+.qf-param-label { font-size: 12.5px; color: #666; white-space: nowrap; }
+.qf-param-unit { font-size: 12px; color: #999; white-space: nowrap; }
 .qf-input {
   padding: 5px 10px; border: 1px solid #d9d9d9; border-radius: 6px;
   font-size: 13px; outline: none; color: #333; width: 110px;

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"stock-ai/internal/indicator"
+	"stock-ai/internal/indicator/signalutil"
 	"stock-ai/internal/model"
 )
 
@@ -155,8 +156,8 @@ func calcRedThree(klines []*model.DailyKline) *redThreeResult {
 	denominator := sma(maxLow, 10, 1)
 	var2 := make([]float64, n)
 	for i := 0; i < n; i++ {
-		if denominator[i] != 0 {
-			var2[i] = numerator[i] / denominator[i]
+		if denom := denominator[i]; denom != 0 {
+			var2[i] = numerator[i] / denom
 		}
 	}
 
@@ -184,7 +185,7 @@ func calcRedThree(klines []*model.DailyKline) *redThreeResult {
 		qushi[i] = 3*smaA5[i] - 2*smaSmaA59[i]
 	}
 
-	// 6. MAIRU = IF(CROSS(QUSHI, JIANDI), 100, 0)  — JIANDI 恒为 1
+	// 6. MAIRU = IF(CROSS(QUSHI, JIANDI), 100, 0) — JIANDI 恒为 1
 	jiandi := make([]float64, n)
 	for i := 0; i < n; i++ {
 		jiandi[i] = 1
@@ -197,7 +198,7 @@ func calcRedThree(klines []*model.DailyKline) *redThreeResult {
 		}
 	}
 
-	// 7. VAR5 = EMA(IF(LOW<=VAR4, VAR3, 0), 3)  — 未直接用于信号，用于完整性
+	// 7. VAR5 = EMA(IF(LOW<=VAR4, VAR3, 0), 3) — 未直接用于信号，用于完整性
 	_ = var3
 	_ = var4
 
@@ -227,15 +228,8 @@ func calcRedThree(klines []*model.DailyKline) *redThreeResult {
 }
 
 // ============================================================================
-//  SignalRedThreeBuy — 买入信号
-//
-//  判定规则: QUSHI 上穿 JIANDI(1)，即 MAIRU == 100
-//  参数: lookback_days — 回看天数（默认 1），在近 N 日内出现买入信号即通过
-//
-//  Seq: "01" → 完整内置SignalID = 01101001
+//  SignalRedThreeBuy — 买入信号 (Seq: 01 → 01101001)
 // ============================================================================
-
-const paramRedThreeBuyLookback = "lookback_days"
 
 type SignalRedThreeBuy struct {
 	indicator.BaseSignal
@@ -250,17 +244,19 @@ func NewSignalRedThreeBuy() *SignalRedThreeBuy {
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedThreeBuyLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					paramRedThreeBuyLookback: float64(1),
+					indicator.ParamKeyLookbackStart: float64(0),
+					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
 		),
@@ -268,15 +264,20 @@ func NewSignalRedThreeBuy() *SignalRedThreeBuy {
 }
 
 func (s *SignalRedThreeBuy) Evaluate(r *redThreeResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedThreeBuyLookback, 1))
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 0))
+	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
 	n := len(r.MAIRU)
 
-	// 检查最近 lookback 天（data[n-1]=最新）是否有买入信号
-	start := n - lookback
-	if start < 0 {
-		start = 0
+	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, n)
+	if err != nil {
+		return &indicator.EvaluatedStock{
+			Result:   indicator.ResultRejected,
+			SignalID: config.SignalID,
+			Message:  err.Error(),
+		}
 	}
-	for i := start; i < n; i++ {
+
+	for i := idxStart; i < idxEnd; i++ {
 		if r.MAIRU[i] == 100 {
 			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
 		}
@@ -284,20 +285,13 @@ func (s *SignalRedThreeBuy) Evaluate(r *redThreeResult, config *indicator.Signal
 	return &indicator.EvaluatedStock{
 		Result:   indicator.ResultRejected,
 		SignalID: config.SignalID,
-		Message:  fmt.Sprintf("近%d日内未出现QUSHI金叉买入信号", lookback),
+		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未出现QUSHI金叉买入信号", start, end),
 	}
 }
 
 // ============================================================================
-//  SignalRedThreeDaDi — 大底信号
-//
-//  判定规则: (MA5-Close)/Close > 4% 且 (MA10-MA5)/MA5 > 4%，即 DADI == 100
-//  参数: lookback_days — 回看天数（默认 1），在近 N 日内出现大底信号即通过
-//
-//  Seq: "02" → 完整内置SignalID = 01101002
+//  SignalRedThreeDaDi — 大底信号 (Seq: 02 → 01101002)
 // ============================================================================
-
-const paramRedThreeDaDiLookback = "lookback_days"
 
 type SignalRedThreeDaDi struct {
 	indicator.BaseSignal
@@ -312,17 +306,19 @@ func NewSignalRedThreeDaDi() *SignalRedThreeDaDi {
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedThreeDaDiLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					paramRedThreeDaDiLookback: float64(1),
+					indicator.ParamKeyLookbackStart: float64(0),
+					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
 		),
@@ -330,14 +326,20 @@ func NewSignalRedThreeDaDi() *SignalRedThreeDaDi {
 }
 
 func (s *SignalRedThreeDaDi) Evaluate(r *redThreeResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedThreeDaDiLookback, 1))
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 0))
+	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
 	n := len(r.DADI)
 
-	start := n - lookback
-	if start < 0 {
-		start = 0
+	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, n)
+	if err != nil {
+		return &indicator.EvaluatedStock{
+			Result:   indicator.ResultRejected,
+			SignalID: config.SignalID,
+			Message:  err.Error(),
+		}
 	}
-	for i := start; i < n; i++ {
+
+	for i := idxStart; i < idxEnd; i++ {
 		if r.DADI[i] == 100 {
 			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
 		}
@@ -345,21 +347,13 @@ func (s *SignalRedThreeDaDi) Evaluate(r *redThreeResult, config *indicator.Signa
 	return &indicator.EvaluatedStock{
 		Result:   indicator.ResultRejected,
 		SignalID: config.SignalID,
-		Message:  fmt.Sprintf("近%d日内未出现大底信号", lookback),
+		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未出现大底信号", start, end),
 	}
 }
 
 // ============================================================================
-//  SignalRedThreeWarning — 警告信号
-//
-//  判定规则: 100 下穿 QUSHI（即 QUSHI 从 >=100 跌到 <100，出现死叉）
-//  计算方式: CROSS(100, QUSHI)，即前一日 100 <= QUSHI 且 今日 100 > QUSHI
-//  参数: lookback_days — 回看天数（默认 1），在近 N 日内出现警告信号即通过
-//
-//  Seq: "03" → 完整内置SignalID = 01101003
+//  SignalRedThreeWarning — 警告信号 (Seq: 03 → 01101003)
 // ============================================================================
-
-const paramRedThreeWarningLookback = "lookback_days"
 
 type SignalRedThreeWarning struct {
 	indicator.BaseSignal
@@ -374,17 +368,19 @@ func NewSignalRedThreeWarning() *SignalRedThreeWarning {
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedThreeWarningLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					paramRedThreeWarningLookback: float64(1),
+					indicator.ParamKeyLookbackStart: float64(0),
+					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
 		),
@@ -392,8 +388,18 @@ func NewSignalRedThreeWarning() *SignalRedThreeWarning {
 }
 
 func (s *SignalRedThreeWarning) Evaluate(r *redThreeResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedThreeWarningLookback, 1))
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 0))
+	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
 	n := len(r.QUSHI)
+
+	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, n)
+	if err != nil {
+		return &indicator.EvaluatedStock{
+			Result:   indicator.ResultRejected,
+			SignalID: config.SignalID,
+			Message:  err.Error(),
+		}
+	}
 
 	// 构造恒为 100 的数组，调用 CROSS(100, QUSHI) — 100 上穿 QUSHI，即 QUSHI 从 >=100 跌破 100
 	hundred := make([]float64, n)
@@ -402,11 +408,7 @@ func (s *SignalRedThreeWarning) Evaluate(r *redThreeResult, config *indicator.Si
 	}
 	warningCross := cross(hundred, r.QUSHI)
 
-	start := n - lookback
-	if start < 0 {
-		start = 0
-	}
-	for i := start; i < n; i++ {
+	for i := idxStart; i < idxEnd; i++ {
 		if warningCross[i] {
 			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
 		}
@@ -414,6 +416,6 @@ func (s *SignalRedThreeWarning) Evaluate(r *redThreeResult, config *indicator.Si
 	return &indicator.EvaluatedStock{
 		Result:   indicator.ResultRejected,
 		SignalID: config.SignalID,
-		Message:  fmt.Sprintf("近%d日内未出现QUSHI死叉警告信号", lookback),
+		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未出现QUSHI死叉警告信号", start, end),
 	}
 }

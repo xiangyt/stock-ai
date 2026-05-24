@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"stock-ai/internal/indicator"
+	"stock-ai/internal/indicator/signalutil"
 	"stock-ai/internal/model"
 )
 
@@ -35,7 +36,7 @@ type topBottomResult struct {
 	GreenLine []float64 // A1 — 绿柱线（最大值50）
 }
 
-// TopBottom 顶底信号指标
+// topBottom 顶底信号指标
 type TopBottom struct {
 	indicator.BaseIndicator
 }
@@ -56,7 +57,10 @@ func NewTopBottom() *TopBottom {
 		NewSignalTopBottomGreen(),
 	})
 
-	i.SetCustomSignals(nil)
+	i.SetCustomSignals([]indicator.Signal{
+		NewSignalTopBottomRed(),
+		NewSignalTopBottomGreen(),
+	})
 	return i
 }
 
@@ -79,7 +83,7 @@ func (i *TopBottom) Evaluate(stock indicator.StockSource, config []*indicator.Si
 		return &indicator.EvaluatedStock{
 			Result:   indicator.ResultRejected,
 			SignalID: config[0].SignalID,
-			Message:  fmt.Sprintf("K线数据不足，需要至少%d根，当前%d根", topBottomMinKlineLen, len(klines)),
+			Message:  fmt.Sprintf("K线数据不足，需要至少 %d 根，当前 %d 根", topBottomMinKlineLen, len(klines)),
 		}
 	}
 
@@ -303,12 +307,10 @@ func vecCap(a []float64, cap float64) []float64 {
 //  SignalTopBottomRed — 红柱信号
 //
 //  判定规则: A > 5（红色柱状有效买入信号，参考原公式 Buy 阈值）
-//  参数: lookback_days — 回看天数（默认 1），在近 N 日内出现红柱信号即通过
+//  参数: lookback_start / lookback_end — 信号窗口（默认 8/3），窗口内出现红柱信号即通过
 //
 //  Seq: "01" → 完整内置SignalID = 01100001
 // ============================================================================
-
-const paramTopBottomRedLookback = "lookback_days"
 
 type SignalTopBottomRed struct {
 	indicator.BaseSignal
@@ -323,53 +325,69 @@ func NewSignalTopBottomRed() *SignalTopBottomRed {
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramTopBottomRedLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					paramTopBottomRedLookback: float64(1),
+					indicator.ParamKeyLookbackStart: float64(0),
+					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
 		),
 	}
 }
 
-func (s *SignalTopBottomRed) Evaluate(r *topBottomResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramTopBottomRedLookback, 5))
-	n := len(r.RedLine)
+func evalTopBottomSignal(redLine, greenLine []float64, threshold float64, useGreen bool, label string, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 0))
+	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
 
-	start := n - lookback
-	if start < 0 {
-		start = 0
+	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(redLine))
+	if err != nil {
+		return &indicator.EvaluatedStock{
+			Result:   indicator.ResultRejected,
+			SignalID: config.SignalID,
+			Message:  err.Error(),
+		}
 	}
-	for i := start; i < n; i++ {
-		if r.RedLine[i] > 5 {
-			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
+
+	for i := idxStart; i < idxEnd; i++ {
+		if useGreen {
+			val := greenLine[i] * 15
+			if val > 5 && val > redLine[i] {
+				return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
+			}
+		} else {
+			if redLine[i] > threshold {
+				return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
+			}
 		}
 	}
 	return &indicator.EvaluatedStock{
 		Result:   indicator.ResultRejected,
 		SignalID: config.SignalID,
-		Message:  fmt.Sprintf("近%d日内未出现红柱信号", lookback),
+		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未出现%s信号", start, end, label),
 	}
+}
+
+func (s *SignalTopBottomRed) Evaluate(r *topBottomResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	return evalTopBottomSignal(r.RedLine, r.GreenLine, 5, false, "红柱", config)
 }
 
 // ============================================================================
 //  SignalTopBottomGreen — 绿柱信号
 //
 //  判定规则: A1 > 0（绿色柱状出现）
-//  参数: lookback_days — 回看天数（默认 1），在近 N 日内出现绿柱信号即通过
+//  参数: lookback_start / lookback_end — 信号窗口（默认 8/3），窗口内出现绿柱信号即通过
 //
 //  Seq: "02" → 完整内置SignalID = 01100002
 // ============================================================================
-
-const paramTopBottomGreenLookback = "lookback_days"
 
 type SignalTopBottomGreen struct {
 	indicator.BaseSignal
@@ -384,17 +402,19 @@ func NewSignalTopBottomGreen() *SignalTopBottomGreen {
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramTopBottomGreenLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					paramTopBottomGreenLookback: float64(1),
+					indicator.ParamKeyLookbackStart: float64(0),
+					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
 		),
@@ -402,22 +422,5 @@ func NewSignalTopBottomGreen() *SignalTopBottomGreen {
 }
 
 func (s *SignalTopBottomGreen) Evaluate(r *topBottomResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramTopBottomGreenLookback, 5))
-	n := len(r.GreenLine)
-
-	start := n - lookback
-	if start < 0 {
-		start = 0
-	}
-	for i := start; i < n; i++ {
-		val := r.GreenLine[i] * 15
-		if val > 5 && val > r.RedLine[i] {
-			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
-		}
-	}
-	return &indicator.EvaluatedStock{
-		Result:   indicator.ResultRejected,
-		SignalID: config.SignalID,
-		Message:  fmt.Sprintf("近%d日内未出现绿柱信号", lookback),
-	}
+	return evalTopBottomSignal(r.RedLine, r.GreenLine, 5, true, "绿柱", config)
 }

@@ -149,6 +149,7 @@ const (
 	OpDivergenceNeg CompareOperator = "divergence_neg"
 	OpRising        CompareOperator = "rising"
 	OpFalling       CompareOperator = "falling"
+	OpCustom        CompareOperator = "custom" // 自定义参数（如 lookback 窗口）
 )
 
 // OperatorMeta 操作符元数据
@@ -278,6 +279,9 @@ const (
 	ParamKeyFastDays  = "fast_days" // 快线周期：cross_above/cross_below
 	ParamKeySlowDays  = "slow_days" // 慢线周期：cross_above/cross_below
 	ParamKeyDays      = "days"      // 通用回看天数：rising/falling 等
+
+	ParamKeyLookbackStart = "lookback_start" // 窗口起点（更早的N天前），配合 lookback_end 使用
+	ParamKeyLookbackEnd   = "lookback_end"   // 窗口终点（更近的N天前）
 )
 
 // ============================================================================
@@ -681,6 +685,7 @@ var operatorLabels = map[CompareOperator]string{
 	OpDivergenceNeg: "底背离",
 	OpRising:        "多头排列",
 	OpFalling:       "空头排列",
+	OpCustom:        "自定义参数",
 }
 
 var operatorDescs = map[CompareOperator]string{
@@ -701,4 +706,5 @@ var operatorDescs = map[CompareOperator]string{
 	OpDivergenceNeg: "价格创新低但指标未创新低（底背离）",
 	OpRising:        "短期均线 > 中期均线 > 长期均线",
 	OpFalling:       "短期均线 < 中期均线 < 长期均线",
+	OpCustom:        "按自定义参数条件判断（如时间窗口）",
 }

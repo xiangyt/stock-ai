@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"stock-ai/internal/indicator"
+	"stock-ai/internal/indicator/signalutil"
 	"stock-ai/internal/model"
 )
 
@@ -42,7 +43,6 @@ type redTopResult struct {
 	// Special computations
 	LLV20 []float64 // LLV(LOW, 20) — for AbsoluteBottom
 	HXN   []float64 // 91 or 0 — for SeeRise
-
 	// MACD
 	DIF []float64
 	DEA []float64
@@ -302,35 +302,39 @@ func calcRedTopHXN(closes, highs []float64) []float64 {
 
 // ============================================================================
 //  evalRedTopSignal — 公共信号评估函数
-//  在最近 lookback 天内，signals[i]==100 则通过
+//  在 [start, end) 窗口内，signals[i]==100 则通过
+//  start/end 均为"N天前"，对应 data 数组索引 [n-start, n-end)
+//  若 start < end 则自动交换（容错）。
 // ============================================================================
 
-func evalRedTopSignal(signals []float64, lookback int, label string, signalID string) *indicator.EvaluatedStock {
-	n := len(signals)
-	start := n - lookback
-	if start < 0 {
-		start = 0
+func evalRedTopSignal(signals []float64, config *indicator.SignalConfig, label string) *indicator.EvaluatedStock {
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 0))
+	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
+
+	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(signals))
+	if err != nil {
+		return &indicator.EvaluatedStock{
+			Result:   indicator.ResultRejected,
+			SignalID: config.SignalID,
+			Message:  err.Error(),
+		}
 	}
-	for i := start; i < n; i++ {
+
+	for i := idxStart; i < idxEnd; i++ {
 		if signals[i] == 100 {
-			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: signalID}
+			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
 		}
 	}
 	return &indicator.EvaluatedStock{
 		Result:   indicator.ResultRejected,
-		SignalID: signalID,
-		Message:  fmt.Sprintf("近%d日内未出现%s信号", lookback, label),
+		SignalID: config.SignalID,
+		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未出现%s信号", start, end, label),
 	}
 }
 
 // ============================================================================
 //  SignalRedTopExtremeBottom — 极底信号 (Seq: 01 → 01103001)
-//
-//  判定规则: Info 从三连阴转阳 + AverageLine < 0.5
-//    Info[i] && !Info[i-1] && !Info[i-2] && !Info[i-3] && AverageLine[i] < 0.5
 // ============================================================================
-
-const paramRedTopExtremeBottomLookback = "lookback_days"
 
 type SignalRedTopExtremeBottom struct {
 	indicator.BaseSignal
@@ -345,23 +349,23 @@ func NewSignalRedTopExtremeBottom() *SignalRedTopExtremeBottom {
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedTopExtremeBottomLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
-				Params:   map[string]any{paramRedTopExtremeBottomLookback: float64(1)},
+				Operator: indicator.OpCustom,
+				Params:   map[string]any{indicator.ParamKeyLookbackStart: float64(0), indicator.ParamKeyLookbackEnd: float64(0)},
 			},
 		),
 	}
 }
 
 func (s *SignalRedTopExtremeBottom) Evaluate(r *redTopResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedTopExtremeBottomLookback, 1))
 	n := len(r.Info)
 	ref1 := refBool(r.Info, 1)
 	ref2 := refBool(r.Info, 2)
@@ -373,18 +377,12 @@ func (s *SignalRedTopExtremeBottom) Evaluate(r *redTopResult, config *indicator.
 			signals[i] = 100
 		}
 	}
-	return evalRedTopSignal(signals, lookback, "极底", config.SignalID)
+	return evalRedTopSignal(signals, config, "极底")
 }
 
 // ============================================================================
 //  SignalRedTopRise — 升信号 (Seq: 02 → 01103002)
-//
-//  判定规则: Info 三连阴转阳 + 走强逆转 + 放量
-//    Info[i] && !Info[i-1] && !Info[i-2] && !Info[i-3]
-//    && Strengthen[i] && !Strengthen[i-1] && VolumeSignal[i]
 // ============================================================================
-
-const paramRedTopRiseLookback = "lookback_days"
 
 type SignalRedTopRise struct {
 	indicator.BaseSignal
@@ -395,27 +393,27 @@ func NewSignalRedTopRise() *SignalRedTopRise {
 		BaseSignal: indicator.NewBaseSignal(
 			"02",
 			"升",
-			"Info三连阴转阳+走强逆转+放量，出现启动上升信号",
+			"升", // Info三连阴转阳+走强逆转+放量，出现启动上升信号
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedTopRiseLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
-				Params:   map[string]any{paramRedTopRiseLookback: float64(1)},
+				Operator: indicator.OpCustom,
+				Params:   map[string]any{indicator.ParamKeyLookbackStart: float64(0), indicator.ParamKeyLookbackEnd: float64(0)},
 			},
 		),
 	}
 }
 
 func (s *SignalRedTopRise) Evaluate(r *redTopResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedTopRiseLookback, 1))
 	n := len(r.Info)
 	refInfo1 := refBool(r.Info, 1)
 	refInfo2 := refBool(r.Info, 2)
@@ -429,26 +427,14 @@ func (s *SignalRedTopRise) Evaluate(r *redTopResult, config *indicator.SignalCon
 			signals[i] = 100
 		}
 	}
-	return evalRedTopSignal(signals, lookback, "升", config.SignalID)
+	return evalRedTopSignal(signals, config, "升")
 }
 
 // ============================================================================
 //  SignalRedTopBottom — 见底信号 (Seq: 03 → 01103003)
-//
-//  判定规则: 跳空低开后高走，假阴线形态
-//    REF(O,1)/REF(C,1) > 1.04  — 前日大幅跳空高开
-//    REF(L,1) <= 688            — 前日最低价阈值
-//    O > REF(C,1)               — 今开高于前收
-//    C < REF(O,1)                — 今收低于前开（假阴线）
-//    C/O >= 1.01                 — 日内涨幅 ≥ 1%
-//
-//  注: 条件 REF(L,1)<=688 为原公式硬编码阈值，可根据实际价格单位调整
 // ============================================================================
 
-const (
-	paramRedTopBottomLookback = "lookback_days"
-	redTopBottomLowThreshold  = 688.0 // REF(L,1) 最低价阈值
-)
+const redTopBottomLowThreshold = 688.0 // REF(L,1) 最低价阈值
 
 type SignalRedTopBottom struct {
 	indicator.BaseSignal
@@ -459,27 +445,27 @@ func NewSignalRedTopBottom() *SignalRedTopBottom {
 		BaseSignal: indicator.NewBaseSignal(
 			"03",
 			"见底",
-			"跳空低开假阴线+前日跳空高开，出现见底反转信号",
+			"见底", // 跳空低开假阴线+前日跳空高开，出现见底反转信号
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedTopBottomLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
-				Params:   map[string]any{paramRedTopBottomLookback: float64(1)},
+				Operator: indicator.OpCustom,
+				Params:   map[string]any{indicator.ParamKeyLookbackStart: float64(0), indicator.ParamKeyLookbackEnd: float64(0)},
 			},
 		),
 	}
 }
 
 func (s *SignalRedTopBottom) Evaluate(r *redTopResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedTopBottomLookback, 1))
 	n := len(r.Closes)
 	refOpens := ref(r.Opens, 1)
 	refCloses := ref(r.Closes, 1)
@@ -496,19 +482,12 @@ func (s *SignalRedTopBottom) Evaluate(r *redTopResult, config *indicator.SignalC
 			signals[i] = 100
 		}
 	}
-	return evalRedTopSignal(signals, lookback, "见底", config.SignalID)
+	return evalRedTopSignal(signals, config, "见底")
 }
 
 // ============================================================================
 //  SignalRedTopAbsoluteBottom — 绝底信号 (Seq: 04 → 01103004)
-//
-//  判定规则: 收阳 + 下影线极端 + 价格创新低
-//    C >= O           — 收阳线
-//    O/L > 1.05       — 下影线超过 5%（开盘价远超最低价）
-//    L <= LLV(L, 20)  — 最低价创 20 日新低
 // ============================================================================
-
-const paramRedTopAbsoluteBottomLookback = "lookback_days"
 
 type SignalRedTopAbsoluteBottom struct {
 	indicator.BaseSignal
@@ -519,27 +498,27 @@ func NewSignalRedTopAbsoluteBottom() *SignalRedTopAbsoluteBottom {
 		BaseSignal: indicator.NewBaseSignal(
 			"04",
 			"绝底",
-			"收阳+下影线>5%+价格创20日新低，出现绝对底部信号",
+			"绝底", // 收阳+下影线>5%+价格创20日新低，出现绝对底部信号
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedTopAbsoluteBottomLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
-				Params:   map[string]any{paramRedTopAbsoluteBottomLookback: float64(1)},
+				Operator: indicator.OpCustom,
+				Params:   map[string]any{indicator.ParamKeyLookbackStart: float64(0), indicator.ParamKeyLookbackEnd: float64(0)},
 			},
 		),
 	}
 }
 
 func (s *SignalRedTopAbsoluteBottom) Evaluate(r *redTopResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedTopAbsoluteBottomLookback, 1))
 	n := len(r.Closes)
 
 	signals := make([]float64, n)
@@ -551,20 +530,12 @@ func (s *SignalRedTopAbsoluteBottom) Evaluate(r *redTopResult, config *indicator
 			signals[i] = 100
 		}
 	}
-	return evalRedTopSignal(signals, lookback, "绝底", config.SignalID)
+	return evalRedTopSignal(signals, config, "绝底")
 }
 
 // ============================================================================
 //  SignalRedTopSeeRise — 见涨信号 (Seq: 05 → 01103005)
-//
-//  判定规则: HXN 事件 + 放量上涨 + 30 日首次出现
-//    HXN[i] > 90                         — HXN 事件触发
-//    VOL > REF(VOL, 1)                   — 放量
-//    C > REF(C, 1)                       — 上涨
-//    COUNT(HXN > 90, 30) == 1            — 近30日内首次触发
 // ============================================================================
-
-const paramRedTopSeeRiseLookback = "lookback_days"
 
 type SignalRedTopSeeRise struct {
 	indicator.BaseSignal
@@ -575,42 +546,39 @@ func NewSignalRedTopSeeRise() *SignalRedTopSeeRise {
 		BaseSignal: indicator.NewBaseSignal(
 			"05",
 			"见涨",
-			"HXN事件+放量上涨+30日首次出现，出现见涨启动信号",
+			"见涨", // HXN事件+放量上涨+30日首次出现，出现见涨启动信号
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedTopSeeRiseLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
-				Params:   map[string]any{paramRedTopSeeRiseLookback: float64(1)},
+				Operator: indicator.OpCustom,
+				Params:   map[string]any{indicator.ParamKeyLookbackStart: float64(0), indicator.ParamKeyLookbackEnd: float64(0)},
 			},
 		),
 	}
 }
 
 func (s *SignalRedTopSeeRise) Evaluate(r *redTopResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedTopSeeRiseLookback, 1))
 	n := len(r.Closes)
 	refCloses := ref(r.Closes, 1)
 	refVolumes := ref(r.Volumes, 1)
 
 	signals := make([]float64, n)
 	for i := 1; i < n; i++ {
-		// 条件1: HXN > 90
 		if r.HXN[i] <= 90 {
 			continue
 		}
-		// 条件2-3: 放量上涨
 		if !(r.Volumes[i] > refVolumes[i] && r.Closes[i] > refCloses[i]) {
 			continue
 		}
-		// 条件4: COUNT(HXN > 90, 30) == 1
 		count := 0
 		start := i - 29
 		if start < 0 {
@@ -625,19 +593,12 @@ func (s *SignalRedTopSeeRise) Evaluate(r *redTopResult, config *indicator.Signal
 			signals[i] = 100
 		}
 	}
-	return evalRedTopSignal(signals, lookback, "见涨", config.SignalID)
+	return evalRedTopSignal(signals, config, "见涨")
 }
 
 // ============================================================================
 //  SignalRedTopGoldenCross — 金叉信号 (Seq: 06 → 01103006)
-//
-//  判定规则: MACD 金叉 + KDJ 金叉 双重确认
-//    MACD金叉: DIF 上穿 DEA（DIF[i-1] <= DEA[i-1] && DIF[i] > DEA[i]）
-//    KDJ金叉:  K 上穿 D（K[i-1] <= D[i-1] && K[i] > D[i]）
-//    两者在同一天出现则触发
 // ============================================================================
-
-const paramRedTopGoldenCrossLookback = "lookback_days"
 
 type SignalRedTopGoldenCross struct {
 	indicator.BaseSignal
@@ -648,27 +609,27 @@ func NewSignalRedTopGoldenCross() *SignalRedTopGoldenCross {
 		BaseSignal: indicator.NewBaseSignal(
 			"06",
 			"金叉",
-			"MACD金叉+KDJ金叉双重确认，出现金叉买入信号",
+			"金叉", // MACD金叉+KDJ金叉双重确认，出现金叉买入信号
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramRedTopGoldenCrossLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
-				Params:   map[string]any{paramRedTopGoldenCrossLookback: float64(1)},
+				Operator: indicator.OpCustom,
+				Params:   map[string]any{indicator.ParamKeyLookbackStart: float64(0), indicator.ParamKeyLookbackEnd: float64(0)},
 			},
 		),
 	}
 }
 
 func (s *SignalRedTopGoldenCross) Evaluate(r *redTopResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramRedTopGoldenCrossLookback, 1))
 	n := len(r.DIF)
 
 	signals := make([]float64, n)
@@ -679,5 +640,5 @@ func (s *SignalRedTopGoldenCross) Evaluate(r *redTopResult, config *indicator.Si
 			signals[i] = 100
 		}
 	}
-	return evalRedTopSignal(signals, lookback, "金叉", config.SignalID)
+	return evalRedTopSignal(signals, config, "金叉")
 }

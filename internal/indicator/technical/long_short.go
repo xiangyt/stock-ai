@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"stock-ai/internal/indicator"
+	"stock-ai/internal/indicator/signalutil"
 	"stock-ai/internal/model"
 )
 
@@ -29,9 +30,9 @@ import (
 
 const (
 	longShortMinKlineLen = 60 // 最小K线根数（55天计算需求 + 缓冲）
-	longShortTopLevel    = 89  // 超买阈值
-	longShortBottomLevel = 11  // 超卖阈值
-	longShortFilterDays  = 15  // FILTER 持续天数
+	longShortTopLevel    = 89 // 超买阈值
+	longShortBottomLevel = 11 // 超卖阈值
+	longShortFilterDays  = 15 // FILTER 持续天数
 )
 
 // longShortResult 缠论多空预计算结果，供该指标下所有信号复用
@@ -39,10 +40,10 @@ type longShortResult struct {
 	TrendLine  []float64 // 趋势线 (EMA(V11, 3))
 	CenterLine []float64 // 中线
 	// 信号数组：100 = 触发，0 = 未触发（oldest-first 顺序）
-	PrepareBuy []float64
-	ReadyBuy   []float64
-	ActualBuy  []float64
-	BuyStars   []float64
+	PrepareBuy  []float64
+	ReadyBuy    []float64
+	ActualBuy   []float64
+	BuyStars    []float64
 	PrepareSell []float64
 	ReadySell   []float64
 	ActualSell  []float64
@@ -359,12 +360,6 @@ func minVal(a, b float64) float64 {
 }
 
 // ============================================================================
-//  信号参数常量
-// ============================================================================
-
-const paramLongShortLookback = "lookback_days"
-
-// ============================================================================
 //  SignalLongShortPrepareBuy — 准备买入 (Seq: 01 → 01102001)
 //
 //  判定: TrendLine < 11（超卖区域），近 lookback_days 日内出现即通过
@@ -379,21 +374,23 @@ func NewSignalLongShortPrepareBuy() *SignalLongShortPrepareBuy {
 		BaseSignal: indicator.NewBaseSignal(
 			"01",
 			"准备买入",
-			"趋势线进入超卖区域(TrendLine<11)，可准备买入",
+			"准备买入", // 趋势线进入超卖区域(TrendLine<11)，可准备买入
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					paramLongShortLookback: float64(1),
+					indicator.ParamKeyLookbackStart: float64(0),
+					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
 		),
@@ -419,21 +416,23 @@ func NewSignalLongShortReadyBuy() *SignalLongShortReadyBuy {
 		BaseSignal: indicator.NewBaseSignal(
 			"02",
 			"等待底分型",
-			"趋势线持续超卖15日以上且收盘价低于中线，需等待底部形态确认",
+			"等待底分型", // 趋势线持续超卖15日以上且收盘价低于中线，需等待底部形态确认
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					paramLongShortLookback: float64(1),
+					indicator.ParamKeyLookbackStart: float64(0),
+					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
 		),
@@ -459,21 +458,23 @@ func NewSignalLongShortActualBuy() *SignalLongShortActualBuy {
 		BaseSignal: indicator.NewBaseSignal(
 			"03",
 			"下单买入",
-			"趋势线从超卖区逐级回升且收盘价仍低于中线，可下单买入",
+			"下单买入", // 趋势线从超卖区逐级回升且收盘价仍低于中线，可下单买入
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					paramLongShortLookback: float64(1),
+					indicator.ParamKeyLookbackStart: float64(0),
+					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
 		),
@@ -499,21 +500,23 @@ func NewSignalLongShortBuyStars() *SignalLongShortBuyStars {
 		BaseSignal: indicator.NewBaseSignal(
 			"04",
 			"★买多",
-			"趋势线上穿11（金叉）且收盘价低于中线，明确的买入信号",
+			"★买多", // 趋势线上穿11（金叉）且收盘价低于中线，明确的买入信号
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					paramLongShortLookback: float64(1),
+					indicator.ParamKeyLookbackStart: float64(0),
+					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
 		),
@@ -539,21 +542,23 @@ func NewSignalLongShortPrepareSell() *SignalLongShortPrepareSell {
 		BaseSignal: indicator.NewBaseSignal(
 			"05",
 			"准备卖出",
-			"趋势线进入超买区域(TrendLine>89)，可准备卖出",
+			"准备卖出", // 趋势线进入超买区域(TrendLine>89)，可准备卖出
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					paramLongShortLookback: float64(1),
+					indicator.ParamKeyLookbackStart: float64(0),
+					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
 		),
@@ -579,21 +584,23 @@ func NewSignalLongShortReadySell() *SignalLongShortReadySell {
 		BaseSignal: indicator.NewBaseSignal(
 			"06",
 			"等待顶分型",
-			"趋势线持续超买15日以上且收盘价高于中线，需等待顶部形态确认",
+			"等待顶分型", // 趋势线持续超买15日以上且收盘价高于中线，需等待顶部形态确认
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					paramLongShortLookback: float64(1),
+					indicator.ParamKeyLookbackStart: float64(0),
+					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
 		),
@@ -619,21 +626,23 @@ func NewSignalLongShortActualSell() *SignalLongShortActualSell {
 		BaseSignal: indicator.NewBaseSignal(
 			"07",
 			"下单卖出",
-			"趋势线从超买区逐级回落且收盘价仍高于中线，可下单卖出",
+			"下单卖出", // 趋势线从超买区逐级回落且收盘价仍高于中线，可下单卖出
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					paramLongShortLookback: float64(1),
+					indicator.ParamKeyLookbackStart: float64(0),
+					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
 		),
@@ -659,21 +668,23 @@ func NewSignalLongShortSellStars() *SignalLongShortSellStars {
 		BaseSignal: indicator.NewBaseSignal(
 			"08",
 			"★沽空",
-			"趋势线下穿89（死叉）且收盘价高于中线，明确的卖出信号",
+			"★沽空", // 趋势线下穿89（死叉）且收盘价高于中线，明确的卖出信号
 			indicator.ValNumber,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpRising,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						{Key: paramLongShortLookback, Label: "回看天数", Type: "number", Required: false, Default: 1, Min: 1, Max: 20, Unit: "日"},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpRising,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					paramLongShortLookback: float64(1),
+					indicator.ParamKeyLookbackStart: float64(0),
+					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
 		),
@@ -687,19 +698,24 @@ func (s *SignalLongShortSellStars) Evaluate(r *longShortResult, config *indicato
 // ============================================================================
 //  evalLongShortSignal — 8个信号的公共评估逻辑
 //
-//  检查信号数组（100=触发）在近 lookback_days 日内是否有触发点。
-//  所有信号使用相同的 lookback 参数和检查逻辑。
+//  检查信号数组（100=触发）在指定窗口内是否有触发点。
+//  start/end 均为"N天前"；若 start < end 则自动交换（容错）。
 // ============================================================================
 
 func evalLongShortSignal(signalData []float64, signalName string, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	lookback := int(config.GetFloat64(paramLongShortLookback, 1))
-	n := len(signalData)
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 0))
+	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
 
-	start := n - lookback
-	if start < 0 {
-		start = 0
+	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(signalData))
+	if err != nil {
+		return &indicator.EvaluatedStock{
+			Result:   indicator.ResultRejected,
+			SignalID: config.SignalID,
+			Message:  err.Error(),
+		}
 	}
-	for i := start; i < n; i++ {
+
+	for i := idxStart; i < idxEnd; i++ {
 		if signalData[i] == 100 {
 			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
 		}
@@ -707,6 +723,6 @@ func evalLongShortSignal(signalData []float64, signalName string, config *indica
 	return &indicator.EvaluatedStock{
 		Result:   indicator.ResultRejected,
 		SignalID: config.SignalID,
-		Message:  fmt.Sprintf("近%d日内未出现%s信号", lookback, signalName),
+		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未出现%s信号", start, end, signalName),
 	}
 }
