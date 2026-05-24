@@ -9,7 +9,7 @@ import (
 
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
-	"stock-ai/internal/subscription/notifier"
+	"stock-ai/internal/notifier"
 
 	"github.com/gin-gonic/gin"
 )

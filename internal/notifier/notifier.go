@@ -74,7 +74,7 @@ func (n *notifierImpl) Render(template string, vars map[string]string) string {
 }
 
 // ============================================================================
-//  导出发送函数（从 bot_handler.go 抽离，供 handler 包和其他模块调用）
+//  导出发送函数（供 handler 包和其他模块调用）
 // ============================================================================
 
 // DingTalkPayload 构建钉钉消息体

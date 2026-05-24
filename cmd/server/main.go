@@ -21,7 +21,7 @@ import (
 	"stock-ai/internal/datacollect"
 	"stock-ai/internal/db"
 	"stock-ai/internal/indicator"
-	"stock-ai/internal/subscription/notifier"
+	"stock-ai/internal/notifier"
 	"stock-ai/internal/subscription/quotecache"
 	"stock-ai/internal/subscription/runner"
 	"stock-ai/internal/subscription/scheduler"

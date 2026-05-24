@@ -1,17 +1,10 @@
 package datacollect
 
 import (
-	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +12,7 @@ import (
 	"stock-ai/internal/adapter"
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
+	"stock-ai/internal/notifier"
 	"stock-ai/utils"
 
 	"github.com/robfig/cron/v3"
@@ -79,16 +73,17 @@ type DataCollectRunner struct {
 	notifier *subscriptionNotifier // 机器人推送封装
 }
 
-// subscriptionNotifier 对 subscription/notifier 的轻量封装，仅暴露机器人推送能力。
-type subscriptionNotifier struct{}
+// subscriptionNotifier 对 notifier 包的轻量封装，仅暴露机器人推送能力。
+type subscriptionNotifier struct {
+	ntf notifier.Notifier
+}
 
 func (s *subscriptionNotifier) Push(ctx context.Context, bots []model.PushBot, message string) {
 	for _, bot := range bots {
 		if bot.Status == 0 {
 			continue
 		}
-		// 导入 subscription/notifier 包会造成循环依赖，此处使用内联发送逻辑
-		if err := pushOnce(&bot, message); err != nil {
+		if err := s.ntf.Send(ctx, &bot, message); err != nil {
 			log.Printf("[DataCollect] 推送失败 bot=%d(%s): %v", bot.ID, bot.Name, err)
 		}
 	}
@@ -98,7 +93,7 @@ func (s *subscriptionNotifier) Push(ctx context.Context, bots []model.PushBot, m
 func NewDataCollectRunner() *DataCollectRunner {
 	r := &DataCollectRunner{
 		handlers: make(map[uint]TaskHandler),
-		notifier: &subscriptionNotifier{},
+		notifier: &subscriptionNotifier{ntf: notifier.NewNotifier()},
 	}
 
 	// === 注册内置任务 Handler ===
@@ -332,83 +327,6 @@ func formatSyncResults(periods []db.KLinePeriod, results []SyncBatchResult) stri
 		lines = append(lines, fmt.Sprintf("[%s]成功=%d 跳过=%d 失败=%d", periods[i], r.Success, r.SkipNoDelta, r.Fail))
 	}
 	return strings.Join(lines, "\n")
-}
-
-// ============================================================================
-//  机器人推送（内联实现，避免循环依赖）
-// ============================================================================
-
-// pushOnce 单次推送消息到指定机器人，失败时自动重试一次
-func pushOnce(bot *model.PushBot, message string) error {
-	var err error
-	for attempt := 0; attempt < 2; attempt++ {
-		err = sendByChannel(bot, message)
-		if err == nil {
-			return nil
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	return err
-}
-
-// sendByChannel 根据机器人渠道发送消息
-func sendByChannel(bot *model.PushBot, message string) error {
-	switch bot.Channel {
-	case "dingtalk":
-		payload, _ := json.Marshal(map[string]interface{}{
-			"msgtype": "text",
-			"text":    map[string]string{"content": message},
-		})
-		url := bot.WebhookURL
-		if bot.Secret != "" {
-			timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-			sign := dingTalkSign(timestamp, bot.Secret)
-			url = fmt.Sprintf("%s&timestamp=%s&sign=%s", bot.WebhookURL, timestamp, sign)
-		}
-		return postJSON(url, payload)
-	case "feishu":
-		payload, _ := json.Marshal(map[string]interface{}{
-			"msg_type": "text",
-			"content":  map[string]string{"text": message},
-		})
-		return postJSON(bot.WebhookURL, payload)
-	case "wecom":
-		payload, _ := json.Marshal(map[string]interface{}{
-			"msgtype": "text",
-			"text":    map[string]string{"content": message},
-		})
-		return postJSON(bot.WebhookURL, payload)
-	default:
-		return fmt.Errorf("不支持的渠道: %s", bot.Channel)
-	}
-}
-
-// postJSON HTTP POST JSON
-func postJSON(url string, body []byte) error {
-	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
-	}
-	return nil
-}
-
-// dingTalkSign 钉钉加签（HMAC-SHA256）
-func dingTalkSign(timestamp, secret string) string {
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(timestamp + "\n" + secret))
-	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // ============================================================================

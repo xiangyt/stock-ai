@@ -10,7 +10,7 @@ import (
 	"stock-ai/internal/db"
 	"stock-ai/internal/indicator"
 	"stock-ai/internal/model"
-	"stock-ai/internal/subscription/notifier"
+	"stock-ai/internal/notifier"
 )
 
 // ============================================================================
