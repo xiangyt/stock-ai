@@ -22,10 +22,13 @@
           :total="strategyTotal"
           :page="strategyPage"
           :pageSize="strategyPageSize"
+          :currentUserId="currentUser?.id ?? 0"
           @load="onLoadStrategy"
           @goNew="onGoNew"
           @deleted="onDeleteStrategies"
           @rename="onRenameStrategy"
+          @togglePublic="onTogglePublic"
+          @copy="onCopyStrategy"
           @search="onSearchStrategies"
           @pageChange="onStrategyPageChange"
         />
@@ -33,7 +36,7 @@
 
       <!-- ====== 策略详情/编辑页面（新建 + 编辑） ====== -->
       <div v-else-if="currentPage === 'strategy-new' || currentPage === 'strategy-edit'" class="page strategy-edit-page">
-        <StrategyBuilder ref="builderRef" @saved="onStrategySaved" @goBack="onBackFromEdit" @goBacktest="onGoBacktest" />
+        <StrategyBuilder ref="builderRef" :currentUserId="currentUser?.id ?? 0" @saved="onStrategySaved" @goBack="onBackFromEdit" @goBacktest="onGoBacktest" />
       </div>
 
       <!-- ====== 策略回测页面 ====== -->
@@ -161,8 +164,10 @@ const builderRef = ref<InstanceType<typeof StrategyBuilder> | null>(null)
 /** 前端展示用的策略格式（兼容 StrategyList 组件接口） */
 interface SavedStrategy {
   id: number
+  uid: number
   name: string
   backtestCount: number
+  subscriptionCount: number
   lastRunAt: string | null
   isPublic: boolean
   createdAt: string
@@ -203,8 +208,10 @@ function onStrategyPageChange(page: number, pageSize: number) {
 function toFrontendFormat(item: any): SavedStrategy {
   return {
     id: item.id,
+    uid: item.uid ?? 0,
     name: item.name ?? '',
     backtestCount: item.backtest_count ?? 0,
+    subscriptionCount: item.subscription_count ?? 0,
     lastRunAt: item.last_run_at ?? null,
     isPublic: !!item.is_public,
     createdAt: item.created_at ?? '',
@@ -275,6 +282,30 @@ async function onRenameStrategy(id: number, newName: string) {
   } catch (e) {
     console.error('重命名失败:', e)
     alert('重命名失败: ' + (e as Error).message)
+  }
+}
+
+/** 切换策略公开/私有状态 */
+async function onTogglePublic(id: number, isPublic: boolean) {
+  try {
+    await strategyApi.setStrategyPublic(id, isPublic)
+    // 本地更新（避免重新加载列表闪烁）
+    const idx = savedStrategies.value.findIndex(s => s.id === id)
+    if (idx >= 0) savedStrategies.value[idx].isPublic = isPublic
+  } catch (e) {
+    console.error('切换公开状态失败:', e)
+    alert('操作失败: ' + (e as Error).message)
+  }
+}
+
+/** 复制策略（他人公开策略 → 自己的副本） */
+async function onCopyStrategy(id: number) {
+  try {
+    await strategyApi.copyStrategy(id)
+    await loadStrategies()
+  } catch (e) {
+    console.error('复制策略失败:', e)
+    alert('复制失败: ' + (e as Error).message)
   }
 }
 

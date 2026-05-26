@@ -587,8 +587,14 @@ func (s *SubscriptionService) GetLogs(id, uid uint, page, pageSize int, status s
 }
 
 // TriggerRun 手动触发订阅执行（直接调用 Runner，不经过 Scheduler）
-func (s *SubscriptionService) TriggerRun(id, uid uint) (*TriggerResult, error) {
-	sub, err := db.GetSubscriptionByID(id, uid)
+func (s *SubscriptionService) TriggerRun(id, uid uint, isAdmin bool) (*TriggerResult, error) {
+	var sub *model.Subscription
+	var err error
+	if isAdmin {
+		sub, err = db.GetSubscriptionByIDForScheduler(id)
+	} else {
+		sub, err = db.GetSubscriptionByID(id, uid)
+	}
 	if err != nil {
 		if errors.Is(err, db.ErrRecordNotFound) {
 			return nil, fmt.Errorf("订阅不存在或无权操作")

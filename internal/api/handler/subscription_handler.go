@@ -205,7 +205,7 @@ func (h *SubscriptionHandler) TriggerRun(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.TriggerRun(id, userID)
+	result, err := h.svc.TriggerRun(id, userID, isAdmin(c))
 	if err != nil {
 		errMsg := err.Error()
 		code := 500

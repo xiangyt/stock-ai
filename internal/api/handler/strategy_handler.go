@@ -27,8 +27,20 @@ func getUID(c *gin.Context) uint {
 	return userID.(uint)
 }
 
-// checkOwner 校验策略是否属于当前用户
+// isAdmin 判断当前用户是否为管理员
+func isAdmin(c *gin.Context) bool {
+	role, exists := c.Get("user_role")
+	if !exists {
+		return false
+	}
+	return role.(string) == "admin"
+}
+
+// checkOwner 校验策略是否属于当前用户（管理员可操作任意策略）
 func (h *StrategyHandler) checkOwner(c *gin.Context, id uint) error {
+	if isAdmin(c) {
+		return nil
+	}
 	detail, err := h.svc.GetByID(id)
 	if err != nil {
 		return fmt.Errorf("策略不存在")
@@ -64,7 +76,7 @@ func (h *StrategyHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
 
-	resp, err := h.svc.List(getUID(c), keyword, page, size)
+	resp, err := h.svc.List(getUID(c), isAdmin(c), keyword, page, size)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败: " + err.Error()})
 		return
@@ -88,7 +100,7 @@ func (h *StrategyHandler) GetByID(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "策略不存在"})
 		return
 	}
-	if detail.UID != getUID(c) {
+	if detail.UID != getUID(c) && !isAdmin(c) && !detail.IsPublic {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问此策略"})
 		return
 	}
@@ -193,4 +205,58 @@ func (h *StrategyHandler) BatchDelete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "批量删除成功"})
+}
+
+// SetPublic 切换策略公开/私有状态
+// PUT /api/v1/strategies/:id/public
+func (h *StrategyHandler) SetPublic(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+
+	if err := h.checkOwner(c, uint(id)); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+
+	var req struct {
+		IsPublic bool `json:"is_public"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
+		return
+	}
+
+	if err := h.svc.SetPublic(uint(id), req.IsPublic); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败: " + err.Error()})
+		return
+	}
+
+	msg := "已设为私有"
+	if req.IsPublic {
+		msg = "已设为公开"
+	}
+	c.JSON(http.StatusOK, gin.H{"message": msg})
+}
+
+// Copy 复制策略（仅公开策略或自己的策略可复制）
+// POST /api/v1/strategies/:id/copy
+func (h *StrategyHandler) Copy(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+
+	detail, err := h.svc.Copy(uint(id), getUID(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "复制失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": detail, "message": "复制成功"})
 }

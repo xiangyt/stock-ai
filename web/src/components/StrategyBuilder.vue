@@ -8,8 +8,8 @@
         <span class="page-title">{{ editingId ? '编辑策略' : '新建策略' }}</span>
       </div>
       <div class="ptb-right">
-        <!-- 策略名称（单击可编辑） -->
-        <template v-if="isEditingName">
+        <!-- 策略名称（仅自己的策略可点击编辑） -->
+        <template v-if="isOwner && isEditingName">
           <input
             v-model="strategyName"
             class="inline-name-input"
@@ -20,17 +20,27 @@
           />
         </template>
         <span
-          v-else
+          v-else-if="isOwner"
           class="inline-name-text"
           @click="startEditName"
           :title="'点击编辑名称'"
         >{{ strategyName || '未命名策略' }}</span>
-        <button class="btn-save-sm" @click="saveStrategy" :disabled="signals.length === 0" title="保存策略">💾 保存</button>
+        <span
+          v-else
+          class="inline-name-text readonly"
+        >{{ strategyName || '未命名策略' }}</span>
+        <button
+          v-if="isOwner"
+          class="btn-save-sm"
+          @click="saveStrategy"
+          :disabled="signals.length === 0"
+          title="保存策略"
+        >💾 保存</button>
       </div>
     </div>
 
     <!-- ========== Section 1: AI 输入区 ========== -->
-    <section class="sec-input">
+    <section v-if="isOwner" class="sec-input">
       <!-- AI 文本输入 -->
       <div class="ai-input-area">
         <textarea
@@ -64,16 +74,16 @@
           <span class="sig-count-tag" v-if="signals.length > 0">{{ signals.length }} 个条件</span>
         </div>
         <div class="sec-right">
-          <button class="btn-sec-sm" v-if="signals.length > 0" @click="onClearClick">清空全部</button>
-          <button class="btn-sec-sm" @click="exportJSON" :disabled="signals.length === 0" title="导出信号">导出</button>
-          <label class="btn-sec-sm" title="导入信号">导入
+          <button class="btn-sec-sm" v-if="isOwner && signals.length > 0" @click="onClearClick">清空全部</button>
+          <button class="btn-sec-sm" v-if="isOwner" @click="exportJSON" :disabled="signals.length === 0" title="导出信号">导出</button>
+          <label v-if="isOwner" class="btn-sec-sm" title="导入信号">导入
             <input type="file" accept=".json" @change="importJSON" style="display:none" />
           </label>
         </div>
       </div>
 
-      <!-- 分类 + 指标平铺区域（四列横排） -->
-      <div class="indicators-flat-area" v-if="!indicatorsLoading">
+      <!-- 分类 + 指标平铺区域（四列横排，仅自己的策略可编辑） -->
+      <div class="indicators-flat-area" v-if="isOwner && !indicatorsLoading">
         <template v-for="(inds, cat) in allData" :key="cat">
           <div class="cat-column">
             <!-- 分类标题 -->
@@ -99,9 +109,9 @@
         正在加载指标数据...
       </div>
 
-      <!-- 展开的指标面板（inline 紧跟在对应位置或统一展示） -->
+      <!-- 展开的指标面板（inline 紧跟在对应位置或统一展示，仅自己的策略可编辑） -->
       <transition name="expand-down">
-        <div v-if="expandedIndicatorID && expandedInd" class="ind-expand-panel">
+        <div v-if="isOwner && expandedIndicatorID && expandedInd" class="ind-expand-panel">
           <!-- 面板头部 -->
           <div class="expand-header">
             <span class="expand-ind-name">{{ expandedInd.name }}</span>
@@ -220,7 +230,7 @@
             <span class="chip-bar"></span>
             <span class="chip-name">{{ s.name }}</span>
             <span v-if="s.operator !== 'none'" class="chip-op">{{ s.opSym }} {{ s.paramText }}</span>
-            <button class="chip-del" @click="removeSignal(i)">✕</button>
+            <button v-if="isOwner" class="chip-del" @click="removeSignal(i)">✕</button>
           </div>
         </transition-group>
       </div>
@@ -229,8 +239,8 @@
       <div v-if="signals.length > 0" class="sec-footer">
         <div class="logic-toggle">
           <span class="logic-label">逻辑关系：</span>
-          <button :class="['logic-btn', { active: logicalOp === 'AND' }]" @click="logicalOp = 'AND'">AND</button>
-          <button :class="['logic-btn', { active: logicalOp === 'OR' }]" @click="logicalOp = 'OR'">OR</button>
+          <button :class="['logic-btn', { active: logicalOp === 'AND' }]" :disabled="!isOwner" @click="isOwner && (logicalOp = 'AND')">AND</button>
+          <button :class="['logic-btn', { active: logicalOp === 'OR' }]" :disabled="!isOwner" @click="isOwner && (logicalOp = 'OR')">OR</button>
         </div>
       </div>
     </section>
@@ -401,6 +411,22 @@ import type {
   SignalDef, SignalConfig, SignalOperatorOption, ParamDef, EnumOption,
 } from '../api/indicators'
 import { categoryLabels as catLabels, operatorSymbols, isCustomSignal } from '../api/indicators'
+
+// ========== Props ==========
+interface BuilderProps {
+  currentUserId?: number
+}
+const props = withDefaults(defineProps<BuilderProps>(), { currentUserId: 0 })
+
+// ========== 策略归属 ==========
+/** 当前编辑策略的创建者 UID（0 = 新建策略，始终视为自己的） */
+const strategyOwnerId = ref(0)
+/** 是否是自己的策略 */
+const isOwner = computed(() => {
+  if (!editingId.value) return true  // 新建策略
+  if (props.currentUserId === 0) return true  // 未传 currentUserId，兼容模式
+  return strategyOwnerId.value === props.currentUserId
+})
 
 interface Sig {
   uid: number
@@ -1262,10 +1288,11 @@ function acceptAISignals(aiSignals: any[]) {
   markDirty()
 }
 /** 从策略列表加载策略到编辑器 */
-async function loadStrategyFromOutside(s: { id: string | number; name: string; signals: any[]; logicalOp: 'AND' | 'OR' }) {
+async function loadStrategyFromOutside(s: { id: string | number; name: string; signals: any[]; logicalOp: 'AND' | 'OR'; uid?: number }) {
   try {
     console.warn('[StrategyBuilder] loadStrategyFromOutside', JSON.stringify(s))
     editingId.value = typeof s.id === 'number' ? s.id : parseInt(s.id)
+    strategyOwnerId.value = s.uid ?? 0
     strategyName.value = s.name
     // 确保指标数据已加载
     await loadIndicators()
@@ -1283,7 +1310,7 @@ async function loadStrategyFromOutside(s: { id: string | number; name: string; s
     console.error('[StrategyBuilder] 加载策略失败:', e)
   }
 }
-function resetAllSignals() { editingId.value = null; strategyName.value = ''; signals.value = []; logicalOp.value = 'AND'; uidCounter = 0; clearDirty() }
+function resetAllSignals() { editingId.value = null; strategyOwnerId.value = 0; strategyName.value = ''; signals.value = []; logicalOp.value = 'AND'; uidCounter = 0; clearDirty() }
 
 defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 </script>
@@ -1322,6 +1349,10 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
   transition: all .12s;
 }
 .inline-name-text:hover { background: #e6f4ff; border-color: #91caff; }
+.inline-name-text.readonly {
+  cursor: default; color: #555;
+}
+.inline-name-text.readonly:hover { background: none; border-color: transparent; }
 .inline-name-input {
   padding: 4px 10px; border: 1px solid #1677ff; border-radius: 4px;
   font-size: 14px; outline: none; color: #1a1a2e; font-weight: 500;

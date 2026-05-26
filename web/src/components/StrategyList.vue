@@ -6,15 +6,10 @@
       <p>管理你的选股策略、回测与信号配置</p>
     </header>
 
-    <!-- ====== 工具栏：左侧按钮 + 右侧搜索 ====== -->
+    <!-- ====== 工具栏：新建 + 搜索 ====== -->
     <div class="sl-toolbar">
       <div class="toolbar-left">
-        <button class="btn-primary" @click="$emit('goNew')">＋ 新建策略</button>
-        <!-- 选中后显示的操作按钮 -->
-        <template v-if="selectedIds.size > 0">
-          <button v-if="selectedIds.size === 1" class="btn-outline btn-rename" @click="renameSelected" title="重命名选中项">✏ 重命名</button>
-          <button class="btn-outline btn-danger" @click="batchDelete" title="删除选中">✂ 删除</button>
-        </template>
+        <button class="btn-add" @click="$emit('goNew')">+ 新建策略</button>
       </div>
       <div class="toolbar-right">
         <div class="sl-search">
@@ -41,39 +36,25 @@
 
     <!-- ====== 表格视图 ====== -->
     <div v-else-if="viewMode === 'table'" class="table-area">
-      <div class="table-label">全部策略</div>
-
       <table class="strategy-table">
         <thead>
           <tr>
-            <th class="col-check">
-              <input
-                type="checkbox"
-                :checked="isAllChecked"
-                @change="toggleSelectAll"
-              />
-            </th>
             <th class="col-name">策略名称</th>
-            <th class="col-backtest">回测次数</th>
+            <th class="col-backtest">订阅数量</th>
             <th class="col-last-run">最后运行时间</th>
             <th class="col-public">是否公开</th>
             <th class="col-created">创建时间</th>
+            <th class="col-actions">操作</th>
           </tr>
         </thead>
         <tbody>
           <tr
             v-for="s in displayStrategies"
             :key="s.id"
-            :class="{ selected: selectedIds.has(s.id) }"
-            @click="toggleSelect(s.id)"
           >
-            <td class="col-check" @click.stop>
-              <input type="checkbox" :checked="selectedIds.has(s.id)" @change="toggleSelect(s.id)" />
-            </td>
-            <td class="col-name" @click.stop>
+            <td class="col-name">
               <div class="name-cell">
-                <span class="file-icon">📄</span>
-                <template v-if="editingId === s.id && selectedIds.has(s.id)">
+                <template v-if="editingId === s.id">
                   <input
                     ref="nameInputEl"
                     v-model="editingName"
@@ -90,12 +71,29 @@
                 </template>
               </div>
             </td>
-            <td class="col-backtest">{{ s.backtestCount ?? 0 }}</td>
+            <td class="col-backtest">{{ s.subscriptionCount ?? 0 }}</td>
             <td class="col-last-run">{{ s.lastRunAt ? formatTimeFull(s.lastRunAt) : '—' }}</td>
             <td class="col-public">
               <span :class="['public-tag', s.isPublic ? 'tag-yes' : 'tag-no']">{{ s.isPublic ? '公开' : '私有' }}</span>
             </td>
             <td class="col-created">{{ formatTimeFull(s.createdAt) }}</td>
+            <td class="actions-cell" @click.stop>
+              <button
+                v-if="s.isPublic && s.uid !== currentUserId"
+                class="btn-sm btn-ok"
+                @click="emit('copy', s.id)"
+                title="复制为自己的策略"
+              >复制</button>
+              <template v-if="s.uid === currentUserId">
+                <button class="btn-sm btn-ok" @click="startEditName(s)" title="重命名">重命名</button>
+                <button
+                  :class="['btn-sm', s.isPublic ? 'btn-warn' : 'btn-success']"
+                  @click="emit('togglePublic', s.id, !s.isPublic)"
+                  :title="s.isPublic ? '设为私有' : '设为公开'"
+                >{{ s.isPublic ? '私有' : '公开' }}</button>
+                <button class="btn-sm btn-danger" @click="handleDeleteSingle(s.id, s.name)" title="删除">删除</button>
+              </template>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -135,19 +133,14 @@
           v-for="s in displayStrategies"
           :key="s.id"
           class="strategy-card"
-          :class="{ selected: selectedIds.has(s.id) }"
           @click="$emit('load', s)"
         >
-          <!-- 顶部：选择 + 名称 + 操作 -->
+          <!-- 顶部：名称 + 操作 -->
           <div class="card-top">
-            <label class="card-check" @click.stop>
-              <input type="checkbox" :checked="selectedIds.has(s.id)" @change="toggleSelect(s.id)" />
-            </label>
-            <span class="card-file-icon">📄</span>
             <span class="card-name-text">{{ s.name }}</span>
             <div class="card-top-actions">
               <button class="card-action-sm edit-btn" @click.stop="$emit('load', s)" title="编辑详情">✏️</button>
-              <button class="card-action-sm del-btn" @click.stop="handleDeleteSingle(s.id, s.name)" title="删除">🗑️</button>
+              <button v-if="s.uid === currentUserId" class="card-action-sm del-btn" @click.stop="handleDeleteSingle(s.id, s.name)" title="删除">🗑️</button>
             </div>
           </div>
           <!-- 分类 + 统计信息 -->
@@ -230,8 +223,10 @@ import { ref, reactive, computed, watch } from 'vue'
 
 export interface SavedStrategy {
   id: number
+  uid: number
   name: string
   backtestCount: number
+  subscriptionCount: number
   lastRunAt: string | null
   isPublic: boolean
   createdAt: string
@@ -245,6 +240,7 @@ const props = defineProps<{
   total: number
   page: number
   pageSize: number
+  currentUserId: number
 }>()
 
 const emit = defineEmits<{
@@ -252,6 +248,8 @@ const emit = defineEmits<{
   goNew: []
   deleted: [ids: number[]]
   rename: [id: number, newName: string]
+  togglePublic: [id: number, isPublic: boolean]
+  copy: [id: number]
   search: [keyword: string]
   pageChange: [page: number, pageSize: number]
 }>()
@@ -277,39 +275,11 @@ const sortedStrategies = computed(() => {
 // 后端已分页排序，直接使用 props 数据（不再前端切片）
 const displayStrategies = computed(() => sortedStrategies.value)
 
-// ========== 选择 ==========
-const selectedIds = reactive(new Set<number>())
+// ========== 名称编辑 ==========
 const editingId = ref<number | null>(null)
 const editingName = ref('')
 
-function toggleSelect(id: number) {
-  if (selectedIds.has(id)) { selectedIds.delete(id) }
-  else { selectedIds.add(id) }
-}
-
-function toggleSelectAll(e: Event) {
-  const checked = (e.target as HTMLInputElement).checked
-  if (checked) { for (const s of sortedStrategies.value) selectedIds.add(s.id) }
-  else { selectedIds.clear() }
-}
-
-const isAllChecked = computed(() =>
-  sortedStrategies.value.length > 0 && sortedStrategies.value.every(s => selectedIds.has(s.id))
-)
-const isIndeterminate = computed(() =>
-  selectedIds.size > 0 && !isAllChecked.value
-)
-
-// ========== 名称编辑 ==========
-function renameSelected() {
-  if (selectedIds.size !== 1) return
-  const id = [...selectedIds][0]
-  const s = props.strategies.find(item => item.id === id)
-  if (s) startEditName(s)
-}
-
 function startEditName(s: SavedStrategy) {
-  selectedIds.add(s.id)
   editingId.value = s.id
   editingName.value = s.name
   setTimeout(() => {
@@ -335,16 +305,8 @@ function handleDeleteSingle(id: number, name: string) {
   deleteConfirm.show = true
 }
 
-function batchDelete() {
-  if (selectedIds.size === 0) return
-  deleteConfirm.ids = [...selectedIds]
-  deleteConfirm.count = selectedIds.size
-  deleteConfirm.show = true
-}
-
 function confirmBatchDelete() {
   emit('deleted', deleteConfirm.ids)
-  selectedIds.clear()
   deleteConfirm.show = false
 }
 
@@ -451,8 +413,14 @@ function getCategoryLabel(s: SavedStrategy): string {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 14px; flex-wrap: wrap; gap: 8px;
 }
-.toolbar-left { display: flex; gap: 8px; align-items: center; }
-.toolbar-right { display: flex; align-items: center; }
+/* + 新建按钮（在工具栏左侧，无需额外间距） */
+.btn-add {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 18px;
+  background: #1677ff; color: #fff; border: none; border-radius: 8px;
+  font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s;
+}
+.btn-add:hover { background: #0958d9; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(22,119,255,.25); }
 
 /* 视图切换 */
 .view-toggle {
@@ -466,23 +434,7 @@ function getCategoryLabel(s: SavedStrategy): string {
 .view-btn.active { background: #1677ff; color: #fff; font-weight: 600; }
 .view-btn:not(.active):hover { background: #f5f5f5; }
 
-.btn-primary {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 7px 18px; font-size: 13px; font-weight: 600;
-  color: #fff; background: #1677ff; border: 1px solid #1677ff;
-  border-radius: 5px; cursor: pointer; transition: .15s; white-space: nowrap;
-}
-.btn-primary:hover { background: #0958d9; border-color: #0958d9; }
-.btn-outline {
-  padding: 7px 14px; font-size: 13px; font-weight: 500;
-  color: #555; background: #fff; border: 1px solid #d9d9d9;
-  border-radius: 5px; cursor: pointer; transition: .15s; white-space: nowrap;
-}
-.btn-outline:hover { border-color: #1677ff; color: #1677ff; }
-.btn-danger:hover { border-color: #cf1322; color: #cf1322 !important; }
-.btn-rename:hover { border-color: #d46b08; color: #d46b08 !important; }
-
-.toolbar-right { font-size: 12.5px; color: #888; }
+.toolbar-right { font-size: 12.5px; color: #888; display: flex; align-items: center; }
 .link-apply { color: #1677ff; text-decoration: none; }
 .link-apply:hover { text-decoration: underline; }
 
@@ -503,41 +455,55 @@ function getCategoryLabel(s: SavedStrategy): string {
 
 /* ==================== 表格视图 ==================== */
 .table-area {
-  background: #fff; border: 1px solid #e8e8e8;
-  border-radius: 8px; overflow: hidden;
-}
-.table-label {
-  padding: 10px 16px; font-size: 13px; color: #666;
-  border-bottom: 1px solid #f0f0f0; font-weight: 500;
+  background: #fff;
+  border-radius: 12px; overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
 }
 
 .strategy-table {
   width: 100%; border-collapse: collapse; font-size: 13px;
-  table-layout: fixed;
 }
 .strategy-table thead th {
-  padding: 8px 10px; text-align: left; font-weight: 500;
+  padding: 10px 14px; text-align: center; font-weight: 600;
   color: #666; background: #fafafa; border-bottom: 1px solid #eee;
-  white-space: nowrap; font-size: 12px;
+  white-space: nowrap; font-size: 13px;
   position: sticky; top: 0; z-index: 2;
 }
 .strategy-table tbody tr {
-  border-bottom: 1px solid #f5f5f5; cursor: pointer; transition: background .1s;
+  border-bottom: 1px solid #f3f3f3; transition: background .1s;
 }
-.strategy-table tbody tr:hover { background: #fafbff; }
-.strategy-table tbody tr.selected { background: #e6f4ff; }
-.strategy-table tbody td { padding: 8px 10px; vertical-align: middle; color: #333; }
+.strategy-table tbody tr:hover { background: #f9fbff; }
+.strategy-table tbody td { padding: 10px 14px; vertical-align: middle; color: #333; font-size: 13.5px; text-align: center; }
 
-.col-check { width: 44px; }
-.strategy-table .col-check, .strategy-table th.col-check, .strategy-table td.col-check { text-align: center; padding-left: 12px !important; padding-right: 8px !important; }
-.col-check input[type="checkbox"] { accent-color: #1677ff; cursor: pointer; width: 14px; height: 14px; vertical-align: middle; }
-.col-name { width: 400px; }
-/* 回测/运行时间/是否公开/创建时间：4 列等分剩余空间，统一左对齐 */
-.col-backtest, .col-last-run, .col-public, .col-created { }
+/* 列宽分配 */
+.col-name { text-align: left !important; width: 25%; }
+.strategy-table th.col-name { text-align: left; }
+.col-backtest { width: 80px; }
+.col-last-run { width: 150px; }
+.col-public { width: 80px; }
+.col-created { width: 150px; }
+.col-actions { width: 160px; padding-right: 20px !important; }
+.actions-cell { white-space: nowrap; }
+
+/* 按钮（与 SubscriptionPage 统一）*/
+.btn-sm {
+  padding: 4px 12px; font-size: 12.5px; border: 1px solid #d9d9d9;
+  border-radius: 5px; background: #fff; cursor: pointer; margin-right: 6px;
+  transition: all .15s;
+}
+.btn-sm:last-child { margin-right: 0; }
+.btn-sm:disabled { opacity: .4; cursor: not-allowed; }
+.btn-ok { color: #1677ff; border-color: #91caff; background: #f0f7ff; }
+.btn-ok:hover:not(:disabled) { background: #d6e8ff; }
+.btn-warn { color: #d46b08; border-color: #ffd591; background: #fff7e6; }
+.btn-warn:hover:not(:disabled) { background: #ffe7ba; }
+.btn-success { color: #52c41a; border-color: #b7eb8f; background: #f6ffed; }
+.btn-success:hover:not(:disabled) { background: #d9f7be; }
+.btn-danger { color: #cf1322; border-color: #ffa39e; background: #fff1f0; }
+.btn-danger:hover:not(:disabled) { background: #ffccc7; }
 
 /* 名称单元格 */
 .name-cell { display: flex; align-items: center; gap: 8px; }
-.file-icon { font-size: 17px; flex-shrink: 0; }
 .name-text { font-weight: 500; color: #1a1a2e; cursor: pointer; transition: color .12s; }
 .name-text:hover { color: #1677ff; }
 
@@ -627,12 +593,9 @@ function getCategoryLabel(s: SavedStrategy): string {
   position: relative;
 }
 .strategy-card:hover { border-color: #1677ff; box-shadow: 0 4px 16px rgba(22,119,255,.08); transform: translateY(-1px); }
-.strategy-card.selected { border-color: #1677ff; background: #fbfdff; box-shadow: 0 0 0 2px rgba(22,119,255,.08); }
 
-/* 顶部：checkbox + 名字 */
+/* 顶部：名字 + 操作 */
 .card-top { display: flex; align-items: center; gap: 8px; }
-.card-check input[type="checkbox"] { accent-color: #1677ff; cursor: pointer; width: 15px; height: 15px; }
-.card-file-icon { font-size: 17px; flex-shrink: 0; }
 .card-name-text {
   font-size: 15px; font-weight: 700; color: #1a1a2e;
   flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -725,7 +688,7 @@ tbody tr { animation: fade-in .15s ease-out; }
   .sl-toolbar { flex-direction: column; align-items: stretch; }
   .toolbar-center { justify-content: flex-start; }
   .strategy-table { font-size: 12px; }
-  .col-name { min-width: 160px; word-break: break-all; }
+  .col-name { word-break: break-all; }
   .card-grid { grid-template-columns: 1fr; }
 }
 </style>
