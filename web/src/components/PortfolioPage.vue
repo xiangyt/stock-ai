@@ -2,43 +2,47 @@
   <div class="portfolio-page">
     <!-- ====== 头部 ====== -->
     <header class="page-header">
-      <div class="header-left">
-        <h1>💼 持仓管理</h1>
-        <p>管理你的股票持仓组合，跟踪盈亏表现</p>
-      </div>
-      <div class="header-right">
-        <button class="btn-primary" @click="openOpenModal()">＋ 建仓</button>
-        <button class="btn-icon config-btn" @click="showConfig = true" title="交易设置">⚙️</button>
-      </div>
+      <h1>💼 持仓管理</h1>
+      <p>管理你的股票持仓组合，跟踪盈亏表现</p>
     </header>
 
-    <!-- ====== 统计卡片 ====== -->
-    <div class="stats-row" v-if="summary">
-      <div class="stat-card">
-        <span class="stat-label">持仓中</span>
-        <span class="stat-value">{{ summary.holding_count }}</span>
-        <span class="stat-unit">只</span>
+    <!-- ====== 工具栏：建仓 | 统计卡片 | 设置 ====== -->
+    <div class="sl-toolbar">
+      <div class="toolbar-left">
+        <button class="btn-add" @click="openOpenModal()">＋ 建仓</button>
       </div>
-      <div class="stat-card">
-        <span class="stat-label">已清仓</span>
-        <span class="stat-value stat-gray">{{ summary.closed_count }}</span>
-        <span class="stat-unit">只</span>
+      <div class="toolbar-center" v-if="summary">
+        <div class="stat-chips">
+          <div class="stat-chip">
+            <span class="stat-label">持仓中</span>
+            <span class="stat-val">{{ summary.holding_count }}</span>
+            <span class="stat-unit">只</span>
+          </div>
+          <div class="stat-chip">
+            <span class="stat-label">已清仓</span>
+            <span class="stat-val stat-gray">{{ summary.closed_count }}</span>
+            <span class="stat-unit">只</span>
+          </div>
+          <div class="stat-chip">
+            <span class="stat-label">总投入</span>
+            <span class="stat-val cost-color">¥{{ formatMoney(summary.total_cost) }}</span>
+          </div>
+          <div class="stat-chip">
+            <span class="stat-label">总股数</span>
+            <span class="stat-val">{{ summary.total_quantity.toLocaleString() }}</span>
+            <span class="stat-unit">股</span>
+          </div>
+          <div class="stat-chip stat-chip-select">
+            <select v-model="statusFilter" @change="loadPositions()" class="filter-select">
+              <option value="">全部</option>
+              <option value="holding">持有中</option>
+              <option value="closed">已清仓</option>
+            </select>
+          </div>
+        </div>
       </div>
-      <div class="stat-card">
-        <span class="stat-label">总投入</span>
-        <span class="stat-value cost-color">¥{{ formatMoney(summary.total_cost) }}</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-label">总股数</span>
-        <span class="stat-value">{{ summary.total_quantity.toLocaleString() }}</span>
-        <span class="stat-unit">股</span>
-      </div>
-      <div class="stat-card stat-card-filter">
-        <select v-model="statusFilter" @change="loadPositions()" class="filter-select">
-          <option value="">全部</option>
-          <option value="holding">持有中</option>
-          <option value="closed">已清仓</option>
-        </select>
+      <div class="toolbar-right">
+        <button class="btn-icon config-btn" @click="showConfig = true" title="交易设置">⚙️</button>
       </div>
     </div>
 
@@ -604,22 +608,28 @@ onMounted(() => {
   max-width: 100%;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
+/* ====== 头部（使用全局 .page-header 样式）====== */
+
+/* ====== 工具栏（与策略列表 sl-toolbar 统一）====== */
+.sl-toolbar {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 14px; flex-wrap: wrap; gap: 8px;
 }
-.header-left h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
-.header-left p { font-size: 14px; color: #999; }
-.header-right {
-  display: flex; align-items: center; gap: 10px;
+.toolbar-right { display: flex; align-items: center; gap: 8px; }
+
+/* ====== 按钮（与策略列表 btn-add 统一）====== */
+.btn-add {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 18px;
+  background: #1677ff; color: #fff; border: none; border-radius: 8px;
+  font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s;
 }
+.btn-add:hover { background: #0958d9; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(22,119,255,.25); }
 
 .config-btn {
   width: 36px; height: 36px;
   border-radius: 8px;
-  border: 1px solid #e8e8e8;
+  border: 1px solid #d9d9d9;
   background: #fff;
   cursor: pointer;
   font-size: 16px;
@@ -630,43 +640,58 @@ onMounted(() => {
 }
 .config-btn:hover { background: #f5f5f5; border-color: #1677ff; }
 
-/* ====== 统计卡片 ====== */
-.stats-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr) auto;
-  gap: 12px;
-  margin-bottom: 16px;
-  align-items: stretch;
-}
-.stat-card-filter {
-  display: flex; align-items: center; justify-content: center;
-  padding: 14px 16px;
-}
-.stat-card {
-  background: #fff;
-  border: 1px solid #eee;
-  border-radius: 10px;
-  padding: 14px 18px;
+/* ====== 统计芯片（嵌在 toolbar 中间）====== */
+.toolbar-center {
+  flex: 1;
   display: flex;
-  align-items: baseline;
-  gap: 6px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.04);
+  justify-content: center;
+  min-width: 0;
 }
-.stat-label { font-size: 13px; color: #888; white-space: nowrap; }
-.stat-value { font-size: 22px; font-weight: 700; color: #1a1a2e; }
-.stat-value.stat-gray { color: #aaa; }
-.cost-color { color: #e74c3c; }
-.stat-unit { font-size: 12px; color: #bbb; }
-
-/* ====== 筛选 ====== */
-.filter-select {
-  padding: 6px 10px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+.stat-chips {
+  display: inline-flex;
+  align-items: stretch;
+  background: #f5f7fa;
+  border-radius: 8px;
+  height: 36px;
+  overflow: hidden;
+}
+.stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 16px;
   font-size: 13px;
-  outline: none;
-  color: #333;
+  white-space: nowrap;
+  border-right: 1px solid #e0e4e8;
 }
+.stat-chip:last-child { border-right: none; }
+.stat-chip .stat-label { font-size: 12px; color: #888; }
+.stat-chip .stat-val { font-size: 16px; font-weight: 700; color: #1a1a2e; }
+.stat-chip .stat-val.stat-gray { color: #aaa; }
+.stat-chip .cost-color { color: #e74c3c; }
+.stat-chip .stat-unit { font-size: 11px; color: #bbb; }
+
+.stat-chip-select {
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+}
+.stat-chip-select .filter-select {
+  padding: 4px 8px;
+  border: none;
+  font-size: 12px;
+  outline: none;
+  color: #555;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  text-align: center;
+  text-align-last: center;
+}
+.stat-chip-select .filter-select:focus { outline: none; background: transparent; }
+.stat-chip-select .filter-select option { background: #fff; color: #333; }
 
 /* ====== 按钮 ====== */
 .btn-primary {
@@ -702,15 +727,11 @@ onMounted(() => {
 }
 .btn-danger:hover { background: #a8071a; }
 .btn-create-sm {
-  padding: 8px 20px;
-  background: #1677ff;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 13.5px;
-  cursor: pointer;
-  margin-top: 10px;
+  padding: 8px 24px; font-size: 13px; font-weight: 600;
+  color: #fff; background: #1677ff; border: 1px solid #1677ff;
+  border-radius: 5px; cursor: pointer; transition: .15s;
 }
+.btn-create-sm:hover { background: #0958d9; }
 .btn-icon { cursor: pointer; }
 .btn-sm {
   padding: 4px 10px;
@@ -736,36 +757,40 @@ onMounted(() => {
 .btn-sell-action { background: #fa8c16 !important; }
 .btn-sell-action:hover { background: #d46b08 !important; }
 
-/* ====== 表格 ====== */
+/* ====== 表格（与策略列表统一）====== */
 .table-area {
   background: #fff;
-  border: 1px solid #eee;
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 1px 4px rgba(0,0,0,.04);
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
 }
 .portfolio-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: 13px;
 }
-.portfolio-table th {
-  background: #fafafa;
+.portfolio-table thead th {
   padding: 10px 14px;
   text-align: center;
   font-weight: 600;
   color: #666;
+  background: #fafafa;
   border-bottom: 1px solid #eee;
+  white-space: nowrap;
   font-size: 13px;
 }
-.portfolio-table td {
-  padding: 11px 14px;
-  border-bottom: 1px solid #f5f5f5;
-  color: #333;
+.portfolio-table tbody tr {
+  border-bottom: 1px solid #f3f3f3;
+  transition: background .1s;
+}
+.portfolio-table tbody tr:hover { background: #f9fbff; }
+.portfolio-table tbody td {
+  padding: 10px 14px;
   vertical-align: middle;
+  color: #333;
+  font-size: 13.5px;
   text-align: center;
 }
-.portfolio-table tbody tr:hover { background: #f9fbfd; }
 .row-closed td { opacity: 0.55; }
 .num-col { text-align: center; }
 .col-actions { text-align: center; white-space: nowrap; }
@@ -827,18 +852,19 @@ onMounted(() => {
 
 .note-cell { color: #999; font-size: 12px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ====== 空状态 ====== */
+/* ====== 空状态（与策略列表统一）====== */
 .empty-state-outer {
-  display: flex; justify-content: center; align-items: center; min-height: 300px;
+  text-align: center; padding: 80px 20px;
+  background: #fff; border: 1px solid #e8e8e8; border-radius: 10px;
 }
 .empty-content { text-align: center; }
-.empty-icon { font-size: 48px; margin-bottom: 12px; }
-.empty-content p { font-size: 15px; color: #999; margin-bottom: 10px; }
+.empty-icon { font-size: 48px; display: block; margin-bottom: 12px; }
+.empty-content p { font-size: 14px; color: #999; margin-bottom: 12px; }
 
 /* ====== 分页 ====== */
 .pagination-area {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
   align-items: center;
   gap: 12px;
   padding: 14px;
@@ -861,7 +887,7 @@ onMounted(() => {
 
 /* ====== 弹窗 ====== */
 .modal-overlay {
-  position: fixed; inset: 0; z-index: 200;
+  position: fixed; inset: 0; z-index: 999;
   background: rgba(0,0,0,.35);
   display: flex; align-items: center; justify-content: center;
   animation: fade-in .15s ease-out;
@@ -870,7 +896,7 @@ onMounted(() => {
 
 .modal-box {
   background: #fff;
-  border-radius: 14px;
+  border-radius: 16px;
   width: 480px;
   max-width: 90vw;
   max-height: 85vh;

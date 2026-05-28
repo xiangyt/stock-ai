@@ -734,7 +734,7 @@ onMounted(() => {
 /* ====== 按钮（与 push-table 统一）====== */
 .btn-add {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 18px; margin-top: 8px;
+  padding: 8px 18px;
   background: #1677ff; color: #fff; border: none; border-radius: 8px;
   font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s;
 }
