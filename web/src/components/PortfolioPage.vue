@@ -9,6 +9,20 @@
       <button class="btn-icon config-btn" @click="showConfig = true" title="交易设置">⚙️</button>
     </header>
 
+    <!-- ====== 工具栏（建仓 + 筛选，位于统计卡片上方）====== -->
+    <div class="pf-toolbar">
+      <div class="toolbar-left">
+        <button class="btn-primary" @click="openOpenModal()">＋ 建仓</button>
+      </div>
+      <div class="toolbar-right">
+        <select v-model="statusFilter" @change="loadPositions()" class="filter-select">
+          <option value="">全部</option>
+          <option value="holding">持有中</option>
+          <option value="closed">已清仓</option>
+        </select>
+      </div>
+    </div>
+
     <!-- ====== 统计卡片 ====== -->
     <div class="stats-row" v-if="summary">
       <div class="stat-card">
@@ -29,20 +43,6 @@
         <span class="stat-label">总股数</span>
         <span class="stat-value">{{ summary.total_quantity.toLocaleString() }}</span>
         <span class="stat-unit">股</span>
-      </div>
-    </div>
-
-    <!-- ====== 工具栏 ====== -->
-    <div class="pf-toolbar">
-      <div class="toolbar-left">
-        <button class="btn-primary" @click="openOpenModal()">＋ 建仓</button>
-      </div>
-      <div class="toolbar-right">
-        <select v-model="statusFilter" @change="loadPositions()" class="filter-select">
-          <option value="">全部</option>
-          <option value="holding">持有中</option>
-          <option value="closed">已清仓</option>
-        </select>
       </div>
     </div>
 

@@ -1,16 +1,30 @@
 <template>
   <div class="sub-mgmt-page">
     <header class="page-header">
-      <h1>🔔 策略订阅</h1>
-      <p>订阅策略后自动执行选股并推送结果到指定机器人</p>
-      <button class="btn-add" @click="openCreateModal">+ 新建订阅</button>
+      <div class="header-meta">
+        <h1>🔔 策略订阅</h1>
+        <p>订阅策略后自动执行选股并推送结果到指定机器人</p>
+      </div>
+      <div class="header-actions">
+        <div class="sl-search">
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="搜索订阅名称"
+            class="search-input"
+            @keyup.enter="onSearch"
+          />
+          <button class="search-btn" @click="onSearch">🔍</button>
+        </div>
+        <button class="btn-add" @click="openCreateModal">+ 新建订阅</button>
+      </div>
     </header>
 
     <!-- 加载中 -->
     <div v-if="loading" class="loading-state">加载订阅列表...</div>
 
     <!-- 订阅表格 -->
-    <table v-else-if="subs.length > 0" class="sub-table">
+    <table v-else-if="filteredSubs.length > 0" class="sub-table">
       <thead>
         <tr>
           <th>名称</th>
@@ -25,7 +39,7 @@
         </tr>
       </thead>
       <tbody>
-        <tr v-for="sub in subs" :key="sub.id" :class="{ 'disabled-row': !sub.is_active }">
+        <tr v-for="sub in filteredSubs" :key="sub.id" :class="{ 'disabled-row': !sub.is_active }">
           <td class="name-cell">{{ sub.name }}</td>
           <td>
             <span class="strategy-tag">{{ sub.strategy_name || '-' }}</span>
@@ -82,14 +96,16 @@
     </table>
 
     <!-- 分页 -->
-    <div v-if="subs.length > 0 && total > pageSize" class="pag-bar">
+    <div v-if="filteredSubs.length > 0 && total > pageSize" class="pag-bar">
       <span class="pag-info">共 {{ total }} 条</span>
       <button class="pag-btn" :disabled="page <= 1" @click="page--; loadSubs()">‹ 上一页</button>
       <span class="pag-current">{{ page }} / {{ totalPages }}</span>
       <button class="pag-btn" :disabled="page >= totalPages" @click="page++; loadSubs()">下一页 ›</button>
     </div>
 
-    <p v-if="!loading && subs.length === 0" class="empty-hint">暂无订阅，点击上方「新建订阅」开始配置</p>
+    <p v-if="!loading && filteredSubs.length === 0" class="empty-hint">
+      {{ subs.length === 0 ? '暂无订阅，点击上方「新建订阅」开始配置' : '没有匹配的订阅' }}
+    </p>
 
     <!-- ====== 创建/编辑弹窗 ====== -->
     <teleport to="body">
@@ -233,6 +249,20 @@ const page = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+
+// ========== 搜索过滤 ==========
+const searchQuery = ref('')
+const filteredSubs = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return subs.value
+  return subs.value.filter(s =>
+    s.name.toLowerCase().includes(q) ||
+    (s.strategy_name || '').toLowerCase().includes(q)
+  )
+})
+function onSearch() {
+  // 前端过滤，无需调接口
+}
 
 // ========== 加载列表 ==========
 async function loadSubs() {
@@ -574,6 +604,35 @@ onMounted(() => {
 <style scoped>
 .sub-mgmt-page {}
 .loading-state { text-align: center; color: #999; padding: 60px 0; font-size: 14px; }
+
+/* ====== 头部布局 ====== */
+.page-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
+}
+.header-meta h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+.header-meta p { font-size: 14px; color: #999; }
+.header-actions {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+
+/* ====== 搜索框（与策略列表统一）====== */
+.sl-search {
+  display: flex; align-items: center;
+  border: 1px solid #d9d9d9; border-radius: 6px;
+  overflow: hidden; transition: border-color .15s;
+}
+.sl-search:focus-within { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.08); }
+.search-input {
+  border: none; outline: none; padding: 6px 12px;
+  font-size: 13px; width: 180px; color: #333; background: transparent;
+}
+.search-input::placeholder { color: #bbb; }
+.search-btn {
+  border: none; background: transparent; cursor: pointer;
+  padding: 6px 10px; font-size: 14px; border-left: 1px solid #eee; transition: background .12s;
+}
+.search-btn:hover { background: #f5f5f5; }
 
 /* ====== 表格（与 push-table 统一风格）====== */
 .sub-table {
