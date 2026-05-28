@@ -6,22 +6,11 @@
         <h1>💼 持仓管理</h1>
         <p>管理你的股票持仓组合，跟踪盈亏表现</p>
       </div>
-      <button class="btn-icon config-btn" @click="showConfig = true" title="交易设置">⚙️</button>
-    </header>
-
-    <!-- ====== 工具栏（建仓 + 筛选，位于统计卡片上方）====== -->
-    <div class="pf-toolbar">
-      <div class="toolbar-left">
+      <div class="header-right">
         <button class="btn-primary" @click="openOpenModal()">＋ 建仓</button>
+        <button class="btn-icon config-btn" @click="showConfig = true" title="交易设置">⚙️</button>
       </div>
-      <div class="toolbar-right">
-        <select v-model="statusFilter" @change="loadPositions()" class="filter-select">
-          <option value="">全部</option>
-          <option value="holding">持有中</option>
-          <option value="closed">已清仓</option>
-        </select>
-      </div>
-    </div>
+    </header>
 
     <!-- ====== 统计卡片 ====== -->
     <div class="stats-row" v-if="summary">
@@ -43,6 +32,13 @@
         <span class="stat-label">总股数</span>
         <span class="stat-value">{{ summary.total_quantity.toLocaleString() }}</span>
         <span class="stat-unit">股</span>
+      </div>
+      <div class="stat-card stat-card-filter">
+        <select v-model="statusFilter" @change="loadPositions()" class="filter-select">
+          <option value="">全部</option>
+          <option value="holding">持有中</option>
+          <option value="closed">已清仓</option>
+        </select>
       </div>
     </div>
 
@@ -611,11 +607,14 @@ onMounted(() => {
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   margin-bottom: 20px;
 }
 .header-left h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
 .header-left p { font-size: 14px; color: #999; }
+.header-right {
+  display: flex; align-items: center; gap: 10px;
+}
 
 .config-btn {
   width: 36px; height: 36px;
@@ -634,9 +633,14 @@ onMounted(() => {
 /* ====== 统计卡片 ====== */
 .stats-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, 1fr) auto;
   gap: 12px;
   margin-bottom: 16px;
+  align-items: stretch;
+}
+.stat-card-filter {
+  display: flex; align-items: center; justify-content: center;
+  padding: 14px 16px;
 }
 .stat-card {
   background: #fff;
@@ -654,13 +658,7 @@ onMounted(() => {
 .cost-color { color: #e74c3c; }
 .stat-unit { font-size: 12px; color: #bbb; }
 
-/* ====== 工具栏 ====== */
-.pf-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
+/* ====== 筛选 ====== */
 .filter-select {
   padding: 6px 10px;
   border: 1px solid #ddd;

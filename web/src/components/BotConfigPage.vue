@@ -438,7 +438,7 @@ onMounted(loadBots)
 
 /* ====== 头部布局 ====== */
 .page-header {
-  display: flex; justify-content: space-between; align-items: flex-start;
+  display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
 }
 .header-meta h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
