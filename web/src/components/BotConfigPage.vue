@@ -1,11 +1,16 @@
 <template>
   <div class="push-mgmt-page">
     <header class="page-header">
-      <div class="header-meta">
-        <h1>🤖 机器人配置</h1>
-        <p>配置消息推送机器人，接收策略信号通知</p>
+      <h1>🤖 机器人配置</h1>
+      <p>配置消息推送机器人，接收策略信号通知</p>
+    </header>
+
+    <!-- ====== 工具栏：添加 + 搜索 ====== -->
+    <div class="bot-toolbar">
+      <div class="toolbar-left">
+        <button class="btn-add" @click="openCreateModal">+ 添加机器人</button>
       </div>
-      <div class="header-actions">
+      <div class="toolbar-right">
         <div class="sl-search">
           <input
             v-model="searchQuery"
@@ -16,9 +21,8 @@
           />
           <button class="search-btn" @click="onSearch">🔍</button>
         </div>
-        <button class="btn-add" @click="openCreateModal">+ 添加机器人</button>
       </div>
-    </header>
+    </div>
 
     <!-- 加载中 -->
     <div v-if="loading" class="loading-state">加载机器人配置...</div>
@@ -436,16 +440,14 @@ onMounted(loadBots)
 .push-mgmt-page {}
 .loading-state { text-align: center; color: #999; padding: 60px 0; font-size: 14px; }
 
-/* ====== 头部布局 ====== */
-.page-header {
+/* ====== 头部（使用全局 .page-header 样式）====== */
+
+/* ====== 工具栏 ====== */
+.bot-toolbar {
   display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
+  margin-bottom: 14px; flex-wrap: wrap; gap: 8px;
 }
-.header-meta h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-.header-meta p { font-size: 14px; color: #999; }
-.header-actions {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-}
+.toolbar-right { font-size: 12.5px; color: #888; display: flex; align-items: center; }
 
 /* ====== 搜索框（与策略列表统一）====== */
 .sl-search {

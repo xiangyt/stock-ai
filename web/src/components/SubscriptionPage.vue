@@ -1,11 +1,16 @@
 <template>
   <div class="sub-mgmt-page">
     <header class="page-header">
-      <div class="header-meta">
-        <h1>🔔 策略订阅</h1>
-        <p>订阅策略后自动执行选股并推送结果到指定机器人</p>
+      <h1>🔔 策略订阅</h1>
+      <p>订阅策略后自动执行选股并推送结果到指定机器人</p>
+    </header>
+
+    <!-- ====== 工具栏：新建 + 搜索 ====== -->
+    <div class="sub-toolbar">
+      <div class="toolbar-left">
+        <button class="btn-add" @click="openCreateModal">+ 新建订阅</button>
       </div>
-      <div class="header-actions">
+      <div class="toolbar-right">
         <div class="sl-search">
           <input
             v-model="searchQuery"
@@ -16,9 +21,8 @@
           />
           <button class="search-btn" @click="onSearch">🔍</button>
         </div>
-        <button class="btn-add" @click="openCreateModal">+ 新建订阅</button>
       </div>
-    </header>
+    </div>
 
     <!-- 加载中 -->
     <div v-if="loading" class="loading-state">加载订阅列表...</div>
@@ -605,16 +609,14 @@ onMounted(() => {
 .sub-mgmt-page {}
 .loading-state { text-align: center; color: #999; padding: 60px 0; font-size: 14px; }
 
-/* ====== 头部布局 ====== */
-.page-header {
+/* ====== 头部（使用全局 .page-header 样式）====== */
+
+/* ====== 工具栏 ====== */
+.sub-toolbar {
   display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
+  margin-bottom: 14px; flex-wrap: wrap; gap: 8px;
 }
-.header-meta h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-.header-meta p { font-size: 14px; color: #999; }
-.header-actions {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-}
+.toolbar-right { font-size: 12.5px; color: #888; display: flex; align-items: center; }
 
 /* ====== 搜索框（与策略列表统一）====== */
 .sl-search {
