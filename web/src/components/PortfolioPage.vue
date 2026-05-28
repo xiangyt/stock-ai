@@ -93,10 +93,10 @@
                 <button class="btn-sm btn-buy" @click="openBuyModal(pos)" title="加仓">加仓</button>
                 <button class="btn-sm btn-sell" @click="openSellModal(pos)" title="减仓">减仓</button>
                 <button class="btn-sm btn-close" @click="openCloseModal(pos)" title="清仓">清仓</button>
-                <button class="btn-sm btn-del" @click="handleDelete(pos)" title="删除">✕</button>
+                <button class="btn-sm btn-del" @click="handleDelete(pos)" title="删除">删除</button>
               </template>
               <template v-else>
-                <button class="btn-sm btn-del" @click="handleDelete(pos)" title="删除">✕</button>
+                <button class="btn-sm btn-del" @click="handleDelete(pos)" title="删除">删除</button>
               </template>
             </td>
           </tr>
@@ -730,8 +730,8 @@ onMounted(() => {
 .btn-sell:hover { background: #fff7e6; }
 .btn-close { border-color: #ff4d4f; color: #cf1322; }
 .btn-close:hover { background: #fff2f0; }
-.btn-del { border-color: transparent !important; color: #999; }
-.btn-del:hover { color: #cf1322; }
+.btn-del { border-color: #ffa39e; color: #cf1322; background: #fff1f0; }
+.btn-del:hover { background: #ffccc7; }
 
 .btn-buy-action { background: #52c41a !important; }
 .btn-buy-action:hover { background: #389e0d !important; }

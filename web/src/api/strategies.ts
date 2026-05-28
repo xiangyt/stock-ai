@@ -38,6 +38,7 @@ export interface StrategyListItem {
   logical_op: string
   description: string
   backtest_count: number
+  subscription_count: number
   last_run_at: string | null
   is_public: boolean
   created_at: string
@@ -124,4 +125,17 @@ export async function renameStrategy(id: number, newName: string): Promise<void>
     method: 'PUT',
     body: JSON.stringify({ name: newName }),
   })
+}
+
+/** 切换策略公开/私有状态 */
+export async function setStrategyPublic(id: number, isPublic: boolean): Promise<void> {
+  await request<void>(`${BASE}/${id}/public`, {
+    method: 'PUT',
+    body: JSON.stringify({ is_public: isPublic }),
+  })
+}
+
+/** 复制策略（以当前用户身份创建副本） */
+export async function copyStrategy(id: number): Promise<StrategyDetail> {
+  return request<StrategyDetail>(`${BASE}/${id}/copy`, { method: 'POST' })
 }

@@ -13,5 +13,6 @@ func All() []indicator.Indicator {
 		NewChanLongShort(),
 		NewTopBottom(),
 		NewRedTop(),
+		NewMacd(),
 	}
 }

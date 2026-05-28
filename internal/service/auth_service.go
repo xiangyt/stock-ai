@@ -53,6 +53,7 @@ type UpdateAccountReq struct {
 type jwtClaims struct {
 	UserID   uint   `json:"user_id"`
 	Username string `json:"username"`
+	Role     string `json:"role"`
 	jwt.RegisteredClaims
 }
 
@@ -78,7 +79,7 @@ func (svc *AuthService) Login(req *LoginReq) (*LoginResp, error) {
 	_ = db.UpdateUserLastLogin(user.ID)
 
 	// 生成 JWT token
-	token, err := svc.generateToken(user.ID, user.Username)
+	token, err := svc.generateToken(user.ID, user.Username, user.Role)
 	if err != nil {
 		return nil, err
 	}
@@ -140,10 +141,11 @@ func (svc *AuthService) UpdateAccount(userID uint, req *UpdateAccountReq) (*mode
 }
 
 // generateToken 生成 JWT token
-func (svc *AuthService) generateToken(userID uint, username string) (string, error) {
+func (svc *AuthService) generateToken(userID uint, username, role string) (string, error) {
 	claims := jwtClaims{
 		UserID:   userID,
 		Username: username,
+		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)), // 7天有效
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

@@ -49,7 +49,7 @@
             </span>
           </td>
           <td class="actions-cell">
-            <button class="btn-sm btn-exec" :disabled="executingId === task.id" @click="onExecute(task)" title="立即执行">
+            <button class="btn-sm btn-info" :disabled="executingId === task.id" @click="onExecute(task)" title="立即执行">
               {{ executingId === task.id ? '执行中...' : '执行' }}
             </button>
             <button class="btn-sm btn-ok" @click="openEditModal(task)" title="配置">配置</button>
@@ -62,7 +62,7 @@
             >禁用</button>
             <button
               v-else
-              class="btn-sm btn-ok"
+              class="btn-sm btn-success"
               :disabled="togglingId === task.id"
               @click="onToggleActive(task, true)"
               title="启用"
@@ -101,13 +101,13 @@
           </div>
 
           <div class="checkbox-group">
-            <label class="checkbox-label">
+            <span class="checkbox-label">
               <input
                 type="checkbox"
                 v-model="editForm.is_active"
               />
               启用此任务
-            </label>
+            </span>
           </div>
 
           <div class="form-group">
@@ -430,8 +430,10 @@ onMounted(async () => {
 .btn-ok:hover:not(:disabled) { background: #d6e8ff; }
 .btn-warn { color: #ff6b00; border-color: #ffd591; background: #fff7e6; }
 .btn-warn:hover:not(:disabled) { background: #ffe7ba; }
-.btn-exec { color: #52c41a; border-color: #b7eb8f; background: #f6ffed; }
-.btn-exec:hover:not(:disabled) { background: #d9f7be; }
+.btn-success { color: #52c41a; border-color: #b7eb8f; background: #f6ffed; }
+.btn-success:hover:not(:disabled) { background: #d9f7be; }
+.btn-info { color: #555; }
+.btn-info:hover:not(:disabled) { border-color: #aaa; background: #f5f5f5; }
 
 .empty-hint { text-align: center; color: #bbb; padding: 60px 0; font-size: 14px; }
 .error-msg { color: #cf1322; font-size: 13px; margin-bottom: 10px; text-align: center; min-height: 20px; }
@@ -468,7 +470,7 @@ onMounted(async () => {
 .checkbox-group { margin: 16px 0; }
 .checkbox-label {
   display: flex; align-items: center; gap: 10px;
-  font-size: 14px; font-weight: 500; color: #333; cursor: pointer;
+  font-size: 14px; font-weight: 500; color: #333;
 }
 .checkbox-label input[type="checkbox"] {
   width: 16px; height: 16px; accent-color: #1677ff; cursor: pointer;

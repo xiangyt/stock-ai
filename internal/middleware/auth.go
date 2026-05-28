@@ -30,6 +30,7 @@ func AuthRequired(authSvc *service.AuthService) gin.HandlerFunc {
 		// 将用户信息注入上下文
 		c.Set("user_id", claims.UserID)
 		c.Set("username", claims.Username)
+		c.Set("user_role", claims.Role)
 
 		c.Next()
 	}
@@ -44,6 +45,7 @@ func OptionalAuth(authSvc *service.AuthService) gin.HandlerFunc {
 			if err == nil {
 				c.Set("user_id", claims.UserID)
 				c.Set("username", claims.Username)
+				c.Set("user_role", claims.Role)
 			}
 		}
 		c.Next()

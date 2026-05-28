@@ -56,6 +56,12 @@
           </td>
           <td class="time-cell">{{ formatTime(sub.last_run_at) }}</td>
           <td class="actions-cell">
+            <button
+              class="btn-sm btn-info"
+              :disabled="!sub.is_active || runningId === sub.id"
+              @click="onTriggerRun(sub)"
+              title="手动执行"
+            >{{ runningId === sub.id ? '执行中...' : '执行' }}</button>
             <button class="btn-sm btn-ok" @click="openEditModal(sub)" title="编辑">编辑</button>
             <button
               v-if="sub.is_active"
@@ -65,16 +71,10 @@
             >停用</button>
             <button
               v-else
-              class="btn-sm btn-ok"
+              class="btn-sm btn-success"
               @click="onToggleActive(sub, true)"
               title="启用"
             >启用</button>
-            <button
-              class="btn-sm btn-info"
-              :disabled="!sub.is_active || runningId === sub.id"
-              @click="onTriggerRun(sub)"
-              title="手动执行"
-            >{{ runningId === sub.id ? '执行中...' : '执行' }}</button>
             <button class="btn-sm btn-danger" @click="onDelete(sub)" title="删除">删除</button>
           </td>
         </tr>
@@ -149,11 +149,11 @@
             <p class="field-hint">标准 5 段或 6 段（含秒）Cron 表达式</p>
           </div>
 
-          <div class="form-group checkbox-group">
-            <label class="checkbox-label">
+          <div class="checkbox-group">
+            <span class="checkbox-label">
               <input type="checkbox" v-model="form.trading_hours_only" />
               <span>仅在交易时段执行</span>
-            </label>
+            </span>
           </div>
 
           <div class="form-group">
@@ -692,6 +692,8 @@ onMounted(() => {
 .btn-warn:hover:not(:disabled) { background: #ffe7ba; }
 .btn-danger { color: #cf1322; border-color: #ffa39e; background: #fff1f0; }
 .btn-danger:hover:not(:disabled) { background: #ffccc7; }
+.btn-success { color: #52c41a; border-color: #b7eb8f; background: #f6ffed; }
+.btn-success:hover:not(:disabled) { background: #d9f7be; }
 .btn-info { color: #555; }
 .btn-info:hover:not(:disabled) { border-color: #aaa; background: #f5f5f5; }
 
@@ -729,10 +731,10 @@ onMounted(() => {
 .form-group select { cursor: pointer; appearance: auto; }
 .form-group textarea { resize: vertical; font-family: inherit; }
 
-.checkbox-group { margin-top: 12px; }
+.checkbox-group { margin: 16px 0; }
 .checkbox-label {
   display: flex; align-items: center; gap: 10px;
-  font-size: 14px; font-weight: 500; color: #333; cursor: pointer;
+  font-size: 14px; font-weight: 500; color: #333;
 }
 .checkbox-label input[type="checkbox"] {
   width: 16px; height: 16px; accent-color: #1677ff; cursor: pointer;

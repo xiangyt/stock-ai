@@ -397,6 +397,9 @@ type Strategy struct {
 	IsPublic      bool       `gorm:"default:false" json:"is_public"`                     // 是否公开
 	StarCount     int        `gorm:"default:0" json:"star_count"`                        // 收藏数
 
+	// 运行时填充（非持久化）
+	SubscriptionCount int64 `gorm:"->" json:"subscription_count,omitempty"` // 订阅数量（关联子查询填充）
+
 	CreatedAt     time.Time     `json:"created_at"`
 	UpdatedAt     time.Time     `json:"updated_at"`
 	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"` // GORM 软删除

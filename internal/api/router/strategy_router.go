@@ -22,6 +22,8 @@ func RegisterStrategyRoutes(apiV1 *gin.RouterGroup, authSvc *service.AuthService
 		strategies.PUT("/:id", strategyHandler.Update)     // 更新
 		strategies.DELETE("/:id", strategyHandler.Delete)  // 删除单个
 		strategies.PUT("/:id/rename", strategyHandler.Rename) // 重命名
+		strategies.PUT("/:id/public", strategyHandler.SetPublic) // 切换公开/私有
+		strategies.POST("/:id/copy", strategyHandler.Copy)        // 复制策略
 		strategies.DELETE("/batch", strategyHandler.BatchDelete) // 批量删除
 	}
 }

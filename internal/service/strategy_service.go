@@ -79,7 +79,7 @@ type ListResp struct {
 	Size  int                    `json:"size"`
 }
 
-func (svc *StrategyService) List(uid uint, keyword string, page, pageSize int) (*ListResp, error) {
+func (svc *StrategyService) List(uid uint, isAdmin bool, keyword string, page, pageSize int) (*ListResp, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -90,7 +90,7 @@ func (svc *StrategyService) List(uid uint, keyword string, page, pageSize int) (
 		pageSize = 100
 	}
 
-	strategies, total, err := db.ListStrategies(uid, keyword, page, pageSize)
+	strategies, total, err := db.ListStrategies(uid, isAdmin, keyword, page, pageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +101,7 @@ func (svc *StrategyService) List(uid uint, keyword string, page, pageSize int) (
 		if err != nil {
 			continue // 单个解析失败不中断，跳过该条
 		}
+		d.SubscriptionCount = s.SubscriptionCount
 		details = append(details, *d)
 	}
 
@@ -153,4 +154,18 @@ func (svc *StrategyService) BatchDelete(ids []uint, uid uint) error {
 		return errors.New("删除列表不能为空")
 	}
 	return db.DeleteStrategyByIDs(ids, uid)
+}
+
+// SetPublic 设置策略公开状态
+func (svc *StrategyService) SetPublic(id uint, isPublic bool) error {
+	return db.SetStrategyPublic(id, isPublic)
+}
+
+// Copy 复制策略（以当前用户身份创建副本）
+func (svc *StrategyService) Copy(id, uid uint) (*model.StrategyDetail, error) {
+	copy, err := db.CopyStrategy(id, uid)
+	if err != nil {
+		return nil, err
+	}
+	return copy.ToDetail()
 }

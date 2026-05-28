@@ -135,22 +135,10 @@ func (r *SubscriptionRunner) Run(ctx context.Context, sub *model.Subscription) (
 		log.Printf("[Runner] 获取订阅 %d 关联机器人失败: %v", sub.ID, err)
 	}
 
-	// 7. 渲染通知消息并发送
-	message := r.renderMessage(sub, strategy.Name, result)
-
-	for _, bot := range bots {
-		sendErr := r.notifier.Send(ctx, &bot, message)
-		if sendErr != nil {
-			result.PushStatus[bot.ID] = "失败: " + sendErr.Error()
-		} else {
-			result.PushStatus[bot.ID] = "成功"
-		}
-	}
-
-	// 8. 计算耗时
+	// 7. 计算耗时（必须在渲染消息之前，否则推送内容中 duration_ms 为 0）
 	result.DurationMs = int(time.Since(startTime).Milliseconds())
 
-	// 9. 确定状态
+	// 8. 确定状态
 	if result.MatchCount > 0 && len(result.PushStatus) > 0 {
 		allSuccess := true
 		for _, status := range result.PushStatus {
@@ -168,6 +156,18 @@ func (r *SubscriptionRunner) Run(ctx context.Context, sub *model.Subscription) (
 		result.Status = model.LogStatusSuccess
 	} else {
 		result.Status = model.LogStatusFailed
+	}
+
+	// 9. 渲染通知消息并发送（在耗时计算之后，确保 duration_ms 正确）
+	message := r.renderMessage(sub, strategy.Name, result)
+
+	for _, bot := range bots {
+		sendErr := r.notifier.Send(ctx, &bot, message)
+		if sendErr != nil {
+			result.PushStatus[bot.ID] = "失败: " + sendErr.Error()
+		} else {
+			result.PushStatus[bot.ID] = "成功"
+		}
 	}
 
 	// 10. 写入 SubscriptionLog

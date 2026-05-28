@@ -30,8 +30,8 @@
               {{ ChannelLabels[bot.channel] || bot.channel }}
             </span>
           </td>
-          <td class="url-cell" :title="bot.webhook_url || bot.token || '-'">
-            {{ formatTarget(bot) }}
+          <td class="url-cell" :data-tooltip="bot.webhook_url || bot.token || '-'">
+            <span class="url-text">{{ formatTarget(bot) }}</span>
           </td>
           <td>
             <span :class="'status-tag status-' + (bot.status === 1 ? 'on' : 'off')">
@@ -49,7 +49,7 @@
             >禁用</button>
             <button
               v-else
-              class="btn-sm btn-ok"
+              class="btn-sm btn-success"
               @click="onToggleStatus(bot, 1)"
               title="启用"
             >启用</button>
@@ -428,9 +428,42 @@ onMounted(loadBots)
 
 .name-cell { font-weight: 600; color: #333; }
 .url-cell {
-  max-width: 220px; overflow: hidden;
+  max-width: 220px;
+  position: relative;
+}
+.url-text {
+  display: block; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
   color: #888; font-size: 12.5px;
+}
+/* hover 气泡提示 */
+.url-cell:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 100;
+  margin-bottom: 6px;
+  pointer-events: none;
+}
+.url-cell:hover::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #333;
+  z-index: 101;
+  margin-bottom: -4px;
+  pointer-events: none;
 }
 
 .actions-cell { white-space: nowrap; }
@@ -469,6 +502,8 @@ onMounted(loadBots)
 .btn-sm:last-child { margin-right: 0; }
 .btn-ok { color: #1677ff; border-color: #91caff; background: #f0f7ff; }
 .btn-ok:hover { background: #d6e8ff; }
+.btn-success { color: #52c41a; border-color: #b7eb8f; background: #f6ffed; }
+.btn-success:hover { background: #d9f7be; }
 .btn-warn { color: #ff6b00; border-color: #ffd591; background: #fff7e6; }
 .btn-warn:hover { background: #ffe7ba; }
 .btn-danger { color: #cf1322; border-color: #ffa39e; background: #fff1f0; }

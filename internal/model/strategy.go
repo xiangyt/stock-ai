@@ -20,17 +20,18 @@ type StrategySignal struct {
 // StrategyDetail 策略详情响应（包含解析后的 conditions 数组）
 // Strategy struct 本体定义在 indicator.go 中，此处仅定义 API 响应结构和方法
 type StrategyDetail struct {
-	ID            uint             `json:"id"`
-	UID           uint             `json:"uid"`
-	Name          string           `json:"name"`
-	LogicalOp     string           `json:"logical_op"`
-	Signals       []StrategySignal `json:"signals"`
-	Description   string           `json:"description"`
-	BacktestCount int              `json:"backtest_count"`
-	LastRunAt     *string          `json:"last_run_at,omitempty"` // 最后运行时间
-	IsPublic      bool             `json:"is_public"`             // 是否公开
-	CreatedAt     string           `json:"created_at"`
-	UpdatedAt     string           `json:"updated_at"`
+	ID                uint             `json:"id"`
+	UID               uint             `json:"uid"`
+	Name              string           `json:"name"`
+	LogicalOp         string           `json:"logical_op"`
+	Signals           []StrategySignal `json:"signals"`
+	Description       string           `json:"description"`
+	BacktestCount     int              `json:"backtest_count"`
+	SubscriptionCount int64            `json:"subscription_count"`          // 订阅数量
+	LastRunAt         *string          `json:"last_run_at,omitempty"`       // 最后运行时间
+	IsPublic          bool             `json:"is_public"`                   // 是否公开
+	CreatedAt         string           `json:"created_at"`
+	UpdatedAt         string           `json:"updated_at"`
 }
 
 // ToDetail 将 Model 转换为 Detail 响应（解析 JSON conditions）
