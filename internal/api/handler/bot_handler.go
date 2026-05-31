@@ -32,6 +32,44 @@ func NewBotHandler() *BotHandler {
 	return &BotHandler{}
 }
 
+// ====== 权限辅助 ======
+
+// checkBotOwner 验证当前用户是否有权操作指定机器人。
+// 规则：
+//   - 管理员：可操作所有管理员创建的机器人
+//   - 普通用户：只能操作自己创建的机器人
+//
+// 返回 bot 对象（后续 DB 操作需要用原始 ownerID 做过滤）和是否允许。
+func (h *BotHandler) checkBotOwner(c *gin.Context, botID uint) (*model.PushBot, bool) {
+	userID := c.GetUint("user_id")
+	if userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return nil, false
+	}
+
+	bot, err := db.GetBotByID(botID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "配置不存在"})
+		return nil, false
+	}
+
+	// 自己的机器人 → 直接放行
+	if bot.UserID == userID {
+		return bot, true
+	}
+
+	// 管理员可以操作其他管理员创建的机器人
+	if isAdmin(c) {
+		creator, err := db.GetUserByID(bot.UserID)
+		if err == nil && creator.Role == "admin" {
+			return bot, true
+		}
+	}
+
+	c.JSON(http.StatusForbidden, gin.H{"error": "无权操作此配置"})
+	return nil, false
+}
+
 // ====== 请求/响应类型 ======
 
 type createBotReq struct {
@@ -67,8 +105,12 @@ type botItem struct {
 	UpdatedAt  string `json:"updated_at"`
 }
 
-// List 获取当前用户的推送配置列表
+// ====== CRUD ======
+
+// List 获取推送配置列表
 // GET /api/v1/bots
+// 管理员：显示所有管理员创建的机器人
+// 普通用户：仅显示自己的机器人
 func (h *BotHandler) List(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	if userID == 0 {
@@ -76,7 +118,15 @@ func (h *BotHandler) List(c *gin.Context) {
 		return
 	}
 
-	list, err := db.ListPushBots(userID)
+	var (
+		list []model.PushBot
+		err  error
+	)
+	if isAdmin(c) {
+		list, err = db.ListPushBotsForAdmin()
+	} else {
+		list, err = db.ListPushBots(userID)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询机器人失败"})
 		return
@@ -143,9 +193,13 @@ func (h *BotHandler) Create(c *gin.Context) {
 // Update 更新机器人配置
 // PUT /api/v1/bots/:id
 func (h *BotHandler) Update(c *gin.Context) {
-	userID := c.GetUint("user_id")
 	id := parseID(c)
 	if id == 0 {
+		return
+	}
+
+	bot, ok := h.checkBotOwner(c, id)
+	if !ok {
 		return
 	}
 
@@ -181,7 +235,8 @@ func (h *BotHandler) Update(c *gin.Context) {
 		return
 	}
 
-	if err := db.UpdatePushBot(id, userID, updates); err != nil {
+	// 使用 bot 的原始 owner ID（管理员操作他人机器人时 userID 不等于 owner）
+	if err := db.UpdatePushBot(id, bot.UserID, updates); err != nil {
 		if err == db.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "配置不存在或无权操作"})
 			return
@@ -196,13 +251,17 @@ func (h *BotHandler) Update(c *gin.Context) {
 // Delete 删除机器人配置
 // DELETE /api/v1/bots/:id
 func (h *BotHandler) Delete(c *gin.Context) {
-	userID := c.GetUint("user_id")
 	id := parseID(c)
 	if id == 0 {
 		return
 	}
 
-	if err := db.DeletePushBot(id, userID); err != nil {
+	bot, ok := h.checkBotOwner(c, id)
+	if !ok {
+		return
+	}
+
+	if err := db.DeletePushBot(id, bot.UserID); err != nil {
 		if err == db.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "配置不存在或无权操作"})
 			return
@@ -217,9 +276,13 @@ func (h *BotHandler) Delete(c *gin.Context) {
 // ToggleStatus 切换启用/禁用状态
 // PUT /api/v1/bots/:id/status
 func (h *BotHandler) ToggleStatus(c *gin.Context) {
-	userID := c.GetUint("user_id")
 	id := parseID(c)
 	if id == 0 {
+		return
+	}
+
+	bot, ok := h.checkBotOwner(c, id)
+	if !ok {
 		return
 	}
 
@@ -238,7 +301,7 @@ func (h *BotHandler) ToggleStatus(c *gin.Context) {
 		return
 	}
 
-	if err := db.UpdatePushStatus(id, userID, s); err != nil {
+	if err := db.UpdatePushStatus(id, bot.UserID, s); err != nil {
 		if err == db.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "配置不存在或无权操作"})
 			return
@@ -257,21 +320,16 @@ func (h *BotHandler) ToggleStatus(c *gin.Context) {
 // Test 测试机器人
 // POST /api/v1/bots/:id/test
 func (h *BotHandler) Test(c *gin.Context) {
-	userID := c.GetUint("user_id")
 	id := parseID(c)
 	if id == 0 {
 		return
 	}
 
-	cfg, err := db.GetPushBotByID(id, userID)
-	if err != nil {
-		if err == db.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "配置不存在或无权操作"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询配置失败"})
+	bot, ok := h.checkBotOwner(c, id)
+	if !ok {
 		return
 	}
+	cfg := bot // bot 已经是完整对象
 
 	msg := fmt.Sprintf("【AI选股】测试推送\n机器人: %s\n渠道: %s\n时间: %s",
 		cfg.Name, cfg.Channel, time.Now().Format("2006-01-02 15:04:05"))

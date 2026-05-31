@@ -66,3 +66,16 @@ func GetBotByID(id uint) (*model.PushBot, error) {
 	}
 	return &cfg, nil
 }
+
+// ListPushBotsForAdmin 管理员视角：返回所有管理员创建的机器人
+func ListPushBotsForAdmin() ([]model.PushBot, error) {
+	// 获取所有管理员的用户 ID
+	var adminIDs []uint
+	if err := GetDB().Model(&model.User{}).Where("role = ?", "admin").Pluck("id", &adminIDs).Error; err != nil {
+		return nil, err
+	}
+
+	var list []model.PushBot
+	err := GetDB().Where("user_id IN ?", adminIDs).Order("id DESC").Find(&list).Error
+	return list, err
+}

@@ -119,6 +119,12 @@ func NewDataCollectRunner() *DataCollectRunner {
 	// Task 7: 每日快照计算 → calcAllStocksAllDates
 	r.handlers[model.TaskDailySnapshotSync] = r.handleDailySnapshotSync
 
+	// Task 8: 每周增量同步K线数据（weekly）
+	r.handlers[model.TaskWeeklyKlineIncSync] = r.handleWeeklyKlineInc
+
+	// Task 9: 每月增量同步K线数据（monthly）
+	r.handlers[model.TaskMonthlyKlineIncSync] = r.handleMonthlyKlineInc
+
 	return r
 }
 
@@ -206,7 +212,11 @@ func (r *DataCollectRunner) handleDailyKlineInc(ctx context.Context, task *model
 // handleEastmoneyFull 处理【东财数据全量补全】(Task 3)
 // 参数 JSON: {"periods":"daily"} — 可选，默认 daily
 func (r *DataCollectRunner) handleEastmoneyFull(ctx context.Context, task *model.DataCollectTask) (string, error) {
-	if utils.IsTradingDay() && time.Now().Hour() > 6 && time.Now().Hour() < 16 {
+	now := time.Now()
+	if utils.IsTradingDay() && now.Hour() > 6 && now.Hour() < 16 {
+		return "", nil
+	}
+	if (now.Hour() == 18 && now.Minute() == 0) || (now.Hour() == 19 && now.Minute() == 0) {
 		return "", nil
 	}
 	periods := parsePeriodsFromParams(task.Params)
@@ -264,6 +274,29 @@ func (r *DataCollectRunner) handleDailySnapshotSync(ctx context.Context, task *m
 		res.TotalStocks, res.SuccessStocks, res.FailStocks,
 		res.TotalSnapshots, res.SuccessSnapshots, res.FailSnapshots,
 		res.CostSeconds), nil
+}
+
+// handleWeeklyKlineInc 处理【每周增量同步K线数据】(Task 8)
+// cron: 0 0 18 ? * 6（每周六 18:00 执行一次）
+// 参数 JSON: {"periods":"weekly"} — 固定 weekly，params 中的 periods 字段将被忽略
+func (r *DataCollectRunner) handleWeeklyKlineInc(ctx context.Context, task *model.DataCollectTask) (string, error) {
+	results := GetSyncKLineService().SyncDailyForAll(ctx, []db.KLinePeriod{db.KLinePeriodWeekly})
+	return formatSyncResults([]db.KLinePeriod{db.KLinePeriodWeekly}, results), nil
+}
+
+// handleMonthlyKlineInc 处理【每月增量同步K线数据】(Task 9)
+// cron: 0 0 19 * * ?（每天 19:00 触发，Handler 内部判断是否月末最后一天）
+// 仅在当天是本月最后一天时执行同步，否则跳过
+func (r *DataCollectRunner) handleMonthlyKlineInc(ctx context.Context, task *model.DataCollectTask) (string, error) {
+	now := time.Now()
+	// 判断今天是否是本月最后一天
+	tomorrow := now.AddDate(0, 0, 1)
+	if tomorrow.Month() == now.Month() {
+		// 非月末，跳过
+		return "", nil
+	}
+	results := GetSyncKLineService().SyncDailyForAll(ctx, []db.KLinePeriod{db.KLinePeriodMonthly})
+	return formatSyncResults([]db.KLinePeriod{db.KLinePeriodMonthly}, results), nil
 }
 
 // parseSourceFromParams 从任务 params JSON 中提取 source 参数

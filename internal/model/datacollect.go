@@ -41,7 +41,9 @@ const (
 	TaskFinanceReportSync  uint = 4 // 同步全量财报
 	TaskShareChangeSync   uint = 5 // 同步股本变化
 	TaskShareholderSync   uint = 6 // 同步股东人数变化
-	TaskDailySnapshotSync  uint = 7 // 同步每日快照
+	TaskDailySnapshotSync    uint = 7 // 同步每日快照
+	TaskWeeklyKlineIncSync   uint = 8 // 每周增量同步K线数据（weekly）
+	TaskMonthlyKlineIncSync  uint = 9 // 每月增量同步K线数据（monthly）
 )
 
 // ============================================================================
@@ -143,6 +145,20 @@ func GetInitialDataCollectTasks() []InitialDataCollectTask {
 			CronExpr: "0 0 3 ? * 2-6",
 			IsActive: true,
 			Params:   `{"code":""}`,
+		},
+		{
+			ID:       TaskWeeklyKlineIncSync,
+			Name:     "每周增量同步K线数据",
+			CronExpr: "0 0 18 ? * 6",
+			IsActive: true,
+			Params:   `{"periods":"weekly"}`,
+		},
+		{
+			ID:       TaskMonthlyKlineIncSync,
+			Name:     "每月增量同步K线数据",
+			CronExpr: "0 0 19 * * ?",
+			IsActive: true,
+			Params:   `{"periods":"monthly"}`,
 		},
 	}
 }
