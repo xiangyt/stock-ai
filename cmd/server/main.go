@@ -15,6 +15,7 @@ import (
 	"stock-ai/internal/adapter/eastmoney"
 	"stock-ai/internal/adapter/tencentstock"
 	"stock-ai/internal/adapter/ths"
+	"stock-ai/internal/adapter/ths2"
 	"stock-ai/internal/api/handler"
 	"stock-ai/internal/api/router"
 	"stock-ai/internal/config"
@@ -89,6 +90,18 @@ func main() {
 		case tencentstock.AdapterName:
 			ds = tencentstock.New()
 			if err := ds.Init(nil); err != nil {
+				log.Printf("初始化 %s 失败: %v", dsCfg.Name, err)
+				continue
+			}
+		case ths2.AdapterName:
+			ds = ths2.New()
+			initConfig := map[string]interface{}{
+				"cookie": dsCfg.Cookie,
+			}
+			for k, v := range dsCfg.Extra {
+				initConfig[k] = v
+			}
+			if err := ds.Init(initConfig); err != nil {
 				log.Printf("初始化 %s 失败: %v", dsCfg.Name, err)
 				continue
 			}

@@ -72,6 +72,7 @@ type CacheStats struct {
 // defaultAdapterPriority 数据源优先级列表（从高到低）
 var defaultAdapterPriority = []string{
 	"tencentstock", // 腾讯源（最高优先）
+	"ths2",         // 同花顺v2（quota-h 新接口）
 	"ths",          // 同花顺
 	"eastmoney",    // 东方财富
 }
