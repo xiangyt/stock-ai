@@ -149,14 +149,14 @@ func GetInitialDataCollectTasks() []InitialDataCollectTask {
 		{
 			ID:       TaskWeeklyKlineIncSync,
 			Name:     "每周增量同步K线数据",
-			CronExpr: "0 0 18 ? * 6",
+			CronExpr: "0 0 1 * * 6",
 			IsActive: true,
 			Params:   `{"periods":"weekly"}`,
 		},
 		{
 			ID:       TaskMonthlyKlineIncSync,
 			Name:     "每月增量同步K线数据",
-			CronExpr: "0 0 19 * * ?",
+			CronExpr: "0 30 1 1 * ?",
 			IsActive: true,
 			Params:   `{"periods":"monthly"}`,
 		},

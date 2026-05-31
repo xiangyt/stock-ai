@@ -211,12 +211,22 @@ func (r *DataCollectRunner) handleDailyKlineInc(ctx context.Context, task *model
 
 // handleEastmoneyFull 处理【东财数据全量补全】(Task 3)
 // 参数 JSON: {"periods":"daily"} — 可选，默认 daily
+// 避开三个增量同步时间点：日线(周一至五 18:00)、周线(周六 01:00)、月线(每月1号 01:30)
 func (r *DataCollectRunner) handleEastmoneyFull(ctx context.Context, task *model.DataCollectTask) (string, error) {
 	now := time.Now()
 	if utils.IsTradingDay() && now.Hour() > 6 && now.Hour() < 16 {
 		return "", nil
 	}
-	if (now.Hour() == 18 && now.Minute() == 0) || (now.Hour() == 19 && now.Minute() == 0) {
+	// 避开日线增量同步 (周一至五 18:00)
+	if now.Hour() == 18 && now.Minute() == 0 && now.Weekday() >= time.Monday && now.Weekday() <= time.Friday {
+		return "", nil
+	}
+	// 避开周线增量同步 (周六 01:00)
+	if now.Hour() == 1 && now.Minute() == 0 && now.Weekday() == time.Saturday {
+		return "", nil
+	}
+	// 避开月线增量同步 (每月 1 号 01:30)
+	if now.Day() == 1 && now.Hour() == 1 && now.Minute() == 30 {
 		return "", nil
 	}
 	periods := parsePeriodsFromParams(task.Params)
@@ -277,7 +287,7 @@ func (r *DataCollectRunner) handleDailySnapshotSync(ctx context.Context, task *m
 }
 
 // handleWeeklyKlineInc 处理【每周增量同步K线数据】(Task 8)
-// cron: 0 0 18 ? * 6（每周六 18:00 执行一次）
+// cron: 0 0 1 * * 6（每周六凌晨 1:00）
 // 参数 JSON: {"periods":"weekly"} — 固定 weekly，params 中的 periods 字段将被忽略
 func (r *DataCollectRunner) handleWeeklyKlineInc(ctx context.Context, task *model.DataCollectTask) (string, error) {
 	results := GetSyncKLineService().SyncDailyForAll(ctx, []db.KLinePeriod{db.KLinePeriodWeekly})
@@ -285,16 +295,8 @@ func (r *DataCollectRunner) handleWeeklyKlineInc(ctx context.Context, task *mode
 }
 
 // handleMonthlyKlineInc 处理【每月增量同步K线数据】(Task 9)
-// cron: 0 0 19 * * ?（每天 19:00 触发，Handler 内部判断是否月末最后一天）
-// 仅在当天是本月最后一天时执行同步，否则跳过
+// cron: 0 30 1 1 * ?（每月 1 号凌晨 1:30）
 func (r *DataCollectRunner) handleMonthlyKlineInc(ctx context.Context, task *model.DataCollectTask) (string, error) {
-	now := time.Now()
-	// 判断今天是否是本月最后一天
-	tomorrow := now.AddDate(0, 0, 1)
-	if tomorrow.Month() == now.Month() {
-		// 非月末，跳过
-		return "", nil
-	}
 	results := GetSyncKLineService().SyncDailyForAll(ctx, []db.KLinePeriod{db.KLinePeriodMonthly})
 	return formatSyncResults([]db.KLinePeriod{db.KLinePeriodMonthly}, results), nil
 }
