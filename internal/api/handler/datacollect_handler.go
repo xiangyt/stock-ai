@@ -596,6 +596,68 @@ func (h *DataCollectHandler) RunShareChangesBatch(c *gin.Context) {
 	})
 }
 
+// RunDividendHistory 运行单只股票分红历史采集
+// POST /api/v1/collector/fundamental/:code/dividend
+func (h *DataCollectHandler) RunDividendHistory(c *gin.Context) {
+	code := c.Param("code")
+	var req FundamentalCollectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	go func() {
+		ctx := context.Background()
+		adp, err := datacollect.ResolveAdapter(adapter.GetRegistry(), req.Source)
+		if err != nil {
+			log.Printf("[collector] 获取数据源失败: %v", err)
+			return
+		}
+		result, err := datacollect.RunDividendHistory(ctx, adp, code)
+		if err != nil {
+			log.Printf("[collector] 分红采集失败 [%s]: %v", code, err)
+			return
+		}
+		log.Printf("[collector] 分红采集完成 [%s]: total=%d, new=%d, upd=%d", code, result.Total, result.NewCount, result.UpdCount)
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": fmt.Sprintf("分红采集已启动: %s (源=%s)", code, req.Source),
+	})
+}
+
+// RunDividendHistoryBatch 运行全量分红历史采集
+// POST /api/v1/collector/fundamental-batch/dividend
+func (h *DataCollectHandler) RunDividendHistoryBatch(c *gin.Context) {
+	var req FundamentalCollectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	go func() {
+		ctx := context.Background()
+		adp, err := datacollect.ResolveAdapter(adapter.GetRegistry(), req.Source)
+		if err != nil {
+			log.Printf("[collector] 获取数据源失败: %v", err)
+			return
+		}
+		result, err := datacollect.RunDividendHistoryBatch(ctx, adp)
+		if err != nil {
+			log.Printf("[collector] 全量分红采集失败: %v", err)
+			return
+		}
+		log.Printf("[collector] 全量分红采集完成: total=%d, new=%d, upd=%d, fail=%d",
+			result.Total, result.NewCount, result.UpdCount, result.FailCount)
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "全量分红采集已启动",
+	})
+}
+
 // ============================================================================
 //  快照计算接口
 // ============================================================================

@@ -59,6 +59,17 @@ func RunShareChanges(ctx context.Context, adp adapter.DataSource, code string) (
 	return result, nil
 }
 
+// RunDividendHistory 采集单只股票的分红历史
+func RunDividendHistory(ctx context.Context, adp adapter.DataSource, code string) (*CollectResult, error) {
+	dividends, err := adp.GetDividendHistory(ctx, code)
+	if err != nil {
+		return nil, fmt.Errorf("获取分红历史失败 [%s]: %w", code, err)
+	}
+	result := upsertDividendHistory(code, dividends)
+	log.Printf("[采集-分红] 完成 [%s]: total=%d, new=%d, upd=%d", code, result.Total, result.NewCount, result.UpdCount)
+	return result, nil
+}
+
 // ============================================================================
 //  全量批量采集入口（供 Scheduler 和 HTTP Handler 共用）
 // ============================================================================
@@ -156,6 +167,37 @@ func RunShareChangesBatch(ctx context.Context, adp adapter.DataSource) (*Collect
 	return result, nil
 }
 
+// RunDividendHistoryBatch 全量采集所有股票的分红历史
+func RunDividendHistoryBatch(ctx context.Context, adp adapter.DataSource) (*CollectResult, error) {
+	stocks := db.LoadAllStockCodes()
+	if len(stocks) == 0 {
+		return &CollectResult{}, nil
+	}
+
+	result := &CollectResult{Total: len(stocks)}
+	for i, stock := range stocks {
+		select {
+		case <-ctx.Done():
+			return result, ctx.Err()
+		default:
+		}
+		dividends, fetchErr := adp.GetDividendHistory(ctx, stock.Code)
+		if fetchErr != nil {
+			log.Printf("[采集-分红] 获取失败 [%s]: %v", stock.Code, fetchErr)
+			result.FailCount++
+			continue
+		}
+		partial := upsertDividendHistory(stock.Code, dividends)
+		result.NewCount += partial.NewCount
+		result.UpdCount += partial.UpdCount
+		if (i+1)%100 == 0 || i == len(stocks)-1 {
+			log.Printf("[采集-分红] 全量进度: %d/%d (新增=%d, 更新=%d)", i+1, len(stocks), result.NewCount, result.UpdCount)
+		}
+	}
+	log.Printf("[采集-分红] 全量完成: total=%d, new=%d, upd=%d, fail=%d", result.Total, result.NewCount, result.UpdCount, result.FailCount)
+	return result, nil
+}
+
 // ============================================================================
 //  批量写入辅助函数
 // ============================================================================
@@ -199,10 +241,10 @@ func upsertPerformanceReports(code string, reports []adapter.PerformanceReport) 
 		if rowsAffected == -1 {
 			continue
 		}
-		if rowsAffected == 0 {
-			result.NewCount++
+		if rowsAffected == 1 {
+			result.NewCount++ // INSERT (新记录)
 		} else {
-			result.UpdCount++
+			result.UpdCount++ // UPDATE (2=有变化, 0=无变化)
 		}
 	}
 	return result
@@ -230,10 +272,10 @@ func upsertShareholderCounts(code string, counts []adapter.ShareholderCount) *Co
 		if rowsAffected == -1 {
 			continue
 		}
-		if rowsAffected == 0 {
-			result.NewCount++
+		if rowsAffected == 1 {
+			result.NewCount++ // INSERT (新记录)
 		} else {
-			result.UpdCount++
+			result.UpdCount++ // UPDATE (2=有变化, 0=无变化)
 		}
 	}
 	return result
@@ -256,10 +298,10 @@ func upsertShareChanges(code string, changes []adapter.ShareChange) *CollectResu
 		if rowsAffected == -1 {
 			continue
 		}
-		if rowsAffected == 0 {
-			result.NewCount++
+		if rowsAffected == 1 {
+			result.NewCount++ // INSERT (新记录)
 		} else {
-			result.UpdCount++
+			result.UpdCount++ // UPDATE (2=有变化, 0=无变化)
 		}
 	}
 	return result
@@ -288,4 +330,40 @@ func intPow10(n int) int64 {
 		r *= 10
 	}
 	return r
+}
+
+// upsertDividendHistory 批量写入分红历史数据
+func upsertDividendHistory(code string, dividends []adapter.DividendHistory) *CollectResult {
+	result := &CollectResult{Total: len(dividends)}
+	for _, d := range dividends {
+		m := model.DividendHistory{
+			StockCode:            code,
+			NoticeDate:           parseTradeDate(d.NoticeDate),
+			SecurityName:         d.SecurityName,
+			PlanProfile:          d.PlanProfile,
+			AssignProgress:       d.AssignProgress,
+			EquityRecordDate:     parseTradeDate(d.EquityRecordDate),
+			ExDividendDate:       parseTradeDate(d.ExDividendDate),
+			PayCashDate:          parseTradeDate(d.PayCashDate),
+			IsUnassign:           d.IsUnassign,
+			ReportPeriod:         d.ReportDate,
+			AssignObject:         d.AssignObject,
+			NewProfile:           d.NewProfile,
+			GmDecisionNoticeDate: parseTradeDate(d.GmDecisionNoticeDate),
+			AnnualReportDate:     parseTradeDate(d.AnnualReportDate),
+			TotalDividend:        clampDecimal(d.TotalDividend, 20, 2),
+			TotalDividendA:       clampDecimal(d.TotalDividendA, 20, 2),
+			ReportTime:           parseTradeDate(d.ReportTime),
+		}
+		rowsAffected := db.UpsertDividendHistory(m)
+		if rowsAffected == -1 {
+			continue
+		}
+		if rowsAffected == 1 {
+			result.NewCount++ // INSERT (新记录)
+		} else {
+			result.UpdCount++ // UPDATE (2=有变化, 0=无变化)
+		}
+	}
+	return result
 }

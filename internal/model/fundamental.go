@@ -92,3 +92,30 @@ type ShareChange struct {
 }
 
 func (ShareChange) TableName() string { return "share_changes" }
+
+// ---------- 分红历史 ----------
+
+// DividendHistory 分红历史表（东财 RPT_F10_DIVIDEND_MAIN）
+// 所有字段显式指定 column name，与 fundamental_tables.sql 保持一致
+type DividendHistory struct {
+	StockCode            string  `gorm:"primaryKey;size:10;not null;column:stock_code" json:"stock_code"`
+	NoticeDate           int     `gorm:"primaryKey;not null;column:notice_date" json:"notice_date"` // 公告日期 YYYYMMDD
+	SecurityName         string  `gorm:"size:50;column:security_name" json:"security_name"`
+
+	PlanProfile          string  `gorm:"size:100;column:plan_profile" json:"plan_profile"`                     // 分配方案
+	AssignProgress       string  `gorm:"size:20;column:assign_progress" json:"assign_progress"`                // 分配进度
+	EquityRecordDate     int     `gorm:"column:equity_record_date" json:"equity_record_date"`                  // 股权登记日 YYYYMMDD
+	ExDividendDate       int     `gorm:"column:ex_dividend_date" json:"ex_dividend_date"`                      // 除权除息日 YYYYMMDD
+	PayCashDate          int     `gorm:"column:pay_cash_date" json:"pay_cash_date"`                            // 派息日 YYYYMMDD
+	IsUnassign           bool    `gorm:"column:is_unassign" json:"is_unassign"`                               // 是否不分配
+	ReportPeriod         string  `gorm:"size:50;column:report_period" json:"report_period"`                   // 报告期(eg. 2025年报)
+	AssignObject         string  `gorm:"size:50;column:assign_object" json:"assign_object"`                    // 分配对象
+	NewProfile           string  `gorm:"size:100;column:new_profile" json:"new_profile"`                       // 最新方案
+	GmDecisionNoticeDate int     `gorm:"column:gm_decision_notice_date" json:"gm_decision_notice_date"`        // 股东大会决议公告日 YYYYMMDD
+	AnnualReportDate     int     `gorm:"column:annual_report_date" json:"annual_report_date"`                  // 年报披露日 YYYYMMDD
+	TotalDividend        float64 `gorm:"column:total_dividend" json:"total_dividend"`                          // 总分红金额(元)
+	TotalDividendA       float64 `gorm:"column:total_dividend_a" json:"total_dividend_a"`                      // A股总分红金额(元)
+	ReportTime           int     `gorm:"column:report_time" json:"report_time"`                               // 报告截止时间 YYYYMMDD
+}
+
+func (DividendHistory) TableName() string { return "dividend_history" }

@@ -82,3 +82,29 @@ CREATE TABLE IF NOT EXISTS share_changes (
     PRIMARY KEY (stock_code, change_date),
     INDEX idx_change_date (change_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='股本变动数据';
+
+-- ---------- 分红历史 ----------
+CREATE TABLE IF NOT EXISTS dividend_history (
+    stock_code                CHAR(10)        NOT NULL COMMENT '股票代码',
+    notice_date               INT(8)          NOT NULL DEFAULT 0 COMMENT '公告日期 YYYYMMDD',
+    security_name             VARCHAR(50)     NOT NULL DEFAULT '' COMMENT '证券简称',
+
+    plan_profile              VARCHAR(100)    NOT NULL DEFAULT '' COMMENT '分配方案(eg. 10派1.6元)',
+    assign_progress           VARCHAR(20)     NOT NULL DEFAULT '' COMMENT '分配进度(实施方案/董事会预案)',
+    equity_record_date        INT(8)          NOT NULL DEFAULT 0 COMMENT '股权登记日 YYYYMMDD',
+    ex_dividend_date          INT(8)          NOT NULL DEFAULT 0 COMMENT '除权除息日 YYYYMMDD',
+    pay_cash_date             INT(8)          NOT NULL DEFAULT 0 COMMENT '派息日 YYYYMMDD',
+    is_unassign               TINYINT(1)      NOT NULL DEFAULT 0 COMMENT '是否不分配(1=不分配)',
+    report_period             VARCHAR(50)     NOT NULL DEFAULT '' COMMENT '报告期(eg. 2025年报)',
+    assign_object             VARCHAR(50)     NOT NULL DEFAULT '' COMMENT '分配对象(全体股东)',
+    new_profile               VARCHAR(100)    NOT NULL DEFAULT '' COMMENT '最新方案(eg. 10派1.6元(含税))',
+    gm_decision_notice_date   INT(8)          NOT NULL DEFAULT 0 COMMENT '股东大会决议公告日 YYYYMMDD',
+    annual_report_date        INT(8)          NOT NULL DEFAULT 0 COMMENT '年报披露日 YYYYMMDD',
+    total_dividend            DECIMAL(20,2)   NOT NULL DEFAULT 0 COMMENT '总分红金额(元)',
+    total_dividend_a          DECIMAL(20,2)   NOT NULL DEFAULT 0 COMMENT 'A股总分红金额(元)',
+    report_time               INT(8)          NOT NULL DEFAULT 0 COMMENT '报告截止时间 YYYYMMDD',
+
+    PRIMARY KEY (stock_code, notice_date),
+    INDEX idx_dividend_notice_date (notice_date),
+    INDEX idx_dividend_ex_date (ex_dividend_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='分红历史数据';

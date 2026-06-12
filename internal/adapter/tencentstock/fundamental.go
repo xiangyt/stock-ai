@@ -204,3 +204,8 @@ func (a *Adapter) GetInstitutionalHoldings(ctx context.Context, code string) ([]
 	}
 	return result, nil
 }
+
+// GetDividendHistory 获取分红历史（腾讯数据源暂未实现，返回 ErrNotImplemented）
+func (a *Adapter) GetDividendHistory(_ context.Context, _ string) ([]adapter.DividendHistory, error) {
+	return nil, adapter.ErrNotImplemented
+}

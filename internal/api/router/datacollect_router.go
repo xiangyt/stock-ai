@@ -26,6 +26,7 @@ func RegisterDataCollectRoutes(apiV1 *gin.RouterGroup, authSvc *service.AuthServ
 			fundamental.POST("/:code/performance", dcHandler.RunPerformanceReports)
 			fundamental.POST("/:code/shareholder", dcHandler.RunShareholderCounts)
 			fundamental.POST("/:code/share-change", dcHandler.RunShareChanges)
+			fundamental.POST("/:code/dividend", dcHandler.RunDividendHistory)
 		}
 
 		fundamentalBatch := collector.Group("/fundamental-batch")
@@ -33,6 +34,7 @@ func RegisterDataCollectRoutes(apiV1 *gin.RouterGroup, authSvc *service.AuthServ
 			fundamentalBatch.POST("/performance", dcHandler.RunPerformanceReportsBatch)
 			fundamentalBatch.POST("/shareholder", dcHandler.RunShareholderCountsBatch)
 			fundamentalBatch.POST("/share-change", dcHandler.RunShareChangesBatch)
+			fundamentalBatch.POST("/dividend", dcHandler.RunDividendHistoryBatch)
 		}
 
 		snapshot := collector.Group("/snapshot")

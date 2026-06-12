@@ -125,6 +125,9 @@ func NewDataCollectRunner() *DataCollectRunner {
 	// Task 9: 每月增量同步K线数据（monthly）
 	r.handlers[model.TaskMonthlyKlineIncSync] = r.handleMonthlyKlineInc
 
+	// Task 10: 分红历史同步 → RunDividendHistoryBatch
+	r.handlers[model.TaskDividendSync] = r.handleDividendSync
+
 	return r
 }
 
@@ -299,6 +302,20 @@ func (r *DataCollectRunner) handleWeeklyKlineInc(ctx context.Context, task *mode
 func (r *DataCollectRunner) handleMonthlyKlineInc(ctx context.Context, task *model.DataCollectTask) (string, error) {
 	results := GetSyncKLineService().SyncDailyForAll(ctx, []db.KLinePeriod{db.KLinePeriodMonthly})
 	return formatSyncResults([]db.KLinePeriod{db.KLinePeriodMonthly}, results), nil
+}
+
+// handleDividendSync 处理【分红历史同步】(Task 10)
+func (r *DataCollectRunner) handleDividendSync(ctx context.Context, task *model.DataCollectTask) (string, error) {
+	sourceName := parseSourceFromParams(task.Params)
+	adp, err := ResolveAdapter(adapter.GetRegistry(), sourceName)
+	if err != nil {
+		return "", fmt.Errorf("获取数据源失败: %w", err)
+	}
+	res, err := RunDividendHistoryBatch(ctx, adp)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("total=%d, 新增=%d, 更新=%d, 失败=%d", res.Total, res.NewCount, res.UpdCount, res.FailCount), nil
 }
 
 // parseSourceFromParams 从任务 params JSON 中提取 source 参数

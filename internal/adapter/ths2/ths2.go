@@ -152,3 +152,7 @@ func (a *Adapter) GetShareChanges(_ context.Context, _ string) ([]adapter.ShareC
 func (a *Adapter) GetInstitutionalHoldings(_ context.Context, _ string) ([]adapter.InstitutionalHolding, error) {
 	return nil, adapter.ErrNotImplemented
 }
+
+func (a *Adapter) GetDividendHistory(_ context.Context, _ string) ([]adapter.DividendHistory, error) {
+	return nil, adapter.ErrNotImplemented
+}

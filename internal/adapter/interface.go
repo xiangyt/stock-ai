@@ -55,6 +55,9 @@ type DataSource interface {
 	// 机构持仓
 	GetInstitutionalHoldings(ctx context.Context, code string) ([]InstitutionalHolding, error) // 机构持仓历史
 
+	// 分红历史
+	GetDividendHistory(ctx context.Context, code string) ([]DividendHistory, error) // 分红历史列表
+
 	// 配额与状态
 	GetQuotaInfo() QuotaInfo // 配额信息
 }
@@ -304,4 +307,26 @@ type InstitutionalHolding struct {
 	FreeShareChangePct float64 `json:"free_share_change_pct"` // 较上期变化(%)
 	HoldingChangeRatio float64 `json:"holding_change_ratio"`  // 持股变动幅度(%)
 	FreeShareChangeNum int64   `json:"free_share_change_num"` // 持仓变动数量(股)
+}
+
+// DividendHistory 分红历史（东财 RPT_F10_DIVIDEND_MAIN）
+type DividendHistory struct {
+	Code                   string  `json:"code"`                       // 股票代码
+	SecurityCode           string  `json:"security_code"`              // 证券代码
+	SecurityName           string  `json:"security_name"`              // 证券简称
+	NoticeDate             string  `json:"notice_date"`                // 公告日期
+	PlanProfile            string  `json:"plan_profile"`               // 分配方案(eg. 10派1.6元)
+	AssignProgress         string  `json:"assign_progress"`            // 分配进度(实施方案/董事会预案)
+	EquityRecordDate       string  `json:"equity_record_date"`         // 股权登记日
+	ExDividendDate         string  `json:"ex_dividend_date"`           // 除权除息日
+	PayCashDate            string  `json:"pay_cash_date"`              // 派息日
+	IsUnassign             bool    `json:"is_unassign"`                // 是否不分配(IS_UNASSIGN=1)
+	ReportDate             string  `json:"report_date"`                // 报告期(eg. 2025年报)
+	AssignObject           string  `json:"assign_object"`              // 分配对象
+	NewProfile             string  `json:"new_profile"`                // 最新方案(eg. 10派1.6元(含税))
+	GmDecisionNoticeDate   string  `json:"gm_decision_notice_date"`    // 股东大会决议公告日
+	AnnualReportDate       string  `json:"annual_report_date"`         // 年报披露日(DAT_YAGGR)
+	TotalDividend          float64 `json:"total_dividend"`             // 总分红金额(元)
+	TotalDividendA         float64 `json:"total_dividend_a"`           // A股总分红金额(元)
+	ReportTime             string  `json:"report_time"`                // 报告截止时间
 }

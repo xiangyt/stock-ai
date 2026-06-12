@@ -581,5 +581,142 @@ func (a *Adapter) GetInstitutionalHoldings(ctx context.Context, code string) ([]
 }
 
 // TODO: 未来可扩展
-// - 分红 (DividendHistory / RPT_DIVIDEND)
 // - 增减持 (ShareholderChange / RPT_SHAREBONUS_DET)
+
+// --- 分红历史 ---
+
+// dividendItem 东财分红原始字段（RPT_F10_DIVIDEND_MAIN）
+type dividendItem struct {
+	SECUCODE               string   `json:"SECUCODE"`
+	SECURITY_CODE          string   `json:"SECURITY_CODE"`
+	SECURITY_NAME_ABBR     string   `json:"SECURITY_NAME_ABBR"`
+	NOTICE_DATE            string   `json:"NOTICE_DATE"`
+	IMPL_PLAN_PROFILE      string   `json:"IMPL_PLAN_PROFILE"`
+	ASSIGN_PROGRESS        string   `json:"ASSIGN_PROGRESS"`
+	EQUITY_RECORD_DATE     *string  `json:"EQUITY_RECORD_DATE"`
+	EX_DIVIDEND_DATE       *string  `json:"EX_DIVIDEND_DATE"`
+	PAY_CASH_DATE          *string  `json:"PAY_CASH_DATE"`
+	IS_UNASSIGN            string   `json:"IS_UNASSIGN"`
+	REPORT_DATE            string   `json:"REPORT_DATE"`
+	ASSIGN_OBJECT          *string  `json:"ASSIGN_OBJECT"`
+	IMPL_PLAN_NEWPROFILE   string   `json:"IMPL_PLAN_NEWPROFILE"`
+	NEW_PROFILE            string   `json:"NEW_PROFILE"`
+	GMDECISION_NOTICE_DATE *string  `json:"GMDECISION_NOTICE_DATE"`
+	INFO_CODE              string   `json:"INFO_CODE"`
+	DAT_YAGGR              *string  `json:"DAT_YAGGR"`
+	TOTAL_DIVIDEND         float64  `json:"TOTAL_DIVIDEND"`
+	TOTAL_DIVIDEND_A       float64  `json:"TOTAL_DIVIDEND_A"`
+	REPORT_TIME            string   `json:"REPORT_TIME"`
+}
+
+type dividendResponse struct {
+	Version string           `json:"version"`
+	Result  dividendResult   `json:"result"`
+	Success bool             `json:"success"`
+	Message string           `json:"message"`
+	Code    int              `json:"code"`
+}
+
+type dividendResult struct {
+	Pages int            `json:"pages"`
+	Data  []dividendItem `json:"data"`
+	Count int            `json:"count"`
+}
+
+// GetDividendHistory 获取分红历史数据
+//
+// API: datacenter.eastmoney.com/securities/api/data/v1/get?reportName=RPT_F10_DIVIDEND_MAIN
+//
+// 返回字段与图片完全对应:
+//   - PlanProfile(分配方案)     → 主信息
+//   - AssignProgress(分配进度)  → 实施方案/董事会预案
+//   - ExDividendDate(除权除息日)
+//   - EquityRecordDate(股权登记日)
+//   - ReportDate(报告期)        → 2025年报
+//   - TotalDividend(分红总额)
+func (a *Adapter) GetDividendHistory(ctx context.Context, code string) ([]adapter.DividendHistory, error) {
+	secucode := buildSecucode(code)
+
+	var allDividends []adapter.DividendHistory
+	page := 1
+	pageSize := 50
+	totalPages := 0
+
+	for {
+		params := url.Values{
+			"reportName":   {"RPT_F10_DIVIDEND_MAIN"},
+			"columns":      {"ALL"},
+			"quoteColumns": {""},
+			"filter":       {fmt.Sprintf(`(SECUCODE="%s")`, secucode)},
+			"pageNumber":   {strconv.Itoa(page)},
+			"pageSize":     {strconv.Itoa(pageSize)},
+			"sortTypes":    {"-1"},
+			"sortColumns":  {"NOTICE_DATE"},
+			"source":       {"HSF10"},
+			"client":       {"PC"},
+		}
+
+		urlStr := "https://datacenter.eastmoney.com/securities/api/data/v1/get?" + params.Encode()
+		body, err := a.makeGetRequestRaw(urlStr, "https://emweb.securities.eastmoney.com/")
+		if err != nil {
+			return nil, fmt.Errorf("请求分红历史第%d页失败: %w", page, err)
+		}
+
+		var resp dividendResponse
+		if err := json.Unmarshal([]byte(body), &resp); err != nil {
+			return nil, fmt.Errorf("解析分红JSON失败: %w", err)
+		}
+		if !resp.Success {
+			// code=9201 "返回数据为空"：部分股票历史上无分红记录，视为空结果
+			if resp.Code == 9201 || resp.Result.Pages == 0 {
+				log.Printf("[eastmoney] %s 无分红记录", code)
+				return allDividends, nil
+			}
+			return nil, fmt.Errorf("分红API错误(code=%d): %s", resp.Code, resp.Message)
+		}
+
+		if totalPages == 0 {
+			totalPages = resp.Result.Pages
+		}
+
+		for _, item := range resp.Result.Data {
+			allDividends = append(allDividends, adapter.DividendHistory{
+				Code:                 code,
+				SecurityCode:         item.SECURITY_CODE,
+				SecurityName:         item.SECURITY_NAME_ABBR,
+				NoticeDate:           truncateDate(item.NOTICE_DATE),
+				PlanProfile:          item.IMPL_PLAN_PROFILE,
+				AssignProgress:       item.ASSIGN_PROGRESS,
+				EquityRecordDate:     truncateDate(ptrToStr(item.EQUITY_RECORD_DATE)),
+				ExDividendDate:       truncateDate(ptrToStr(item.EX_DIVIDEND_DATE)),
+				PayCashDate:          truncateDate(ptrToStr(item.PAY_CASH_DATE)),
+				IsUnassign:           item.IS_UNASSIGN == "1",
+				ReportDate:           item.REPORT_DATE,
+				AssignObject:         ptrToStr(item.ASSIGN_OBJECT),
+				NewProfile:           item.NEW_PROFILE,
+				GmDecisionNoticeDate: truncateDate(ptrToStr(item.GMDECISION_NOTICE_DATE)),
+				AnnualReportDate:     truncateDate(ptrToStr(item.DAT_YAGGR)),
+				TotalDividend:        item.TOTAL_DIVIDEND,
+				TotalDividendA:       item.TOTAL_DIVIDEND_A,
+				ReportTime:           truncateDate(item.REPORT_TIME),
+			})
+		}
+
+		if page >= totalPages || len(resp.Result.Data) < pageSize {
+			break
+		}
+		page++
+		time.Sleep(80 * time.Millisecond)
+	}
+
+	log.Printf("[eastmoney] %s 分红历史: %d 条记录 (%d页)", code, len(allDividends), totalPages)
+	return allDividends, nil
+}
+
+// ptrToStr 解引用 *string，nil 返回空字符串
+func ptrToStr(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}

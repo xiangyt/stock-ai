@@ -104,3 +104,33 @@ func FindShareChanges(code string, limit int) ([]model.ShareChange, error) {
 	err := q.Find(&changes).Error
 	return changes, err
 }
+
+// UpsertDividendHistory 单条分红历史 upsert (INSERT ON DUPLICATE KEY UPDATE)
+func UpsertDividendHistory(m model.DividendHistory) int64 {
+	result := GetDB().Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "stock_code"}, {Name: "notice_date"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"security_name", "plan_profile", "assign_progress",
+			"equity_record_date", "ex_dividend_date", "pay_cash_date",
+			"is_unassign", "report_period", "assign_object", "new_profile",
+			"gm_decision_notice_date", "annual_report_date",
+			"total_dividend", "total_dividend_a", "report_time",
+		}),
+	}).Create(&m)
+	if result.Error != nil {
+		log.Printf("[dao-fundamental] 分红upsert失败 [%s/%d]: %v", m.StockCode, m.NoticeDate, result.Error)
+		return -1
+	}
+	return result.RowsAffected
+}
+
+// FindDividendHistory 查询分红历史
+func FindDividendHistory(code string, limit int) ([]model.DividendHistory, error) {
+	var dividends []model.DividendHistory
+	q := GetDB().Where("stock_code = ?", code).Order("notice_date DESC")
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	err := q.Find(&dividends).Error
+	return dividends, err
+}
