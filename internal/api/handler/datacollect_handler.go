@@ -789,6 +789,27 @@ func (h *DataCollectHandler) RunFill(c *gin.Context) {
 	})
 }
 
+// RunDividend 除权除息全量刷新：全量 OHLCV 重写，保留成交额
+// POST /api/v1/sync-kline/dividend
+func (h *DataCollectHandler) RunDividend(c *gin.Context) {
+	var req SyncKLineRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	periods := parsePeriods(req.Periods)
+
+	go func() {
+		results := datacollect.GetSyncKLineService().SyncDividendForAll(context.Background(), periods)
+		logSyncResults("dividend", results)
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "除权除息全量刷新已启动",
+	})
+}
+
 // Debug 调试接口
 // POST /api/v1/sync-kline/debug
 func (h *DataCollectHandler) Debug(c *gin.Context) {

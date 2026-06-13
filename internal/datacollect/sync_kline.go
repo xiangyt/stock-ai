@@ -15,6 +15,7 @@ import (
 	"stock-ai/internal/adapter/ths"
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
+	"stock-ai/utils"
 
 	"gorm.io/gorm"
 )
@@ -25,9 +26,10 @@ import (
 type SyncMode string
 
 const (
-	SyncModeInit  SyncMode = "init"  // 初始化：同花顺全量拉取骨架
-	SyncModeDaily SyncMode = "daily" // 每日增量：同花顺 GetToday 等当日/当周/当月/当年
-	SyncModeFill  SyncMode = "fill"  // 补全金额：东财全量拉取补 amount=0 的记录
+	SyncModeInit     SyncMode = "init"     // 初始化：同花顺全量拉取骨架
+	SyncModeDaily    SyncMode = "daily"    // 每日增量：同花顺 GetToday 等当日/当周/当月/当年
+	SyncModeFill     SyncMode = "fill"     // 补全金额：东财全量拉取补 amount=0 的记录
+	SyncModeDividend SyncMode = "dividend" // 除权除息：全量刷新 OHLCV，保留成交额
 )
 
 // AllPeriods 所有支持的周期
@@ -129,6 +131,20 @@ func (s *SyncKLineService) FillMissingAmount(ctx context.Context, periods []db.K
 	return results
 }
 
+// SyncDividendForAll 除权除息模式：
+//
+//	同花顺全量拉取，已存在记录仅更新 OHLCV 五字段，不存在则插入。
+//	保留原始 amount/turnover_rate 不覆盖。
+//
+// 适用场景：除权除息日自动触发，或手动对指定股票批量刷新
+func (s *SyncKLineService) SyncDividendForAll(ctx context.Context, periods []db.KLinePeriod) []SyncBatchResult {
+	var results []SyncBatchResult
+	for _, p := range periods {
+		results = append(results, s.runBatch(ctx, p, SyncModeDividend))
+	}
+	return results
+}
+
 // DebugSyncSingle 调试同步单只股票的逻辑
 func (s *SyncKLineService) DebugSyncSingle(ctx context.Context, periods []db.KLinePeriod, code string, mode string) error {
 	if len(periods) == 0 || code == "" || mode == "" {
@@ -217,6 +233,8 @@ func (s *SyncKLineService) syncSingle(ctx context.Context, code string, period d
 		return s.syncSingleDaily(ctx, code, period, &result)
 	case SyncModeFill:
 		return s.syncSingleFill(ctx, code, period, &result)
+	case SyncModeDividend:
+		return s.syncSingleDividend(ctx, code, period, &result)
 	default:
 		result.Error = fmt.Errorf("未知的同步模式: %s", mode)
 		return result
@@ -271,19 +289,65 @@ func (s *SyncKLineService) syncSingleInit(ctx context.Context, code string, peri
 // ---------- Daily 模式 ----------
 //
 // 策略：以全量数据为基准，对齐截断重写 + 当期精刷
-//   ① DB 最新 N 条      → 本地窗口 W（默认取尾部5条做匹配）
-//   ② 同花顺全量采集 → 完整数据集 A
-//   ③ A ∩ W 匹配找锚定日期 D（W 中能在 A 里找到对应的那条）
-//   ④ DELETE trade_date > D 的所有记录（清除脏/过期数据）
-//   ⑤ A 全量 upsert（补齐缺口 + 覆盖旧值）
-//   ⑥ GetToday/ThisWeek... 精刷当期（拿到含 Amount 的完整当日数据）
+//   ① 除权除息检测 → 若当天为除权除息日且有分红，自动切换 dividend 模式
+//   ② DB 最新 N 条               → 本地窗口 W
+//   ③ 当期采集 + 同花顺全量采集 + 当期修正尾条  → 完整数据集 A
+//   ④ A ∩ W 匹配找锚定日期 D
+//   ⑤ DELETE trade_date > D 的所有记录（清除脏/过期数据）
+//   ⑥ A 全量 upsert（补齐缺口 + 覆盖旧值）
 //
 // 这样每天都能自愈：即使前几天失败了，全量对齐也能自动修复
 
 const dailyAlignWindow = 5 // 对齐窗口大小：DB 取最新 N 条和全量数据匹配
 
+// ============================================================================
+//  公共辅助：daily / dividend 模式共享
+// ============================================================================
+
+// fetchCurrentPeriodWithFallback 获取当期数据：腾讯优先，失败回退同花顺。
+// 与 daily Step ② 和 dividend 同逻辑，消除重复。
+func (s *SyncKLineService) fetchCurrentPeriodWithFallback(ctx context.Context, code string, period db.KLinePeriod) (*adapter.StockPriceDaily, error) {
+	item, err := s.fetchCurrentPeriodData(ctx, tencentstock.AdapterName, code, period)
+	if err != nil {
+		log.Printf("  [%s][%s] 腾讯失败: %s, 尝试同花顺...", code, db.KLineLabel(period), err)
+		item, err = s.fetchCurrentPeriodData(ctx, ths.AdapterName, code, period)
+	}
+	return item, err
+}
+
+// fetchFullDataWithCurrentMerge 同花顺全量采集 + 当期数据修正尾条。
+//
+// 先拉取同花顺全量 K 线，再用 currentItem 修正最新一条：
+//
+//	日K: 日期不同则追加，相同则覆盖
+//	其他周期: 直接覆盖最后一条
+func (s *SyncKLineService) fetchFullDataWithCurrentMerge(ctx context.Context, code string, period db.KLinePeriod, currentItem *adapter.StockPriceDaily) ([]adapter.StockPriceDaily, error) {
+	fullData, fetchErr := s.fetchFullKLines(ctx, ths.AdapterName, code, period, "")
+	if fetchErr != nil {
+		return nil, fetchErr
+	}
+	if len(fullData) == 0 {
+		return nil, fmt.Errorf("同花顺全量采集结果为空")
+	}
+
+	// 当期修正尾条
+	if period == db.KLinePeriodDaily && fullData[len(fullData)-1].Date != currentItem.Date {
+		fullData = append(fullData, *currentItem)
+	} else {
+		fullData[len(fullData)-1] = *currentItem
+	}
+
+	return fullData, nil
+}
+
 // syncSingleDaily 每日增量：全量对齐截断 + 当期精刷
 func (s *SyncKLineService) syncSingleDaily(ctx context.Context, code string, period db.KLinePeriod, result *SyncResult) SyncResult {
+	// 除权除息日检测：如果今天是除权除息日且有分红，切换为 dividend 模式
+	if isExDividendDay(code, period) {
+		log.Printf("  [%s][%s] 检测到除权除息日，切换为 dividend 模式", code, db.KLineLabel(period))
+		return s.syncSingleDividend(ctx, code, period, result)
+	}
+
 	// Step ①: DB 最新 N 条
 	log.Printf("  [%s][%s] Step ① 查询DB最新%d条...", code, db.KLineLabel(period), dailyAlignWindow)
 	dbDates, dbErr := db.FindLatestNKlinesAny(period, code, dailyAlignWindow)
@@ -293,16 +357,12 @@ func (s *SyncKLineService) syncSingleDaily(ctx context.Context, code string, per
 	}
 	log.Printf("  [%s][%s] Step ① 完成, dbDates=%v", code, db.KLineLabel(period), dbDates)
 
-	// Step ②: 当期数据采集
+	// Step ②: 当期数据采集（腾讯优先，同花顺兜底）
 	log.Printf("  [%s][%s] Step ② 调用腾讯 GetTodayData...", code, db.KLineLabel(period))
-	currentItem, currErr := s.fetchCurrentPeriodData(ctx, tencentstock.AdapterName, code, period)
+	currentItem, currErr := s.fetchCurrentPeriodWithFallback(ctx, code, period)
 	if currErr != nil {
-		log.Printf("  [%s][%s] 腾讯失败: %s, 尝试同花顺...", code, db.KLineLabel(period), currErr)
-		currentItem, currErr = s.fetchCurrentPeriodData(ctx, ths.AdapterName, code, period)
-		if currErr != nil {
-			result.Error = fmt.Errorf("同花顺当期采集失败: %w", currErr)
-			return *result
-		}
+		result.Error = fmt.Errorf("当期采集失败: %w", currErr)
+		return *result
 	}
 	log.Printf("  [%s][%s] Step ② 完成, date=%s", code, db.KLineLabel(period), currentItem.Date)
 	if len(dbDates) > 0 && parseTradeDate(currentItem.Date) == dbDates[0] {
@@ -311,21 +371,12 @@ func (s *SyncKLineService) syncSingleDaily(ctx context.Context, code string, per
 		return *result
 	}
 
+	// Step ③: 同花顺全量采集 + 当期修正尾条
 	log.Printf("  [%s][%s] Step ③ 采集同花顺全量数据...", code, db.KLineLabel(period))
-	fullData, fetchErr := s.fetchFullKLines(ctx, ths.AdapterName, code, period, "")
+	fullData, fetchErr := s.fetchFullDataWithCurrentMerge(ctx, code, period, currentItem)
 	if fetchErr != nil {
 		result.Error = fmt.Errorf("同花顺全量采集失败: %w", fetchErr)
 		return *result
-	} else if len(fullData) == 0 {
-		result.Error = fmt.Errorf("同花顺全量采集结果为空")
-		return *result
-	}
-
-	// 同花顺有时候最后一条数据有问题,日k追加，其他覆盖
-	if period == db.KLinePeriodDaily && fullData[len(fullData)-1].Date != currentItem.Date {
-		fullData = append(fullData, *currentItem)
-	} else {
-		fullData[len(fullData)-1] = *currentItem
 	}
 
 	// Step ③: 找锚定日期 — DB 尾部数据在 fullData 中能找到的最近一条
@@ -415,6 +466,50 @@ func (s *SyncKLineService) syncSingleFill(ctx context.Context, code string, peri
 	log.Printf("  [%s][%s] ✅ 补全完成: 有效数据%d, upsert成功%d, 失败%d",
 		code, db.KLineLabel(period), len(validData), success, failed)
 
+	return *result
+}
+
+// ---------- Dividend 模式 ----------
+//
+// 除权除息日全量刷新历史价格：
+//   ① 获取当期数据（腾讯优先，同花顺兜底）
+//   ② 同花顺全量采集 + 当期修正尾条
+//   ③ 全量 upsert：已存在记录仅更新 OHLCV 五字段，不存在则插入
+//
+// 与 daily 模式的区别：
+//   - 不做对齐截断（daily 的锚点算法），直接全量写入
+//   - upsert 更新列为 OHLCV 而非全字段（保留原有 amount/turnover_rate）
+
+// syncSingleDividend 除权除息：全量刷新 OHLCV（保留成交额）
+func (s *SyncKLineService) syncSingleDividend(ctx context.Context, code string, period db.KLinePeriod, result *SyncResult) SyncResult {
+	// Step ①: 当期数据采集（腾讯优先，同花顺兜底）
+	log.Printf("  [%s][%s] Step ① 调用腾讯 GetTodayData...", code, db.KLineLabel(period))
+	currentItem, currErr := s.fetchCurrentPeriodWithFallback(ctx, code, period)
+	if currErr != nil {
+		result.Error = fmt.Errorf("当期采集失败: %w", currErr)
+		return *result
+	}
+	log.Printf("  [%s][%s] 当期数据完成, date=%s", code, db.KLineLabel(period), currentItem.Date)
+
+	// Step ②: 同花顺全量采集 + 当期修正尾条
+	log.Printf("  [%s][%s] Step ② 采集同花顺全量数据...", code, db.KLineLabel(period))
+	fullData, fetchErr := s.fetchFullDataWithCurrentMerge(ctx, code, period, currentItem)
+	if fetchErr != nil {
+		result.Error = fmt.Errorf("同花顺全量采集失败: %w", fetchErr)
+		return *result
+	}
+	log.Printf("  [%s][%s] 全量数据 %d 条（含当期修正）", code, db.KLineLabel(period), len(fullData))
+
+	// Step ③: 全量 upsert（已存在仅更新 OHLCV，不存在则插入）
+	success, failed := s.upsertByPeriodOHLCV(code, period, fullData)
+	result.UpsertCount = success
+	result.SourceUsed = "ths"
+	result.Mode = SyncModeDividend
+
+	if failed > 0 {
+		log.Printf("  [%s][%s] OHLCV upsert: 成功%d 失败%d", code, db.KLineLabel(period), success, failed)
+	}
+	log.Printf("  [%s][%s] ✅ dividend 完成: upsert=%d (源=%s)", code, db.KLineLabel(period), result.UpsertCount, result.SourceUsed)
 	return *result
 }
 
@@ -563,6 +658,93 @@ func (s *SyncKLineService) upsertOne(code string, period db.KLinePeriod, tradeDa
 			Volume: m.Volume, Amount: m.Amount, TurnoverRate: m.TurnoverRate,
 		}
 		return db.UpsertYearlyKline(ym)
+	default:
+		return -1
+	}
+}
+
+// ========== Dividend 模式辅助 ==========
+
+// isExDividendDay 检测本周期是否包含该股票的除权除息日（且有分红）。
+// 仅对日K周期有效，其他周期始终返回 false。
+func isExDividendDay(code string, period db.KLinePeriod) bool {
+	// 查该股票最新一次除权除息记录（按 ex_dividend_date 降序）
+	dividend, err := db.FindLatestDividend(code)
+	if err != nil {
+		return false
+	}
+
+	// 查询结果已限 is_unassign=false + 除权除息日与今天同一周期
+	return db.IsSamePeriod(period, utils.TodayTradeDate(), dividend.ExDividendDate)
+}
+
+// upsertByPeriodOHLCV 根据周期选用 OHLCV-only upsert 进行批量写入。
+// 已存在记录仅更新 open/high/low/close/volume，不存在则全字段插入。
+// 其余行为与 upsertByPeriod 一致（首次失败即停止）。
+func (s *SyncKLineService) upsertByPeriodOHLCV(code string, period db.KLinePeriod, data []adapter.StockPriceDaily) (int, int) {
+	success, failed := 0, 0
+
+	for _, item := range data {
+		td := parseTradeDate(item.Date)
+		if td == 0 {
+			failed++
+			continue
+		}
+
+		rows := s.upsertOneOHLCV(code, period, td, item)
+		if rows < 0 {
+			failed++
+			break // 首次失败立即停止
+		}
+		success++
+	}
+
+	if len(data) > success+failed {
+		pending := len(data) - success - failed
+		failed += pending
+	}
+
+	return success, failed
+}
+
+// upsertOneOHLCV 写入单条 K 线（OHLCV-only 更新）
+func (s *SyncKLineService) upsertOneOHLCV(code string, period db.KLinePeriod, tradeDate int, item adapter.StockPriceDaily) int64 {
+	m := model.DailyKline{
+		StockCode:    code,
+		TradeDate:    tradeDate,
+		Open:         int(item.Open),
+		High:         int(item.High),
+		Low:          int(item.Low),
+		Close:        int(item.Close),
+		Volume:       item.Volume,
+		Amount:       item.Amount,
+		TurnoverRate: item.Turnover,
+	}
+
+	switch period {
+	case db.KLinePeriodDaily:
+		return db.UpsertDailyKlineOHLCV(m)
+	case db.KLinePeriodWeekly:
+		wm := model.WeeklyKline{
+			StockCode: m.StockCode, TradeDate: m.TradeDate,
+			Open: m.Open, High: m.High, Low: m.Low, Close: m.Close,
+			Volume: m.Volume, Amount: m.Amount, TurnoverRate: m.TurnoverRate,
+		}
+		return db.UpsertWeeklyKlineOHLCV(wm)
+	case db.KLinePeriodMonthly:
+		mm := model.MonthlyKline{
+			StockCode: m.StockCode, TradeDate: m.TradeDate,
+			Open: m.Open, High: m.High, Low: m.Low, Close: m.Close,
+			Volume: m.Volume, Amount: m.Amount, TurnoverRate: m.TurnoverRate,
+		}
+		return db.UpsertMonthlyKlineOHLCV(mm)
+	case db.KLinePeriodYearly:
+		ym := model.YearlyKline{
+			StockCode: m.StockCode, TradeDate: m.TradeDate,
+			Open: m.Open, High: m.High, Low: m.Low, Close: m.Close,
+			Volume: m.Volume, Amount: m.Amount, TurnoverRate: m.TurnoverRate,
+		}
+		return db.UpsertYearlyKlineOHLCV(ym)
 	default:
 		return -1
 	}

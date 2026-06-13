@@ -134,3 +134,15 @@ func FindDividendHistory(code string, limit int) ([]model.DividendHistory, error
 	err := q.Find(&dividends).Error
 	return dividends, err
 }
+
+// FindLatestDividend 查询指定股票最新一条除权除息记录（按 ex_dividend_date 降序）。
+// 用于判断最近一次除权除息日是否在同一个周期内（日/周/月/年），
+// 以触发 dividend 模式全量刷新 OHLCV。
+func FindLatestDividend(code string) (model.DividendHistory, error) {
+	var dividend model.DividendHistory
+	err := GetDB().
+		Where("stock_code = ? AND is_unassign = ?", code, false).
+		Order("ex_dividend_date DESC").
+		First(&dividend).Error
+	return dividend, err
+}

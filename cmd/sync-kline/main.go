@@ -18,15 +18,16 @@ import (
 
 // ========== 用法说明 ==========
 
-const usage = `K线同步工具 — 多周期三模式
+const usage = `K线同步工具 — 多周期四模式
 
 用法:
   sync-kline [子命令] [选项]
 
 子命令:
-  init   初始化模式: 同花顺全量拉取骨架数据（amount=0）
-  daily  每日增量: 同花顺 GetToday 等接口获取当期数据
-  fill   补全金额: 东财全量拉取补 amount=0 的记录
+  init     初始化模式: 同花顺全量拉取骨架数据（amount=0）
+  daily    每日增量: 同花顺 GetToday 等接口获取当期数据
+  fill     补全金额: 东财全量拉取补 amount=0 的记录
+  dividend 除权除息: 全量刷新 OHLCV，保留成交额
 
 选项:
   -config string   配置文件路径 (默认 "config.yaml")
@@ -46,6 +47,9 @@ const usage = `K线同步工具 — 多周期三模式
 
   # 补全金额（建议每周低频运行，东财不稳定）
   go run main.go fill -periods daily
+
+  # 除权除息全量刷新（自动检测，也可手动触发）
+  go run main.go dividend -periods daily
 
 无子命令时默认执行 daily 模式。
 `
@@ -68,12 +72,13 @@ func main() {
 		modeStr = "daily" // 默认 daily 模式
 	}
 	mode, ok := map[string]datacollect.SyncMode{
-		"init":  datacollect.SyncModeInit,
-		"daily": datacollect.SyncModeDaily,
-		"fill":  datacollect.SyncModeFill,
+		"init":     datacollect.SyncModeInit,
+		"daily":    datacollect.SyncModeDaily,
+		"fill":     datacollect.SyncModeFill,
+		"dividend": datacollect.SyncModeDividend,
 	}[modeStr]
 	if !ok {
-		log.Fatalf("未知子命令: %s\n支持的命令: init, daily, fill\n", modeStr)
+		log.Fatalf("未知子命令: %s\n支持的命令: init, daily, fill, dividend\n", modeStr)
 	}
 
 	// 解析周期列表
@@ -105,6 +110,8 @@ func main() {
 		results = svc.SyncDailyForAll(ctx, periods)
 	case datacollect.SyncModeFill:
 		results = svc.FillMissingAmount(ctx, periods)
+	case datacollect.SyncModeDividend:
+		results = svc.SyncDividendForAll(ctx, periods)
 	default:
 		log.Fatal("未实现的模式")
 	}

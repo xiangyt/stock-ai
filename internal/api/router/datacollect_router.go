@@ -47,6 +47,7 @@ func RegisterDataCollectRoutes(apiV1 *gin.RouterGroup, authSvc *service.AuthServ
 		syncKline.POST("/init", dcHandler.RunInit)
 		syncKline.POST("/daily", dcHandler.RunDaily)
 		syncKline.POST("/fill", dcHandler.RunFill)
+		syncKline.POST("/dividend", dcHandler.RunDividend)
 		syncKline.POST("/debug", dcHandler.Debug)
 	}
 

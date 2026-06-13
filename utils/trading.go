@@ -58,6 +58,12 @@ func ParseDateToTradeDate(dateStr string) (int, error) {
 	return strconv.Atoi(clean)
 }
 
+// TodayTradeDate 返回今天的 YYYYMMDD 整数
+func TodayTradeDate() int {
+	now := time.Now()
+	return now.Year()*10000 + int(now.Month())*100 + now.Day()
+}
+
 // getHolidays A 股法定节假日列表
 func getHolidays() []string {
 	return []string{

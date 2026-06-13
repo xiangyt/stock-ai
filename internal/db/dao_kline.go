@@ -78,6 +78,12 @@ var klineUpdateCols = []string{
 	"volume", "amount", "turnover_rate",
 }
 
+// klineOHLCVUpdateCols 仅更新 OHLCV 五字段，预留 amount/turnover_rate 不变。
+// 用于除权除息日全量刷新历史价格，成交量，但保留原始成交额。
+var klineOHLCVUpdateCols = []string{
+	"open", "high", "low", "close", "volume",
+}
+
 func UpsertDailyKline(m model.DailyKline) int64 {
 	result := GetDB().Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "stock_code"}, {Name: "trade_date"}},
@@ -121,6 +127,56 @@ func UpsertYearlyKline(m model.YearlyKline) int64 {
 	}).Create(&m)
 	if result.Error != nil {
 		log.Printf("[dao-kline] 年K upsert失败 [%s/%d]: %v", m.StockCode, m.TradeDate, result.Error)
+		return -1
+	}
+	return result.RowsAffected
+}
+
+// ========== Upsert OHLCV-only（除权除息模式专用：仅更新价格+成交量） ==========
+
+func UpsertDailyKlineOHLCV(m model.DailyKline) int64 {
+	result := GetDB().Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "stock_code"}, {Name: "trade_date"}},
+		DoUpdates: clause.AssignmentColumns(klineOHLCVUpdateCols),
+	}).Create(&m)
+	if result.Error != nil {
+		log.Printf("[dao-kline] 日K(OHLCV) upsert失败 [%s/%d]: %v", m.StockCode, m.TradeDate, result.Error)
+		return -1
+	}
+	return result.RowsAffected
+}
+
+func UpsertWeeklyKlineOHLCV(m model.WeeklyKline) int64 {
+	result := GetDB().Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "stock_code"}, {Name: "trade_date"}},
+		DoUpdates: clause.AssignmentColumns(klineOHLCVUpdateCols),
+	}).Create(&m)
+	if result.Error != nil {
+		log.Printf("[dao-kline] 周K(OHLCV) upsert失败 [%s/%d]: %v", m.StockCode, m.TradeDate, result.Error)
+		return -1
+	}
+	return result.RowsAffected
+}
+
+func UpsertMonthlyKlineOHLCV(m model.MonthlyKline) int64 {
+	result := GetDB().Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "stock_code"}, {Name: "trade_date"}},
+		DoUpdates: clause.AssignmentColumns(klineOHLCVUpdateCols),
+	}).Create(&m)
+	if result.Error != nil {
+		log.Printf("[dao-kline] 月K(OHLCV) upsert失败 [%s/%d]: %v", m.StockCode, m.TradeDate, result.Error)
+		return -1
+	}
+	return result.RowsAffected
+}
+
+func UpsertYearlyKlineOHLCV(m model.YearlyKline) int64 {
+	result := GetDB().Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "stock_code"}, {Name: "trade_date"}},
+		DoUpdates: clause.AssignmentColumns(klineOHLCVUpdateCols),
+	}).Create(&m)
+	if result.Error != nil {
+		log.Printf("[dao-kline] 年K(OHLCV) upsert失败 [%s/%d]: %v", m.StockCode, m.TradeDate, result.Error)
 		return -1
 	}
 	return result.RowsAffected
