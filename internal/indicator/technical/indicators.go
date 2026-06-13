@@ -14,5 +14,6 @@ func All() []indicator.Indicator {
 		NewTopBottom(),
 		NewRedTop(),
 		NewMacd(),
+		NewKdj(),
 	}
 }

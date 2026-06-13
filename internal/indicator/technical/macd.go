@@ -14,7 +14,7 @@ import (
 //  数据源: GetDailyKline()
 //
 //  设计要点:
-//    在 MACD.Evaluate 层统一计算 DIF/DEA/Histogram 近 macdSeriesDays 日序列，
+//    在 MACD.Evaluate 层统一计算 DIF/DEA/MACD 全量序列，
 //    所有信号共享同一份 MACDResult，不重复计算。
 //
 //  公式:
@@ -25,25 +25,25 @@ import (
 //    MACD柱= 2 * (DIF - DEA)
 // ============================================================================
 
-// MACDResult MACD 预计算结果，供该指标下所有信号复用
+// MACDResult MACD 预计算结果，供该指标下所有信号复用。
+//
+// 数据顺序: 从旧到新 ([0]=最旧, [len-1]=最新)
+// 与 NormalizeLookback 的索引映射一致 ("N天前" → dataLen-1-N)
 type MACDResult struct {
-	DIF        []float64 // DIF快线序列 [0]=最新
-	DEA        []float64 // DEA慢线序列 [0]=最新
-	Histogram []float64 // MACD柱 (2*(DIF-DEA)) [0]=最新
-	ClosePrice []float64 // 收盘价序列 [0]=最新（元，用于背离检测）
+	DIF        []float64 // DIF快线（从旧到新）
+	DEA        []float64 // DEA慢线（从旧到新）
+	MACD  []float64 // MACD柱 2*(DIF-DEA)（从旧到新）
+	ClosePrice []float64 // 收盘价（元，从旧到新）
 }
-
-// macdSeriesDays 预计算的 MACD 序列长度（近 N 日）
-const macdSeriesDays = 120
 
 // macdMinKlines 计算 MACD 所需的最少 K 线根数
 const macdMinKlines = 60
 
 // MACD 默认参数
 const (
-	macdShortPeriod = 12 // 快线 EMA 周期
-	macdLongPeriod  = 26 // 慢线 EMA 周期
-	macdSignalPeriod = 9 // DEA 信号线周期
+	macdShortPeriod  = 12 // 快线 EMA 周期
+	macdLongPeriod   = 26 // 慢线 EMA 周期
+	macdSignalPeriod = 9  // DEA 信号线周期
 )
 
 type Macd struct {
@@ -75,7 +75,7 @@ func NewMacd() *Macd {
 
 // Evaluate MACD 指标评估入口
 //
-// 1. 固定计算 DIF/DEA/Histogram 近 macdSeriesDays 日序列
+// 1. 计算 DIF/DEA/MACD 全量序列
 // 2. 将结果和原始 klines 传给各信号分发处理
 func (i *Macd) Evaluate(stock indicator.StockSource, configs []*indicator.SignalConfig) *indicator.EvaluatedStock {
 	if len(configs) == 0 {
@@ -88,11 +88,11 @@ func (i *Macd) Evaluate(stock indicator.StockSource, configs []*indicator.Signal
 			Message: err.Error()}
 	}
 
-	if len(klines) < macdMinKlines+macdSeriesDays-1 {
+	if len(klines) < macdMinKlines {
 		return &indicator.EvaluatedStock{
 			Result:   indicator.ResultRejected,
 			SignalID: configs[0].SignalID,
-			Message:  fmt.Sprintf("K线数据不足，需要至少 %d 根，当前 %d 根", macdMinKlines+macdSeriesDays-1, len(klines)),
+			Message:  fmt.Sprintf("K线数据不足，需要至少 %d 根，当前 %d 根", macdMinKlines, len(klines)),
 		}
 	}
 
@@ -128,54 +128,71 @@ func (i *Macd) Evaluate(stock indicator.StockSource, configs []*indicator.Signal
 	return &indicator.EvaluatedStock{Result: indicator.ResultPassed}
 }
 
-// buildMACD 计算 DIF / DEA / Histogram 近 macdSeriesDays 日序列。
+// buildMACD 计算 DIF / DEA / MACD 序列。
 //
-// klines[0] 为最新K线（价格单位：分），返回的切片 [0] 对应最新一日。
+//	严格按照递推公式（对应参考实现 Macd()）:
+//	  EMA12 = 2/(12+1)*Close + (12-1)/(12+1)*PrevEMA12
+//	  EMA26 = 2/(26+1)*Close + (26-1)/(26+1)*PrevEMA26
+//	  DIF   = EMA12 - EMA26
+//	  DEA   = 2/(9+1)*DIF   + (9-1)/(9+1)*PrevDEA
+//	  MACD  = 2 * (DIF - DEA)
 //
-// 计算流程：
-//  1. 将 klines 反转为 oldest-first（满足 ema 函数的数据假定 data[0]=最旧）
-//  2. 计算 EMA(CLOSE,12), EMA(CLOSE,26) → DIF → EMA(DIF,9)=DEA → Histogram
-//  3. 取最近 macdSeriesDays 日结果，再反转回 newest-first（[0]=最新）
+//	第一根K线: EMA12=EMA26=Close, DIF=0, DEA=0
+//	klines 输入: [0]=最新, [len-1]=最旧
+//	结果: oldest-first (从旧到新), [0]=最旧, [len-1]=最新
 func buildMACD(klines []*model.DailyKline) MACDResult {
 	n := len(klines)
 
-	// 提取收盘价（转为 float64 元），反转成 oldest-first
+	// klines[0] = 最新 → 拷贝并反转为 oldest-first，同时分→元
 	closePrices := make([]float64, n)
 	for i := range klines {
-		closePrices[n-1-i] = float64(klines[i].Close) / 100.0 // 最旧在 [0]
+		closePrices[n-1-i] = float64(klines[i].Close) / 100.0
 	}
 
-	ema12 := ema(closePrices, macdShortPeriod)  // EMA(CLOSE, 12)
-	ema26 := ema(closePrices, macdLongPeriod)   // EMA(CLOSE, 26)
+	dif := make([]float64, n)
+	dea := make([]float64, n)
+	hist := make([]float64, n)
 
-	difAll := make([]float64, n)
-	for i := range difAll {
-		difAll[i] = ema12[i] - ema26[i]
+	shortA := 2.0 / (float64(macdShortPeriod) + 1.0) // α₁₂ = 2/(12+1)
+	longA := 2.0 / (float64(macdLongPeriod) + 1.0)   // α₂₆ = 2/(26+1)
+	sigA := 2.0 / (float64(macdSignalPeriod) + 1.0)  // α₉ = 2/(9+1)
+
+	var ema12, ema26, deaPrev float64
+
+	for i := 0; i < n; i++ { // 从旧到新遍历
+		end := closePrices[i]
+
+		if i == 0 {
+			// 第一根K线：EMA 初始 = 收盘价
+			ema12 = end
+			ema26 = end
+		} else {
+			// EMA12 = α₁₂*Close + (1-α₁₂)*PrevEMA12
+			ema12 = end*shortA + ema12*(1-shortA)
+			// EMA26 = α₂₆*Close + (1-α₂₆)*PrevEMA26
+			ema26 = end*longA + ema26*(1-longA)
+		}
+
+		diff := ema12 - ema26 // DIF
+
+		if i == 0 {
+			deaPrev = diff // 首个 DEA = 首个 DIF（即 0）
+		} else {
+			// DEA = α₉*DIF + (1-α₉)*PrevDEA
+			deaPrev = diff*sigA + deaPrev*(1-sigA)
+		}
+
+		dif[i] = diff
+		dea[i] = deaPrev
+		hist[i] = 2.0 * (diff - deaPrev) // MACD柱 = 2*(DIF-DEA)
 	}
 
-	deaAll := ema(difAll, macdSignalPeriod) // DEA = EMA(DIF, 9)
-
-	histAll := make([]float64, n)
-	for i := range histAll {
-		histAll[i] = 2.0 * (difAll[i] -deaAll[i])
+	return MACDResult{
+		DIF:        dif,
+		DEA:        dea,
+		MACD:  hist,
+		ClosePrice: closePrices,
 	}
-
-	// 取最近 macdSeriesDays 日数据，反转回 newest-first ([0]=最新)
-	seriesLen := min(macdSeriesDays, n)
-	result := MACDResult{
-		DIF:        make([]float64, seriesLen),
-		DEA:        make([]float64, seriesLen),
-		Histogram: make([]float64, seriesLen),
-		ClosePrice: make([]float64, seriesLen),
-	}
-	for i := 0; i < seriesLen; i++ {
-		srcIdx := n - 1 - i // 从末尾取最新的 seriesLen 个元素
-		result.DIF[i] = difAll[srcIdx]
-		result.DEA[i] =deaAll[srcIdx]
-		result.Histogram[i] = histAll[srcIdx]
-		result.ClosePrice[i] = closePrices[srcIdx]
-	}
-	return result
 }
 
 // ============================================================================
@@ -397,7 +414,8 @@ const paramPeakWindow = "peak_window"
 
 // findPeaks 在 data 序列中找局部峰值点索引。
 // 窗口 [idxStart, idxEnd) 内，data[i] 是峰值的条件：
-//   data[i] 比 [i-window, i+window) 范围内的所有其他值都大（或更小）。
+//
+//	data[i] 比 [i-window, i+window) 范围内的所有其他值都大（或更小）。
 //
 // 参数:
 //   - data: 数据序列，[0]=最新
@@ -538,7 +556,7 @@ func absInt(n int) int {
 //    一般是股价高位即将反转下跌的卖出信号。
 //
 //  实现方式:
-//    在 lookback 窗口内分别找价格局部高点和 Histogram 局部高点，
+//    在 lookback 窗口内分别找价格局部高点和 MACD 局部高点，
 //    取最近两对进行比较。
 // ============================================================================
 
@@ -586,7 +604,7 @@ func (s *SignalMacdTopDivergence) Evaluate(result MACDResult, klines []*model.Da
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: err.Error()}
 	}
 
-	if ok, msg := checkDivergence(result.ClosePrice, result.Histogram, idxStart, idxEnd, peakWindow, true); ok {
+	if ok, msg := checkDivergence(result.ClosePrice, result.MACD, idxStart, idxEnd, peakWindow, true); ok {
 		return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID, Message: msg}
 	} else {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: msg}
@@ -648,7 +666,7 @@ func (s *SignalMacdBottomDivergence) Evaluate(result MACDResult, klines []*model
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: err.Error()}
 	}
 
-	if ok, msg := checkDivergence(result.ClosePrice, result.Histogram, idxStart, idxEnd, peakWindow, false); ok {
+	if ok, msg := checkDivergence(result.ClosePrice, result.MACD, idxStart, idxEnd, peakWindow, false); ok {
 		return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID, Message: msg}
 	} else {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: msg}
