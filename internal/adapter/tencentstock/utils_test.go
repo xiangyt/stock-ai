@@ -44,25 +44,6 @@ func TestParseInt(t *testing.T) {
 	}
 }
 
-func TestToCents(t *testing.T) {
-	cases := []struct {
-		yuan float64
-		want int64
-	}{
-		{0, 0},
-		{1290.20, 129020},
-		{1.59, 159},
-		{0.01, 1},
-		{0.005, 1}, // 四舍五入
-	}
-	for _, c := range cases {
-		got := toCents(c.yuan)
-		if got != c.want {
-			t.Errorf("toCents(%v) = %v, want %v", c.yuan, got, c.want)
-		}
-	}
-}
-
 func TestTruncateDate(t *testing.T) {
 	cases := []struct {
 		input string

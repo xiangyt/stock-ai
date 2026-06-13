@@ -104,23 +104,7 @@ func parseInt64(s string) int64 {
 }
 
 // toCents 将价格字符串(元)转换为分(int64)，零浮点精度损失
-// 东财价格固定2位小数，直接去掉小数点即为"分"
-//
-// 示例: "11.20"→1120  "-2.72"→-272  "3.25"→325
+// 内部委托给 ParsePriceToCents，保持东财解析器向后兼容
 func toCents(s string) int64 {
-	if s == "" || s == "-" {
-		return 0
-	}
-	dotIdx := strings.Index(s, ".")
-	if dotIdx >= 0 && len(s)-dotIdx-1 != 2 {
-		// 小数点后不是2位，说明数据格式变了，需要排查
-		fmt.Printf("WARNING: 价格小数位异常(%d位): %s\n", len(s)-dotIdx-1, s)
-		return 0
-	}
-	clean := strings.ReplaceAll(s, ".", "")
-	val, err := strconv.ParseInt(clean, 10, 64)
-	if err != nil {
-		return 0
-	}
-	return val
+	return ParsePriceToCents(s)
 }

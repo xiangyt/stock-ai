@@ -317,8 +317,3 @@ func formatTradeDate(dateInt int) string {
 	}
 	return dateStr
 }
-
-// yuanToCents 将元(float64)转换为分(int64)，四舍五入
-func yuanToCents(yuan float64) int64 {
-	return int64(yuan*100 + 0.5)
-}

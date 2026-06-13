@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"stock-ai/internal/adapter"
+	"stock-ai/internal/adapter/helpers"
 )
 
 // ========== 实时/当日数据 ==========
@@ -94,11 +95,11 @@ func (a *Adapter) parseTodayDataResponse(tsCode, thsCode, body string) (*adapter
 	return &adapter.StockPriceDaily{
 		Code:   tsCode,
 		Date:   formatTradeDate(td),
-		Open:   yuanToCents(parseFloat(openStr)),
-		High:   yuanToCents(parseFloat(highStr)),
-		Low:    yuanToCents(parseFloat(lowStr)),
-		Close:  yuanToCents(parseFloat(closeStr)),
+		Open:   helpers.ParsePriceToCents(openStr),
+		High:   helpers.ParsePriceToCents(highStr),
+		Low:    helpers.ParsePriceToCents(lowStr),
+		Close:  helpers.ParsePriceToCents(closeStr),
 		Volume: parseInt64(volStr),
-		Amount: yuanToCents(parseFloat(amountStr)),
+		Amount: helpers.ParsePriceToCents(amountStr),
 	}, nil
 }

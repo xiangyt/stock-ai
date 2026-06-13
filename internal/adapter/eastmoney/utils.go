@@ -189,11 +189,6 @@ func getQuoteReferURL(code string) string {
 	}
 }
 
-// toCents 将元(float64)转换为分(int64)，四舍五入
-func toCents(yuan float64) int64 {
-	return int64(yuan*100 + 0.5)
-}
-
 // truncateDate 截取日期 "2010-09-15 00:00:00" → "2010-09-15"
 func truncateDate(s string) string {
 	if len(s) >= 10 {

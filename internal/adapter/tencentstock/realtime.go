@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"stock-ai/internal/adapter"
+	"stock-ai/internal/adapter/helpers"
 )
 
 // qtRefer 腾讯实时行情接口 Referer
@@ -118,25 +119,25 @@ func parseSnapshotLine(body, origCode string) (*adapter.StockPriceDaily, error) 
 	}
 
 	// 字段解析（基于真实 sqt.gtimg.cn 接口返回数据验证）
-	curPrice := parseFloat(fields[3])  // 当前价
-	todayOpen := parseFloat(fields[5]) // 今开
-	volume := parseInt(fields[6])      // 成交量（手，×100=股）
+	curPrice := helpers.ParsePriceToCents(fields[3])   // 当前价(分)
+	todayOpen := helpers.ParsePriceToCents(fields[5])   // 今开(分)
+	volume := parseInt(fields[6])                        // 成交量（手，×100=股）
 	// 高低价：fields[33]=最高, fields[34]=最低
-	var high, low float64
+	var high, low int64
 	if len(fields) > 34 {
-		high = parseFloat(fields[33])
-		low = parseFloat(fields[34])
+		high = helpers.ParsePriceToCents(fields[33])
+		low = helpers.ParsePriceToCents(fields[34])
 	}
-	// 成交额：fields[57]，单位：万元（高精度，含小数位）→ 元 → 分
-	var amount float64
+	// 成交额：fields[57]，单位：万元 → 分
+	var amount int64
 	if len(fields) > 57 {
-		amount = parseFloat(fields[57]) * 10000 // 万元→元
+		amount = helpers.ParseWanYuanToCents(fields[57])
 	}
 	// 涨跌额/幅：fields[31]=涨跌额, fields[32]=涨跌幅%
-	var change float64
+	var change int64
 	var changePct float64
 	if len(fields) > 32 {
-		change = parseFloat(fields[31])
+		change = helpers.ParsePriceToCents(fields[31])
 		changePct = parseFloat(fields[32])
 	}
 	// 换手率：fields[38]
@@ -178,13 +179,13 @@ func parseSnapshotLine(body, origCode string) (*adapter.StockPriceDaily, error) 
 	return &adapter.StockPriceDaily{
 		Code:      origCode,
 		Date:      date,
-		Open:      toCents(todayOpen),
-		High:      toCents(high),
-		Low:       toCents(low),
-		Close:     toCents(curPrice),
+		Open:      todayOpen,
+		High:      high,
+		Low:       low,
+		Close:     curPrice,
 		Volume:    volume * 100, // 手→股
-		Amount:    int64(amount * 100),
-		Change:    toCents(change),
+		Amount:    amount,
+		Change:    change,
 		ChangePct: changePct,
 		Turnover:  turnover,
 		Pe:        pe,
@@ -201,16 +202,16 @@ type batchSnapshotResponse struct {
 }
 
 type snapshotItem struct {
-	Name      string  `json:"name"`
-	Code      string  `json:"code"`
-	Price     float64 `json:"price"`
-	Open      float64 `json:"open"`
-	High      float64 `json:"high"`
-	Low       float64 `json:"low"`
-	Close     float64 `json:"close"` // 昨收
-	Volume    int64   `json:"volume"`
-	Amount    float64 `json:"amount"`
-	ChangePct float64 `json:"percent"`
+	Name      string      `json:"name"`
+	Code      string      `json:"code"`
+	Price     json.Number `json:"price"`
+	Open      json.Number `json:"open"`
+	High      json.Number `json:"high"`
+	Low       json.Number `json:"low"`
+	Close     json.Number `json:"close"` // 昨收
+	Volume    int64       `json:"volume"`
+	Amount    float64     `json:"amount"`
+	ChangePct float64     `json:"percent"`
 }
 
 // fetchBatchSnapshot 批量拉取行情（最多200个/次），返回 tc→StockPriceDaily map
@@ -243,21 +244,22 @@ func (a *Adapter) fetchBatchSnapshot(ctx context.Context, codes []string) (map[s
 	result := make(map[string]*adapter.StockPriceDaily, len(resp.Data))
 	today := time.Now().Format("2006-01-02")
 	for tc, item := range resp.Data {
-		h := item.High
-		l := item.Low
+		priceCents := helpers.ParsePriceToCents(item.Price.String())
+		h := helpers.ParsePriceToCents(item.High.String())
+		l := helpers.ParsePriceToCents(item.Low.String())
 		if h == 0 {
-			h = item.Price
+			h = priceCents
 		}
 		if l == 0 {
-			l = item.Price
+			l = priceCents
 		}
 		result[tc] = &adapter.StockPriceDaily{
 			Code:      tc,
 			Date:      today,
-			Open:      toCents(item.Open),
-			High:      toCents(h),
-			Low:       toCents(l),
-			Close:     toCents(item.Price),
+			Open:      helpers.ParsePriceToCents(item.Open.String()),
+			High:      h,
+			Low:       l,
+			Close:     priceCents,
 			Volume:    item.Volume,
 			Amount:    int64(item.Amount * 100),
 			ChangePct: item.ChangePct,

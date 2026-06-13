@@ -128,14 +128,6 @@ func tencentToExchange(prefix string) string {
 
 // ========== 数值工具 ==========
 
-// toCents 将元(float64)转换为分(int64)，四舍五入
-func toCents(yuan float64) int64 {
-	if yuan == 0 {
-		return 0
-	}
-	return int64(yuan*100 + 0.5)
-}
-
 // parseFloat 安全解析 float64，解析失败返回 0
 func parseFloat(s string) float64 {
 	s = strings.TrimSpace(s)

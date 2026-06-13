@@ -577,8 +577,8 @@ func (s *schedulerImpl) runTask(taskID uint) {
 
 	// TODO: 记录执行日志到数据库（后续实现）
 
-	// 30 分钟超时
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	// 1小时超时
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 	defer cancel()
 
 	if err := s.runner.Run(ctx, task, bots); err != nil {

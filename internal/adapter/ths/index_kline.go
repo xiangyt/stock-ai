@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"stock-ai/internal/adapter"
+	"stock-ai/internal/adapter/helpers"
 	"stock-ai/utils"
 )
 
@@ -141,19 +142,13 @@ func (a *Adapter) parseIndexKLineData(code string, res string) ([]adapter.StockP
 			continue
 		}
 
-		open, _ := strconv.ParseFloat(fields[1], 64)
-		high, _ := strconv.ParseFloat(fields[2], 64)
-		low, _ := strconv.ParseFloat(fields[3], 64)
-		close, _ := strconv.ParseFloat(fields[4], 64)
-
-		data.Open = yuanToCents(open)
-		data.High = yuanToCents(high)
-		data.Low = yuanToCents(low)
-		data.Close = yuanToCents(close)
+		data.Open = helpers.ParsePriceToCents(fields[1])
+		data.High = helpers.ParsePriceToCents(fields[2])
+		data.Low = helpers.ParsePriceToCents(fields[3])
+		data.Close = helpers.ParsePriceToCents(fields[4])
 
 		data.Volume = parseInt64(fields[5])
-		amount, _ := strconv.ParseFloat(fields[6], 64)
-		data.Amount = yuanToCents(amount)
+		data.Amount = helpers.ParsePriceToCents(fields[6])
 		data.Turnover = parseFloat(fields[7])
 
 		result = append(result, data)

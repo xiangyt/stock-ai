@@ -73,30 +73,6 @@ func TestFormatTradeDate(t *testing.T) {
 	}
 }
 
-func TestYuanToCents(t *testing.T) {
-	tests := []struct {
-		input float64
-		want  int64
-	}{
-		{10.50, 1050},
-		{0, 0},
-		{1.005, 1},     // 四舍五入
-		{1.006, 1},     // 四舍五入
-		{1500.55, 150056},
-		{0.01, 1},
-		{99.99, 9999},
-	}
-
-	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
-			got := yuanToCents(tt.input)
-			if got != tt.want {
-				t.Errorf("yuanToCents(%v) = %d, want %d", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestExtractBetween(t *testing.T) {
 	tests := []struct {
 		s        string
