@@ -19,10 +19,10 @@ type ParentNetProfit struct {
 }
 
 var parentNetProfitDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于0", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 0},
-	{Seq: "02", Desc: "0~10亿", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 10},
-	{Seq: "03", Desc: "10~100亿", Operator: indicator.OpBetween, MinThreshold: 10, MaxThreshold: 100},
-	{Seq: "04", Desc: "大于100亿", Operator: indicator.OpGT, MinThreshold: 100, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于0", Alias: "亏损", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 0},
+	{Seq: "02", Desc: "0~10亿", Alias: "薄利", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 10},
+	{Seq: "03", Desc: "10~100亿", Alias: "中利", Operator: indicator.OpBetween, MinThreshold: 10, MaxThreshold: 100},
+	{Seq: "04", Desc: "大于100亿", Alias: "厚利", Operator: indicator.OpGT, MinThreshold: 100, MaxThreshold: 0},
 }
 
 func NewParentNetProfit() *ParentNetProfit {
@@ -38,14 +38,15 @@ func NewParentNetProfit() *ParentNetProfit {
 
 	numberOps := signalutil.NumberOpsByUnitMin(p.UnitStr, 0)
 
-	builtInSigs := signalutil.BuildRangeSignals(parentNetProfitDefs, p.NameStr, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &parentNetProfitSignal{bs}
+	indicatorName := p.NameStr
+	builtInSigs := signalutil.BuildRangeSignals(parentNetProfitDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &parentNetProfitSignal{BaseSignal: bs}
 	})
 	p.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", p.NameStr, "自定义归母净利润筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义归母净利润筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpGT, Params: map[string]any{indicator.ParamKeyThreshold: 5.0}})
-	p.SetCustomSignals([]indicator.Signal{&parentNetProfitSignal{cs1}})
+	p.SetCustomSignals([]indicator.Signal{&parentNetProfitSignal{BaseSignal: cs1}})
 	return p
 }
 

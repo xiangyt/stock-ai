@@ -17,10 +17,10 @@ type PETTM struct {
 }
 
 var peDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于0", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 0},
-	{Seq: "02", Desc: "0~25", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 25},
-	{Seq: "03", Desc: "25~50", Operator: indicator.OpBetween, MinThreshold: 25, MaxThreshold: 50},
-	{Seq: "04", Desc: "大于50", Operator: indicator.OpGT, MinThreshold: 50, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于0", Alias: "亏损", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 0},
+	{Seq: "02", Desc: "0~25", Alias: "低估", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 25},
+	{Seq: "03", Desc: "25~50", Alias: "合理", Operator: indicator.OpBetween, MinThreshold: 25, MaxThreshold: 50},
+	{Seq: "04", Desc: "大于50", Alias: "高估", Operator: indicator.OpGT, MinThreshold: 50, MaxThreshold: 0},
 }
 
 func NewPETTM() *PETTM {
@@ -36,8 +36,9 @@ func NewPETTM() *PETTM {
 
 	numberOps := signalutil.NumberOpsByUnit(p.UnitStr)
 
-	builtInSigs := signalutil.BuildRangeSignals(peDefs, "市盈率(TTM)", numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &peTTMSignal{bs}
+	indicatorName := "市盈率(TTM)"
+	builtInSigs := signalutil.BuildRangeSignals(peDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &peTTMSignal{BaseSignal: bs}
 	})
 	p.SetBuiltInSignals(builtInSigs)
 
@@ -49,7 +50,9 @@ func NewPETTM() *PETTM {
 		&indicator.SignalConfig{Operator: indicator.OpBetween, Params: map[string]any{indicator.ParamKeyMin: 0, indicator.ParamKeyMax: 30}})
 
 	p.SetCustomSignals([]indicator.Signal{
-		&peTTMSignal{cs1}, &peDynamicSignal{cs2}, &peStaticSignal{cs3},
+		&peTTMSignal{BaseSignal: cs1},
+		&peDynamicSignal{BaseSignal: cs2},
+		&peStaticSignal{BaseSignal: cs3},
 	})
 	return p
 }

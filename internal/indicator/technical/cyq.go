@@ -57,6 +57,92 @@ const (
 	CyqMinKlines        = 60  // 最少K线根数
 )
 
+// CountPeaks 统计筹码分布中显著峰的数量。
+// 显著峰定义：局部最大值且高度 >= maxPeak * significanceRatio。
+// significanceRatio 默认 0.15（即峰高至少为最高峰的15%才算显著）。
+func (r *CYQResult) CountPeaks(significanceRatio float64) int {
+	return len(r.findPeaks(significanceRatio))
+}
+
+// GetPeakPrices 返回显著峰对应的价格列表（按峰高降序排列）。
+func (r *CYQResult) GetPeakPrices(significanceRatio float64) []float64 {
+	peaks := r.findPeaks(significanceRatio)
+	if len(peaks) == 0 {
+		return nil
+	}
+	prices := make([]float64, len(peaks))
+	for i, idx := range peaks {
+		prices[i] = r.YData[idx]
+	}
+	return prices
+}
+
+// findPeaks 在筹码分布 XData 中查找显著局部最大值的索引（按峰高降序）。
+func (r *CYQResult) findPeaks(significanceRatio float64) []int {
+	if len(r.XData) < 3 {
+		return nil
+	}
+	if significanceRatio <= 0 {
+		significanceRatio = 0.15
+	}
+
+	// 找全局最大值
+	maxVal := 0.0
+	for _, v := range r.XData {
+		if v > maxVal {
+			maxVal = v
+		}
+	}
+	if maxVal == 0 {
+		return nil
+	}
+	threshold := maxVal * significanceRatio
+
+	// 查找局部最大值（显著峰）
+	type peakInfo = struct {
+		Idx    int
+		Height float64
+	}
+	var peaks []peakInfo
+	for i := 1; i < len(r.XData)-1; i++ {
+		if r.XData[i] > r.XData[i-1] && r.XData[i] > r.XData[i+1] && r.XData[i] >= threshold {
+			peaks = append(peaks, peakInfo{Idx: i, Height: r.XData[i]})
+		}
+	}
+	// 边界检测：第一个和最后一个元素
+	if len(r.XData) >= 2 {
+		if r.XData[0] > r.XData[1] && r.XData[0] >= threshold {
+			peaks = append(peaks, peakInfo{Idx: 0, Height: r.XData[0]})
+		}
+		last := len(r.XData) - 1
+		if r.XData[last] > r.XData[last-1] && r.XData[last] >= threshold {
+			peaks = append(peaks, peakInfo{Idx: last, Height: r.XData[last]})
+		}
+	}
+
+	// 按峰高降序排列
+	sortPeaksByHeight(peaks)
+	result := make([]int, len(peaks))
+	for i, p := range peaks {
+		result[i] = p.Idx
+	}
+	return result
+}
+
+// sortPeaksByHeight 按峰高降序排列（冒泡排序，峰数量极少无需复杂排序）。
+func sortPeaksByHeight(peaks []struct {
+	Idx    int
+	Height float64
+}) {
+	for i := 0; i < len(peaks); i++ {
+		for j := i + 1; j < len(peaks); j++ {
+			if peaks[j].Height > peaks[i].Height {
+				peaks[i], peaks[j] = peaks[j], peaks[i]
+			}
+		}
+	}
+}
+
 // Cyq 筹码分布指标结构体
 type Cyq struct {
 	indicator.BaseIndicator
@@ -73,41 +159,49 @@ func NewCyq() *Cyq {
 		},
 	}
 
-	profitOps := signalutil.NumberOpsByUnit("%")
-	cost90Ops := signalutil.NumberOpsByUnit("元")
-	conc90Ops := signalutil.NumberOpsWith("", 0)
-	cost70Ops := signalutil.NumberOpsByUnit("元")
-	conc70Ops := signalutil.NumberOpsWith("", 0)
-
+	// 内置信号 — 参考513战法，无外部参数，内部硬编码判定逻辑
 	i.SetBuiltInSignals([]indicator.Signal{
+		&signalCyqLowLock{indicator.NewBaseSignal(
+			"01", "低位锁定", "获利比例<30%且90%集中度<10%，筹码在低位高度集中并被深度套牢",
+			indicator.ValBool, nil, nil,
+		)},
+		&signalCyqLowDense{indicator.NewBaseSignal(
+			"02", "低位密集", "90%筹码集中度<10%，筹码在狭窄价格区间高度集中",
+			indicator.ValBool, nil, nil,
+		)},
+		&signalCyqDoublePeak{indicator.NewBaseSignal(
+			"03", "双峰密集", "筹码分布呈现两个显著峰，表明存在两股不同成本的筹码",
+			indicator.ValBool, nil, nil,
+		)},
+		&signalCyqHighDense{indicator.NewBaseSignal(
+			"04", "高位密集", "获利比例>70%且90%集中度<10%，筹码在高位高度集中，出货风险极高",
+			indicator.ValBool, nil, nil,
+		)},
+	})
+
+	// 自定义信号 — ValNumber 型（可配置阈值参数）
+	profitOps := signalutil.NumberOpsByUnit("%")
+	conc90Ops := signalutil.NumberOpsByUnit("%")
+	conc70Ops := signalutil.NumberOpsByUnit("%")
+
+	i.SetCustomSignals([]indicator.Signal{
 		&signalCyqProfitRatio{indicator.NewBaseSignal(
 			"01", "获利比例", "当前价格以下筹码占总筹码的比例（0~100%）",
 			indicator.ValNumber, profitOps,
 			&indicator.SignalConfig{Operator: indicator.OpGTE, Params: map[string]any{indicator.ParamKeyThreshold: float64(50)}},
 		)},
-		&signalCyqCost90{indicator.NewBaseSignal(
-			"02", "90%成本", "90%筹码分布的价格区间宽度（上限-下限）",
-			indicator.ValNumber, cost90Ops,
-			&indicator.SignalConfig{Operator: indicator.OpLTE, Params: map[string]any{indicator.ParamKeyThreshold: float64(10)}},
-		)},
 		&signalCyqConc90{indicator.NewBaseSignal(
-			"03", "90%集中度", "90%筹码的集中度，值越小筹码越集中",
+			"02", "90%集中度", "90%筹码的集中度，值越小筹码越集中",
 			indicator.ValNumber, conc90Ops,
-			&indicator.SignalConfig{Operator: indicator.OpLTE, Params: map[string]any{indicator.ParamKeyThreshold: float64(0.15)}},
-		)},
-		&signalCyqCost70{indicator.NewBaseSignal(
-			"04", "70%成本", "70%筹码分布的价格区间宽度（上限-下限）",
-			indicator.ValNumber, cost70Ops,
-			&indicator.SignalConfig{Operator: indicator.OpLTE, Params: map[string]any{indicator.ParamKeyThreshold: float64(5)}},
+			&indicator.SignalConfig{Operator: indicator.OpLTE, Params: map[string]any{indicator.ParamKeyThreshold: float64(15)}},
 		)},
 		&signalCyqConc70{indicator.NewBaseSignal(
-			"05", "70%集中度", "70%筹码的集中度，值越小筹码越集中",
+			"03", "70%集中度", "70%筹码的集中度，值越小筹码越集中",
 			indicator.ValNumber, conc70Ops,
-			&indicator.SignalConfig{Operator: indicator.OpLTE, Params: map[string]any{indicator.ParamKeyThreshold: float64(0.10)}},
+			&indicator.SignalConfig{Operator: indicator.OpLTE, Params: map[string]any{indicator.ParamKeyThreshold: float64(10)}},
 		)},
 	})
 
-	i.SetCustomSignals(nil)
 	return i
 }
 
@@ -147,13 +241,17 @@ func (i *Cyq) Evaluate(stock indicator.StockSource, configs []*indicator.SignalC
 		if s, ok := i.Signal[cfg.SignalID]; ok {
 			var res *indicator.EvaluatedStock
 			switch v := s.(type) {
+			case *signalCyqLowLock:
+				res = v.Evaluate(result, cfg)
+			case *signalCyqLowDense:
+				res = v.Evaluate(result, cfg)
+			case *signalCyqDoublePeak:
+				res = v.Evaluate(result, cfg)
+			case *signalCyqHighDense:
+				res = v.Evaluate(result, cfg)
 			case *signalCyqProfitRatio:
 				res = v.Evaluate(result, cfg)
-			case *signalCyqCost90:
-				res = v.Evaluate(result, cfg)
 			case *signalCyqConc90:
-				res = v.Evaluate(result, cfg)
-			case *signalCyqCost70:
 				res = v.Evaluate(result, cfg)
 			case *signalCyqConc70:
 				res = v.Evaluate(result, cfg)
@@ -439,7 +537,162 @@ func round12(f float64) float64 {
 }
 
 // ============================================================================
-//  Signal 01 — 获利比例
+//  Signal 01 (BuiltIn) — 低位锁定
+//
+//  判定规则（参考513战法严格确认思路）:
+//    获利比例 < 30% 且 90%集中度 < 10%
+//    绝大部分筹码被深度套牢且高度集中，底部锁定信号更可靠
+// ============================================================================
+
+type signalCyqLowLock struct {
+	indicator.BaseSignal
+}
+
+func (s *signalCyqLowLock) Evaluate(result CYQResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	sId := config.SignalID
+	latestIdx := len(result.ProfitRatio) - 1
+	if latestIdx < 0 {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId,
+			Message: "无筹码数据"}
+	}
+
+	profitRatio := result.ProfitRatio[latestIdx]
+	conc90 := result.Conc90[latestIdx]
+
+	// 低位锁定条件：获利比例 < 30% 且 90%集中度 < 10%
+	passed := profitRatio < 0.3 && conc90 < 0.10
+
+	msg := fmt.Sprintf("获利比例=%.2f%%, 90%%集中度=%.2f%%", profitRatio*100, conc90*100)
+
+	if config.Operator == indicator.OpNEQ {
+		// "不是" — 取反
+		if !passed {
+			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: sId, Message: "非低位锁定: " + msg}
+		}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId, Message: "是低位锁定: " + msg}
+	}
+
+	// "是" — 正向判断
+	if passed {
+		return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: sId, Message: "低位锁定: " + msg}
+	}
+	return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId, Message: "非低位锁定: " + msg}
+}
+
+// ============================================================================
+//  Signal 02 (BuiltIn) — 低位密集
+//
+//  判定规则（参考513战法严格确认思路）:
+//    90%集中度 < 10%
+//    90%筹码分布在极为狭窄的价格区间内，筹码高度集中
+// ============================================================================
+
+type signalCyqLowDense struct {
+	indicator.BaseSignal
+}
+
+func (s *signalCyqLowDense) Evaluate(result CYQResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	sId := config.SignalID
+	latestIdx := len(result.Conc90) - 1
+	if latestIdx < 0 {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId,
+			Message: "无筹码数据"}
+	}
+
+	conc90 := result.Conc90[latestIdx]
+	passed := conc90 < 0.10
+
+	msg := fmt.Sprintf("90%%集中度=%.2f%%", conc90*100)
+
+	if config.Operator == indicator.OpNEQ {
+		if !passed {
+			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: sId, Message: "非低位密集: " + msg}
+		}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId, Message: "是低位密集: " + msg}
+	}
+
+	if passed {
+		return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: sId, Message: "低位密集: " + msg}
+	}
+	return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId, Message: "非低位密集: " + msg}
+}
+
+// ============================================================================
+//  Signal 03 (BuiltIn) — 双峰密集
+//
+//  判定规则:
+//    筹码分布中存在2个及以上显著峰
+//    表明有两组不同成本基础的投资者
+// ============================================================================
+
+type signalCyqDoublePeak struct {
+	indicator.BaseSignal
+}
+
+func (s *signalCyqDoublePeak) Evaluate(result CYQResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	sId := config.SignalID
+
+	peakCount := result.CountPeaks(0.15)
+	passed := peakCount >= 2
+
+	msg := fmt.Sprintf("检测到%d个显著峰", peakCount)
+
+	if config.Operator == indicator.OpNEQ {
+		if !passed {
+			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: sId, Message: "非双峰密集: " + msg}
+		}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId, Message: "是双峰密集: " + msg}
+	}
+
+	if passed {
+		return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: sId, Message: "双峰密集: " + msg}
+	}
+	return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId, Message: "非双峰密集: " + msg}
+}
+
+// ============================================================================
+//  Signal 04 (BuiltIn) — 高位密集
+//
+//  判定规则（参考513战法严格确认思路）:
+//    获利比例 > 70% 且 90%集中度 < 10%
+//    绝大多数筹码浮盈且高度集中，主力出货风险极高
+// ============================================================================
+
+type signalCyqHighDense struct {
+	indicator.BaseSignal
+}
+
+func (s *signalCyqHighDense) Evaluate(result CYQResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	sId := config.SignalID
+	latestIdx := len(result.ProfitRatio) - 1
+	if latestIdx < 0 {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId,
+			Message: "无筹码数据"}
+	}
+
+	profitRatio := result.ProfitRatio[latestIdx]
+	conc90 := result.Conc90[latestIdx]
+
+	// 高位密集条件：获利比例 > 70% 且 90%集中度 < 10%
+	passed := profitRatio > 0.7 && conc90 < 0.10
+
+	msg := fmt.Sprintf("获利比例=%.2f%%, 90%%集中度=%.2f%%", profitRatio*100, conc90*100)
+
+	if config.Operator == indicator.OpNEQ {
+		if !passed {
+			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: sId, Message: "非高位密集: " + msg}
+		}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId, Message: "是高位密集: " + msg}
+	}
+
+	if passed {
+		return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: sId, Message: "高位密集: " + msg}
+	}
+	return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId, Message: "非高位密集: " + msg}
+}
+
+// ============================================================================
+//  Signal 01 (Custom) — 获利比例
 //
 //  判定规则:
 //    最新交易日的获利比例满足阈值条件
@@ -465,34 +718,7 @@ func (s *signalCyqProfitRatio) Evaluate(result CYQResult, config *indicator.Sign
 }
 
 // ============================================================================
-//  Signal 02 — 90%成本
-//
-//  判定规则:
-//    90% 筹码成本区间宽度满足阈值条件
-//    宽度 = 上限 - 下限
-// ============================================================================
-
-type signalCyqCost90 struct {
-	indicator.BaseSignal
-}
-
-func (s *signalCyqCost90) Evaluate(result CYQResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	sId := config.SignalID
-	if !config.IsCustom() {
-		config = s.DefaultConfig()
-	}
-	latestIdx := len(result.Cost90) - 1
-	if latestIdx < 0 {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId,
-			Message: "无筹码数据"}
-	}
-	// 区间宽度 = 上限 - 下限
-	width := result.Cost90[latestIdx][1] - result.Cost90[latestIdx][0]
-	return signalutil.EvalNumberOp(round2(width), "90%成本区间宽度", "%.2f元", "%.0f", sId, config)
-}
-
-// ============================================================================
-//  Signal 03 — 90%集中度
+//  Signal 02 — 90%集中度
 //
 //  判定规则:
 //    90% 筹码集中度满足阈值条件
@@ -514,38 +740,12 @@ func (s *signalCyqConc90) Evaluate(result CYQResult, config *indicator.SignalCon
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId,
 			Message: "无筹码数据"}
 	}
-	value := result.Conc90[latestIdx]
-	return signalutil.EvalNumberOp(round4(value), "90%集中度", "%.4f", "%.2f", sId, config)
+	value := result.Conc90[latestIdx] * 100.0 // 转为百分比
+	return signalutil.EvalNumberOp(round2(value), "90%集中度", "%.2f%%", "%.0f", sId, config)
 }
 
 // ============================================================================
-//  Signal 04 — 70%成本
-//
-//  判定规则:
-//    70% 筹码成本区间宽度满足阈值条件
-//    宽度 = 上限 - 下限
-// ============================================================================
-
-type signalCyqCost70 struct {
-	indicator.BaseSignal
-}
-
-func (s *signalCyqCost70) Evaluate(result CYQResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	sId := config.SignalID
-	if !config.IsCustom() {
-		config = s.DefaultConfig()
-	}
-	latestIdx := len(result.Cost70) - 1
-	if latestIdx < 0 {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId,
-			Message: "无筹码数据"}
-	}
-	width := result.Cost70[latestIdx][1] - result.Cost70[latestIdx][0]
-	return signalutil.EvalNumberOp(round2(width), "70%成本区间宽度", "%.2f元", "%.0f", sId, config)
-}
-
-// ============================================================================
-//  Signal 05 — 70%集中度
+//  Signal 03 — 70%集中度
 //
 //  判定规则:
 //    70% 筹码集中度满足阈值条件
@@ -567,6 +767,6 @@ func (s *signalCyqConc70) Evaluate(result CYQResult, config *indicator.SignalCon
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId,
 			Message: "无筹码数据"}
 	}
-	value := result.Conc70[latestIdx]
-	return signalutil.EvalNumberOp(round4(value), "70%集中度", "%.4f", "%.2f", sId, config)
+	value := result.Conc70[latestIdx] * 100.0 // 转为百分比
+	return signalutil.EvalNumberOp(round2(value), "70%集中度", "%.2f%%", "%.0f", sId, config)
 }

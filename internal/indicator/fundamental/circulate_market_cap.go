@@ -18,10 +18,10 @@ type CirculateMarketCap struct {
 }
 
 var circulateMarketCapDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于50亿", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 50},
-	{Seq: "02", Desc: "50亿~200亿", Operator: indicator.OpBetween, MinThreshold: 50, MaxThreshold: 200},
-	{Seq: "03", Desc: "200亿~1000亿", Operator: indicator.OpBetween, MinThreshold: 200, MaxThreshold: 1000},
-	{Seq: "04", Desc: "大于1000亿", Operator: indicator.OpGT, MinThreshold: 1000, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于50亿", Alias: "微小盘", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 50},
+	{Seq: "02", Desc: "50亿~200亿", Alias: "小盘", Operator: indicator.OpBetween, MinThreshold: 50, MaxThreshold: 200},
+	{Seq: "03", Desc: "200亿~1000亿", Alias: "中盘", Operator: indicator.OpBetween, MinThreshold: 200, MaxThreshold: 1000},
+	{Seq: "04", Desc: "大于1000亿", Alias: "大盘", Operator: indicator.OpGT, MinThreshold: 1000, MaxThreshold: 0},
 }
 
 func NewCirculateMarketCap() *CirculateMarketCap {
@@ -37,14 +37,15 @@ func NewCirculateMarketCap() *CirculateMarketCap {
 
 	numberOps := signalutil.NumberOpsByUnit(c.UnitStr)
 
-	builtInSigs := signalutil.BuildRangeSignals(circulateMarketCapDefs, c.NameStr, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &circulateMarketCapSignal{bs}
+	indicatorName := c.NameStr
+	builtInSigs := signalutil.BuildRangeSignals(circulateMarketCapDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &circulateMarketCapSignal{BaseSignal: bs}
 	})
 	c.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", c.NameStr, "自定义流通市值筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义流通市值筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpBetween, Params: map[string]any{indicator.ParamKeyMin: 50.0, indicator.ParamKeyMax: 500.0}})
-	c.SetCustomSignals([]indicator.Signal{&circulateMarketCapSignal{cs1}})
+	c.SetCustomSignals([]indicator.Signal{&circulateMarketCapSignal{BaseSignal: cs1}})
 	return c
 }
 

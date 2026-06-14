@@ -19,9 +19,9 @@ type DebtRatio struct {
 }
 
 var debtRatioDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于20", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 20},
-	{Seq: "02", Desc: "20~40", Operator: indicator.OpBetween, MinThreshold: 20, MaxThreshold: 40},
-	{Seq: "03", Desc: "大于40", Operator: indicator.OpBetween, MinThreshold: 40, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于20", Alias: "低负债", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 20},
+	{Seq: "02", Desc: "20~40", Alias: "适中", Operator: indicator.OpBetween, MinThreshold: 20, MaxThreshold: 40},
+	{Seq: "03", Desc: "大于40", Alias: "高负债", Operator: indicator.OpBetween, MinThreshold: 40, MaxThreshold: 0},
 }
 
 func NewDebtRatio() *DebtRatio {
@@ -37,14 +37,15 @@ func NewDebtRatio() *DebtRatio {
 
 	numberOps := signalutil.NumberOpsByUnit(dr.UnitStr)
 
-	builtInSigs := signalutil.BuildRangeSignals(debtRatioDefs, "资产负债率", numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &debtRatioSignal{bs}
+	indicatorName := "资产负债率"
+	builtInSigs := signalutil.BuildRangeSignals(debtRatioDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &debtRatioSignal{BaseSignal: bs}
 	})
 	dr.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", "资产负债率", "自定义资产负债率筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义资产负债率筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpLT, Params: map[string]any{indicator.ParamKeyThreshold: 60.0}})
-	dr.SetCustomSignals([]indicator.Signal{&debtRatioSignal{cs1}})
+	dr.SetCustomSignals([]indicator.Signal{&debtRatioSignal{BaseSignal: cs1}})
 	return dr
 }
 

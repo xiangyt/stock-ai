@@ -19,10 +19,10 @@ type TotalRevenue struct {
 }
 
 var totalRevenueDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于10亿", Operator: indicator.OpLT, MinThreshold: 10, MaxThreshold: 0},
-	{Seq: "02", Desc: "10亿~100亿", Operator: indicator.OpBetween, MinThreshold: 10, MaxThreshold: 100},
-	{Seq: "03", Desc: "100亿~1000亿", Operator: indicator.OpBetween, MinThreshold: 100, MaxThreshold: 1000},
-	{Seq: "04", Desc: "大于1000亿", Operator: indicator.OpGT, MinThreshold: 1000, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于10亿", Alias: "小微", Operator: indicator.OpLT, MinThreshold: 10, MaxThreshold: 0},
+	{Seq: "02", Desc: "10亿~100亿", Alias: "小型", Operator: indicator.OpBetween, MinThreshold: 10, MaxThreshold: 100},
+	{Seq: "03", Desc: "100亿~1000亿", Alias: "中型", Operator: indicator.OpBetween, MinThreshold: 100, MaxThreshold: 1000},
+	{Seq: "04", Desc: "大于1000亿", Alias: "大型", Operator: indicator.OpGT, MinThreshold: 1000, MaxThreshold: 0},
 }
 
 func NewTotalRevenue() *TotalRevenue {
@@ -38,14 +38,15 @@ func NewTotalRevenue() *TotalRevenue {
 
 	numberOps := signalutil.NumberOpsByUnitMin(t.UnitStr, 0)
 
-	builtInSigs := signalutil.BuildRangeSignals(totalRevenueDefs, t.NameStr, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &totalRevenueSignal{bs}
+	indicatorName := t.NameStr
+	builtInSigs := signalutil.BuildRangeSignals(totalRevenueDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &totalRevenueSignal{BaseSignal: bs}
 	})
 	t.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", t.NameStr, "自定义营业总收入筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义营业总收入筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpGT, Params: map[string]any{indicator.ParamKeyThreshold: 50.0}})
-	t.SetCustomSignals([]indicator.Signal{&totalRevenueSignal{cs1}})
+	t.SetCustomSignals([]indicator.Signal{&totalRevenueSignal{BaseSignal: cs1}})
 	return t
 }
 

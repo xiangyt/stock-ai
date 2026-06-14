@@ -208,7 +208,9 @@ type OperatorOption struct {
 // ============================================================================
 type Signal interface {
 	Seq() string
+	SignalType() string // 信号类型名称（固定，同类型信号共享；用于自定义信号去重）
 	Name() string
+	Alias() string      // 展示别名（非空时前端优先展示别名，hover 展示 Description）
 	Description() string
 	ValueType() ValueType
 	Operators() []OperatorOption
@@ -228,8 +230,10 @@ func NewBaseSignal(seq, name, desc string, valueType ValueType, operators []Oper
 
 type BaseSignal struct {
 	seq           string           // 2位序号 "01"~"99"
+	signalType    string           // 信号类型名称（固定，用于自定义信号去重；空则 fallback NameStr）
 	NameStr       string           // 显示名
 	Desc          string           // 描述
+	AliasStr      string           // 展示别名（非空时前端展示别名，Name 仍作 fallback）
 	valueType     ValueType        // ★ 值类型
 	operators     []OperatorOption // 该信号支持的操作符
 	defaultConfig *SignalConfig    // 默认配置(SignalID运行时填充)
@@ -239,8 +243,21 @@ func (s *BaseSignal) Seq() string {
 	return s.seq
 }
 
+// SignalType 返回信号类型名称。如果未显式设置（空字符串），则 fallback 到 NameStr。
+// 用于自定义信号去重：同一指标下，同 SignalType 的自定义信号至多一个。
+func (s *BaseSignal) SignalType() string {
+	if s.signalType != "" {
+		return s.signalType
+	}
+	return s.NameStr
+}
+
 func (s *BaseSignal) Name() string {
 	return s.NameStr
+}
+
+func (s *BaseSignal) Alias() string {
+	return s.AliasStr
 }
 
 func (s *BaseSignal) Description() string {
@@ -257,6 +274,19 @@ func (s *BaseSignal) Operators() []OperatorOption {
 
 func (s *BaseSignal) DefaultConfig() *SignalConfig {
 	return s.defaultConfig
+}
+
+// SetSignalType 设置信号类型名称并返回自身，用于链式调用。
+// 仅当信号类型名与 NameStr 不同时才需显式调用。
+func (s *BaseSignal) SetSignalType(t string) *BaseSignal {
+	s.signalType = t
+	return s
+}
+
+// SetAlias 设置展示别名并返回自身，用于链式调用。
+func (s *BaseSignal) SetAlias(alias string) *BaseSignal {
+	s.AliasStr = alias
+	return s
 }
 
 // ============================================================================
@@ -502,8 +532,18 @@ func (b *BaseIndicator) SetBuiltInSignals(sigs []Signal) {
 	b.registerSignals(sigs, &b.builtInSigs, "0")
 }
 
-// SetCustomSignals 注册自定义信号到映射表
+// SetCustomSignals 注册自定义信号到映射表。
+// 约束：同一 SignalType 的自定义信号至多一个实例（内置信号不做此约束）。
 func (b *BaseIndicator) SetCustomSignals(sigs []Signal) {
+	// 去重检查：同一 SignalType 至多出现一次
+	seen := make(map[string]bool, len(sigs))
+	for _, sig := range sigs {
+		typ := sig.SignalType()
+		if seen[typ] {
+			panic(fmt.Sprintf("自定义信号类型 %q 在指标 %q 中重复", typ, b.ID()))
+		}
+		seen[typ] = true
+	}
 	b.registerSignals(sigs, &b.customSigs, "1")
 }
 
@@ -606,6 +646,7 @@ type IndicatorMeta struct {
 type SignalMeta struct {
 	SignalID      string           `json:"signal_id"` // 完整8位
 	Name          string           `json:"name"`
+	Alias         string           `json:"alias,omitempty"`       // 展示别名（非空时前端优先展示，hover 展示 description）
 	Description   string           `json:"description,omitempty"`
 	ValueType     ValueType        `json:"value_type"` // ★ 信号的值类型
 	Operators     []OperatorOption `json:"operators"`
@@ -635,6 +676,7 @@ func buildSignalMetas(indicatorID string, sourceCode string, signals []Signal) [
 		sigMetas = append(sigMetas, SignalMeta{
 			SignalID:      fullID,
 			Name:          sig.Name(),
+			Alias:         sig.Alias(),
 			Description:   sig.Description(),
 			ValueType:     sig.ValueType(),
 			Operators:     sig.Operators(),

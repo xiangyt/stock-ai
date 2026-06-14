@@ -18,10 +18,10 @@ type Volume struct {
 }
 
 var volumeDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于1万手", Operator: indicator.OpLT, MinThreshold: 1, MaxThreshold: 0},
-	{Seq: "02", Desc: "1万手~5万手", Operator: indicator.OpBetween, MinThreshold: 1, MaxThreshold: 5},
-	{Seq: "03", Desc: "5万手~20万手", Operator: indicator.OpBetween, MinThreshold: 5, MaxThreshold: 20},
-	{Seq: "04", Desc: "大于20万手", Operator: indicator.OpGT, MinThreshold: 20, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于1万手", Alias: "缩量", Operator: indicator.OpLT, MinThreshold: 1, MaxThreshold: 0},
+	{Seq: "02", Desc: "1万手~5万手", Alias: "正常量", Operator: indicator.OpBetween, MinThreshold: 1, MaxThreshold: 5},
+	{Seq: "03", Desc: "5万手~20万手", Alias: "放量", Operator: indicator.OpBetween, MinThreshold: 5, MaxThreshold: 20},
+	{Seq: "04", Desc: "大于20万手", Alias: "巨量", Operator: indicator.OpGT, MinThreshold: 20, MaxThreshold: 0},
 }
 
 func NewVolume() *Volume {
@@ -37,14 +37,15 @@ func NewVolume() *Volume {
 
 	numberOps := signalutil.NumberOpsByUnitMin(v.UnitStr, 0)
 
-	builtInSigs := signalutil.BuildRangeSignals(volumeDefs, v.NameStr, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &volumeSignal{bs}
+	indicatorName := v.NameStr
+	builtInSigs := signalutil.BuildRangeSignals(volumeDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &volumeSignal{BaseSignal: bs}
 	})
 	v.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", v.NameStr, "自定义成交量筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义成交量筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpGT, Params: map[string]any{indicator.ParamKeyThreshold: 5.0}})
-	v.SetCustomSignals([]indicator.Signal{&volumeSignal{cs1}})
+	v.SetCustomSignals([]indicator.Signal{&volumeSignal{BaseSignal: cs1}})
 	return v
 }
 

@@ -17,10 +17,10 @@ type PB struct {
 }
 
 var pbDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "破净股", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 1},
-	{Seq: "02", Desc: "1~2", Operator: indicator.OpBetween, MinThreshold: 1, MaxThreshold: 2},
-	{Seq: "03", Desc: "2~5", Operator: indicator.OpBetween, MinThreshold: 2, MaxThreshold: 5},
-	{Seq: "04", Desc: "大于5", Operator: indicator.OpGT, MinThreshold: 5, MaxThreshold: 0},
+	{Seq: "01", Desc: "破净股", Alias: "破净", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 1},
+	{Seq: "02", Desc: "1~2", Alias: "合理", Operator: indicator.OpBetween, MinThreshold: 1, MaxThreshold: 2},
+	{Seq: "03", Desc: "2~5", Alias: "偏高", Operator: indicator.OpBetween, MinThreshold: 2, MaxThreshold: 5},
+	{Seq: "04", Desc: "大于5", Alias: "高估", Operator: indicator.OpGT, MinThreshold: 5, MaxThreshold: 0},
 }
 
 func NewPB() *PB {
@@ -36,15 +36,16 @@ func NewPB() *PB {
 
 	numberOps := signalutil.NumberOpsByUnit(pb.UnitStr)
 
-	builtInSigs := signalutil.BuildRangeSignals(pbDefs, "市净率", numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &pbSignal{bs}
+	indicatorName := "市净率"
+	builtInSigs := signalutil.BuildRangeSignals(pbDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &pbSignal{BaseSignal: bs}
 	})
 	pb.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", "市净率", "自定义市净率筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义市净率筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpBetween,
 			Params: map[string]any{indicator.ParamKeyMin: 1.0, indicator.ParamKeyMax: 5.0}})
-	pb.SetCustomSignals([]indicator.Signal{&pbSignal{cs1}})
+	pb.SetCustomSignals([]indicator.Signal{&pbSignal{BaseSignal: cs1}})
 	return pb
 }
 

@@ -95,7 +95,7 @@ export interface ParamDef {
 export interface SignalOperatorOption {
   operator: CompareOperator
   label: string
-  params: ParamDef[]
+  params?: ParamDef[]
 }
 
 // ---------- 信号定义 ----------
@@ -137,7 +137,7 @@ export interface SignalConfig {
   /** 8位数字唯一标识, 如 "03001001" */
   signal_id: string
   operator: CompareOperator
-  params: Record<string, any>
+  params?: Record<string, any>
 }
 
 // ---------- 操作符元信息 ----------

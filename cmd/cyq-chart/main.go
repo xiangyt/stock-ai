@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -27,13 +28,13 @@ import (
 // ============================================================================
 
 // stockCode 目标股票代码（6位数字，如 600519 = 茅台）
-var stockCode = "300484"
+var stockCode = "000895"
 
 // outputPath 输出 HTML 文件路径，空 = cmd/cyq-chart/cyq-<code>.html
 var outputPath = ""
 
 // klineCount 展示K线条数（东财默认90），实际加载条数 = 2×klineCount+30
-var klineCount = 158
+var klineCount = 90
 
 // configPath 配置文件路径
 var configPath = "config.yaml"
@@ -75,7 +76,7 @@ func main() {
 	log.Printf("股票: %s (%s), K线条数: %d, 截止日期: %d", stockCode, stockName, len(klines), displayDate)
 
 	// 计算 CYQ
-	result := technical.BuildCYQ(klines, 900)
+	result := technical.BuildCYQ(klines, 150)
 	latestIdx := len(result.ClosePrice) - 1
 
 	log.Printf("获利比例: %.2f%%, 平均成本: %.2f", result.ProfitRatio[latestIdx]*100, result.AvgCost[latestIdx])
@@ -142,6 +143,9 @@ func main() {
 			yMax = hi
 		}
 	}
+	// 留一点余量
+	yMin = math.Round((yMin-0.5)*100) / 100
+	yMax = math.Round((yMax+0.5)*100) / 100
 	log.Printf("纵坐标范围: %.2f ~ %.2f", yMin, yMax)
 
 	if err := generateHTML(outPath, &chartData{

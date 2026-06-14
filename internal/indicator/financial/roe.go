@@ -19,10 +19,10 @@ type ROE struct {
 }
 
 var roeDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于0", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 0},
-	{Seq: "02", Desc: "0~10", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 10},
-	{Seq: "03", Desc: "10~20", Operator: indicator.OpBetween, MinThreshold: 10, MaxThreshold: 20},
-	{Seq: "04", Desc: "大于20", Operator: indicator.OpGT, MinThreshold: 20, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于0", Alias: "亏损", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 0},
+	{Seq: "02", Desc: "0~10", Alias: "偏低", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 10},
+	{Seq: "03", Desc: "10~20", Alias: "良好", Operator: indicator.OpBetween, MinThreshold: 10, MaxThreshold: 20},
+	{Seq: "04", Desc: "大于20", Alias: "优秀", Operator: indicator.OpGT, MinThreshold: 20, MaxThreshold: 0},
 }
 
 func NewROE() *ROE {
@@ -38,14 +38,15 @@ func NewROE() *ROE {
 
 	numberOps := signalutil.NumberOpsByUnit(roe.UnitStr)
 
-	builtInSigs := signalutil.BuildRangeSignals(roeDefs, "净资产收益率", numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &roeSignal{bs}
+	indicatorName := "净资产收益率"
+	builtInSigs := signalutil.BuildRangeSignals(roeDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &roeSignal{BaseSignal: bs}
 	})
 	roe.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", "净资产收益率", "自定义净资产收益率筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义净资产收益率筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpGT, Params: map[string]any{indicator.ParamKeyThreshold: 15.0}})
-	roe.SetCustomSignals([]indicator.Signal{&roeSignal{cs1}})
+	roe.SetCustomSignals([]indicator.Signal{&roeSignal{BaseSignal: cs1}})
 	return roe
 }
 

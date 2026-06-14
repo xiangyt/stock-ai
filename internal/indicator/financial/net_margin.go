@@ -18,10 +18,10 @@ type NetMargin struct {
 }
 
 var netMarginDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于0", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 0},
-	{Seq: "02", Desc: "0~10%", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 10},
-	{Seq: "03", Desc: "10%~30%", Operator: indicator.OpBetween, MinThreshold: 10, MaxThreshold: 30},
-	{Seq: "04", Desc: "大于30%", Operator: indicator.OpGT, MinThreshold: 30, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于0", Alias: "亏损", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 0},
+	{Seq: "02", Desc: "0~10%", Alias: "偏低", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 10},
+	{Seq: "03", Desc: "10%~30%", Alias: "良好", Operator: indicator.OpBetween, MinThreshold: 10, MaxThreshold: 30},
+	{Seq: "04", Desc: "大于30%", Alias: "优秀", Operator: indicator.OpGT, MinThreshold: 30, MaxThreshold: 0},
 }
 
 func NewNetMargin() *NetMargin {
@@ -37,14 +37,15 @@ func NewNetMargin() *NetMargin {
 
 	numberOps := signalutil.NumberOpsByUnitMin(nm.UnitStr, -99)
 
-	builtInSigs := signalutil.BuildRangeSignals(netMarginDefs, "净利率", numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &netMarginSignal{bs}
+	indicatorName := "净利率"
+	builtInSigs := signalutil.BuildRangeSignals(netMarginDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &netMarginSignal{BaseSignal: bs}
 	})
 	nm.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", "净利率", "自定义净利率筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义净利率筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpGT, Params: map[string]any{indicator.ParamKeyThreshold: 15.0}})
-	nm.SetCustomSignals([]indicator.Signal{&netMarginSignal{cs1}})
+	nm.SetCustomSignals([]indicator.Signal{&netMarginSignal{BaseSignal: cs1}})
 	return nm
 }
 

@@ -18,6 +18,7 @@ import (
 type RangeDef struct {
 	Seq          string                    // 2位信号序号，如 "01"
 	Desc         string                    // 显示名称，如 "小于0"
+	Alias        string                    // 展示别名（非空时前端优先展示别名，同类型多实例时用于区分）
 	Operator     indicator.CompareOperator // 操作符
 	MinThreshold float64                   // 区间下限 / GT 系列阈值
 	MaxThreshold float64                   // 区间上限 / LT 系列阈值
@@ -62,6 +63,9 @@ func BuildRangeSignals(defs []RangeDef, name string, ops []indicator.OperatorOpt
 			ops,
 			cfg,
 		)
+		if def.Alias != "" {
+			bs.SetAlias(def.Alias)
+		}
 		sigs = append(sigs, wrapFn(bs))
 	}
 	return sigs

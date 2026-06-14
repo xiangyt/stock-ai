@@ -18,10 +18,10 @@ type Amount struct {
 }
 
 var amountDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于1亿", Operator: indicator.OpLT, MinThreshold: 1, MaxThreshold: 0},
-	{Seq: "02", Desc: "1亿~10亿", Operator: indicator.OpBetween, MinThreshold: 1, MaxThreshold: 10},
-	{Seq: "03", Desc: "10亿~100亿", Operator: indicator.OpBetween, MinThreshold: 10, MaxThreshold: 100},
-	{Seq: "04", Desc: "大于100亿", Operator: indicator.OpGT, MinThreshold: 100, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于1亿", Alias: "低成交", Operator: indicator.OpLT, MinThreshold: 1, MaxThreshold: 0},
+	{Seq: "02", Desc: "1亿~10亿", Alias: "正常成交", Operator: indicator.OpBetween, MinThreshold: 1, MaxThreshold: 10},
+	{Seq: "03", Desc: "10亿~100亿", Alias: "活跃成交", Operator: indicator.OpBetween, MinThreshold: 10, MaxThreshold: 100},
+	{Seq: "04", Desc: "大于100亿", Alias: "爆量", Operator: indicator.OpGT, MinThreshold: 100, MaxThreshold: 0},
 }
 
 func NewAmount() *Amount {
@@ -37,14 +37,15 @@ func NewAmount() *Amount {
 
 	numberOps := signalutil.NumberOpsByUnitMin(a.UnitStr, 0)
 
-	builtInSigs := signalutil.BuildRangeSignals(amountDefs, a.NameStr, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &amountSignal{bs}
+	indicatorName := a.NameStr
+	builtInSigs := signalutil.BuildRangeSignals(amountDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &amountSignal{BaseSignal: bs}
 	})
 	a.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", a.NameStr, "自定义成交额筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义成交额筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpGT, Params: map[string]any{indicator.ParamKeyThreshold: 5.0}})
-	a.SetCustomSignals([]indicator.Signal{&amountSignal{cs1}})
+	a.SetCustomSignals([]indicator.Signal{&amountSignal{BaseSignal: cs1}})
 	return a
 }
 

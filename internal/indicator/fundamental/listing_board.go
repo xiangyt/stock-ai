@@ -28,10 +28,10 @@ type ListingBoard struct {
 // boardDefs 内置上市板块信号定义表
 // 新增板块只需在此追加一行，无需修改其他逻辑
 var boardDefs = []signalutil.EnumDef{
-	{Seq: "01", Desc: "主板", Operator: indicator.OpEQ, Value: "main"},
-	{Seq: "02", Desc: "创业板", Operator: indicator.OpEQ, Value: "chinext"},
-	{Seq: "03", Desc: "科创板", Operator: indicator.OpEQ, Value: "star"},
-	{Seq: "04", Desc: "北交所", Operator: indicator.OpEQ, Value: "bse"},
+	{Seq: "01", Desc: "主板", Alias: "主板", Operator: indicator.OpEQ, Value: "main"},
+	{Seq: "02", Desc: "创业板", Alias: "创业板", Operator: indicator.OpEQ, Value: "chinext"},
+	{Seq: "03", Desc: "科创板", Alias: "科创板", Operator: indicator.OpEQ, Value: "star"},
+	{Seq: "04", Desc: "北交所", Alias: "北交所", Operator: indicator.OpEQ, Value: "bse"},
 }
 
 func NewListingBoard() *ListingBoard {
@@ -47,9 +47,10 @@ func NewListingBoard() *ListingBoard {
 
 	ops := signalutil.EnumOps(ListingBoardOptions)
 
+	indicatorName := "上市板块"
 	// 数据驱动生成内置板块信号
-	builtInSigs := signalutil.BuildEnumSignals(boardDefs, "上市板块", ops, func(bs indicator.BaseSignal) indicator.Signal {
-		return &ListingBoardSignal{bs}
+	builtInSigs := signalutil.BuildEnumSignals(boardDefs, indicatorName, ops, func(bs indicator.BaseSignal) indicator.Signal {
+		return &ListingBoardSignal{BaseSignal: bs}
 	})
 	l.SetBuiltInSignals(builtInSigs)
 
@@ -57,8 +58,8 @@ func NewListingBoard() *ListingBoard {
 	industryDefs := []signalutil.EnumDef{
 		{Seq: "01", Desc: "自选上市板块", Operator: indicator.OpIn, Values: []string{}},
 	}
-	customSigs := signalutil.BuildEnumSignals(industryDefs, "上市板块", ops, func(bs indicator.BaseSignal) indicator.Signal {
-		return &ListingBoardSignal{bs}
+	customSigs := signalutil.BuildEnumSignals(industryDefs, indicatorName, ops, func(bs indicator.BaseSignal) indicator.Signal {
+		return &ListingBoardSignal{BaseSignal: bs}
 	})
 	l.SetCustomSignals(customSigs)
 

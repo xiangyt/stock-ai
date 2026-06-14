@@ -18,10 +18,10 @@ type TotalShares struct {
 }
 
 var totalShareDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于2亿", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 2},
-	{Seq: "02", Desc: "2亿~5亿", Operator: indicator.OpBetween, MinThreshold: 2, MaxThreshold: 5},
-	{Seq: "03", Desc: "5亿~10亿", Operator: indicator.OpBetween, MinThreshold: 5, MaxThreshold: 10},
-	{Seq: "04", Desc: "大于10亿", Operator: indicator.OpGT, MinThreshold: 10, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于2亿", Alias: "小盘", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 2},
+	{Seq: "02", Desc: "2亿~5亿", Alias: "中小盘", Operator: indicator.OpBetween, MinThreshold: 2, MaxThreshold: 5},
+	{Seq: "03", Desc: "5亿~10亿", Alias: "中盘", Operator: indicator.OpBetween, MinThreshold: 5, MaxThreshold: 10},
+	{Seq: "04", Desc: "大于10亿", Alias: "大盘", Operator: indicator.OpGT, MinThreshold: 10, MaxThreshold: 0},
 }
 
 func NewTotalShares() *TotalShares {
@@ -37,14 +37,15 @@ func NewTotalShares() *TotalShares {
 
 	numberOps := signalutil.NumberOpsByUnit(t.UnitStr)
 
-	builtInSigs := signalutil.BuildRangeSignals(totalShareDefs, "总股本", numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &totalShareSignal{bs}
+	indicatorName := "总股本"
+	builtInSigs := signalutil.BuildRangeSignals(totalShareDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &totalShareSignal{BaseSignal: bs}
 	})
 	t.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", "总股本", "自定义总股本筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义总股本筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpLT, Params: map[string]any{indicator.ParamKeyThreshold: 10.0}})
-	t.SetCustomSignals([]indicator.Signal{&totalShareSignal{cs1}})
+	t.SetCustomSignals([]indicator.Signal{&totalShareSignal{BaseSignal: cs1}})
 	return t
 }
 

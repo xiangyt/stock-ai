@@ -18,9 +18,9 @@ type BVPS struct {
 }
 
 var bvpsDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于3", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 3},
-	{Seq: "02", Desc: "3~5", Operator: indicator.OpBetween, MinThreshold: 3, MaxThreshold: 5},
-	{Seq: "03", Desc: "大于5", Operator: indicator.OpBetween, MinThreshold: 5, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于3", Alias: "偏低", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 3},
+	{Seq: "02", Desc: "3~5", Alias: "中等", Operator: indicator.OpBetween, MinThreshold: 3, MaxThreshold: 5},
+	{Seq: "03", Desc: "大于5", Alias: "偏高", Operator: indicator.OpBetween, MinThreshold: 5, MaxThreshold: 0},
 	// {Seq: "04", Desc: "破净股", Operator: indicator.OpGT, MinThreshold: 5, MaxThreshold: 0},
 }
 
@@ -37,14 +37,15 @@ func NewBVPS() *BVPS {
 
 	numberOps := signalutil.NumberOpsByUnit(bvps.UnitStr)
 
-	builtInSigs := signalutil.BuildRangeSignals(bvpsDefs, "每股净资产", numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &bvpsSignal{bs}
+	indicatorName := "每股净资产"
+	builtInSigs := signalutil.BuildRangeSignals(bvpsDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &bvpsSignal{BaseSignal: bs}
 	})
 	bvps.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", "每股净资产", "自定义每股净资产筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义每股净资产筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpGT, Params: map[string]any{indicator.ParamKeyThreshold: 5.0}})
-	bvps.SetCustomSignals([]indicator.Signal{&bvpsSignal{cs1}})
+	bvps.SetCustomSignals([]indicator.Signal{&bvpsSignal{BaseSignal: cs1}})
 	return bvps
 }
 

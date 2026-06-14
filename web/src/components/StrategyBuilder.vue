@@ -869,11 +869,12 @@ function formatBuiltinDesc(sig: SignalDef): string {
   if (!sig.operators) return cfg.operator || ''
   const op = sig.operators.find(o => o.operator === cfg.operator)
   const opLabel = op?.label ?? cfg.operator
+  const params = cfg.params || {}
   // 枚举型：提取 values 并映射为 label
-  if (cfg.params.values && Array.isArray(cfg.params.values)) {
-    const vals = cfg.params.values as string[]
+  if (params.values && Array.isArray(params.values)) {
+    const vals = params.values as string[]
     // 从操作符参数定义中找枚举选项
-    const enumOpts = op?.params.find(p =>
+    const enumOpts = op?.params?.find(p =>
       p.type === 'multi_select' || p.type === 'select_multi' || p.type === 'select'
     )?.options
     if (enumOpts && enumOpts.length > 0) {
@@ -884,9 +885,9 @@ function formatBuiltinDesc(sig: SignalDef): string {
     return `${opLabel} ${vals.join(',')}`
   }
   // 数值型：取 threshold
-  if (cfg.params.threshold != null) return `${opLabel} ${cfg.params.threshold}`
+  if (params.threshold != null) return `${opLabel} ${params.threshold}`
   // range 型
-  if (cfg.params.min != null && cfg.params.max != null) return `${opLabel} ${cfg.params.min}~${cfg.params.max}`
+  if (params.min != null && params.max != null) return `${opLabel} ${params.min}~${params.max}`
   return opLabel
 }
 
@@ -900,10 +901,12 @@ function addCustomSignal() {
 
   // 收集参数值
   const collected: Record<string, any> = {}
-  for (const p of op.params) {
-    if (p.type === 'multi_select' || p.type === 'select_multi') { collected[p.key] = [...(multiVals[p.key] || [])] }
-    else if (paramValues[p.key] !== undefined) { collected[p.key] = paramValues[p.key] }
-    else if (p.default !== undefined) { collected[p.key] = p.default }
+  if (op.params) {
+    for (const p of op.params) {
+      if (p.type === 'multi_select' || p.type === 'select_multi') { collected[p.key] = [...(multiVals[p.key] || [])] }
+      else if (paramValues[p.key] !== undefined) { collected[p.key] = paramValues[p.key] }
+      else if (p.default !== undefined) { collected[p.key] = p.default }
+    }
   }
 
   // 构建可读文本
@@ -973,12 +976,14 @@ function findOpLabel(ind: IndicatorMeta, op: CompareOperator): string {
 
 /** 将 SignalConfig 格式化为可读参数文本 */
 function formatSignalParamText(cfg: SignalConfig, ind: IndicatorMeta): string {
+  const params = cfg.params || {}
   // 辅助：从信号定义中查找枚举选项的 value→label 映射
   const findEnumLabels = (sigId: string, key: string): Map<string, string> | null => {
     for (const sig of ind.signals) {
       if (sig.signal_id === sigId) {
         if (!sig.operators) continue
         for (const op of sig.operators) {
+          if (!op.params) continue
           for (const p of op.params) {
             if (p.key === key && p.options) return new Map(p.options.map(o => [o.value, o.label]))
           }
@@ -989,28 +994,28 @@ function formatSignalParamText(cfg: SignalConfig, ind: IndicatorMeta): string {
   }
 
   switch (cfg.operator) {
-    case 'gt':   return `${cfg.params.threshold ?? ''}${ind.unit}`
-    case 'gte':  return `${cfg.params.threshold ?? ''}${ind.unit}`
-    case 'lt':   return `${cfg.params.threshold ?? ''}${ind.unit}`
-    case 'lte':  return `${cfg.params.threshold ?? ''}${ind.unit}`
+    case 'gt':   return `${params.threshold ?? ''}${ind.unit}`
+    case 'gte':  return `${params.threshold ?? ''}${ind.unit}`
+    case 'lt':   return `${params.threshold ?? ''}${ind.unit}`
+    case 'lte':  return `${params.threshold ?? ''}${ind.unit}`
     case 'between': case 'not_between':
-      return `${cfg.params.min ?? ''}~${cfg.params.max ?? ''}${ind.unit}`
+      return `${params.min ?? ''}~${params.max ?? ''}${ind.unit}`
     case 'eq': {
       const labelMap = findEnumLabels(cfg.signal_id!, 'threshold')
-      if (labelMap && cfg.params.threshold !== undefined) {
-        return labelMap.get(String(cfg.params.threshold)) || String(cfg.params.threshold)
+      if (labelMap && params.threshold !== undefined) {
+        return labelMap.get(String(params.threshold)) || String(params.threshold)
       }
-      return String(cfg.params.threshold ?? '')
+      return String(params.threshold ?? '')
     }
     case 'neq': {
       const neqLabelMap = findEnumLabels(cfg.signal_id!, 'threshold')
-      if (neqLabelMap && cfg.params.threshold !== undefined) {
-        return neqLabelMap.get(String(cfg.params.threshold)) || String(cfg.params.threshold)
+      if (neqLabelMap && params.threshold !== undefined) {
+        return neqLabelMap.get(String(params.threshold)) || String(params.threshold)
       }
-      return String(cfg.params.threshold ?? '')
+      return String(params.threshold ?? '')
     }
     case 'in': case 'not_in': {
-      const vals = cfg.params.values as string[] | undefined
+      const vals = params.values as string[] | undefined
       if (!vals || vals.length === 0) return '{}'
       const labelMap = findEnumLabels(cfg.signal_id!, 'values')
       if (labelMap) {
@@ -1019,14 +1024,15 @@ function formatSignalParamText(cfg: SignalConfig, ind: IndicatorMeta): string {
       return `{${vals.join(',')}}`
     }
     case 'custom': {
-      const start = cfg.params.lookback_start
-      const end = cfg.params.lookback_end
+      const start = params.lookback_start
+      const end = params.lookback_end
       // 从信号定义中动态读取参数的 label 和 unit
       let sLabel = '起始天数', eLabel = '结束天数'
       let sUnit = '天前', eUnit = '天前'
       for (const sig of ind.signals) {
         if (sig.signal_id === cfg.signal_id) {
           for (const op of sig.operators) {
+            if (!op.params) continue
             for (const p of op.params) {
               if (p.key === 'lookback_start') { if (p.label) sLabel = p.label; if (p.unit) sUnit = p.unit }
               if (p.key === 'lookback_end')   { if (p.label) eLabel = p.label; if (p.unit) eUnit = p.unit }
@@ -1037,7 +1043,7 @@ function formatSignalParamText(cfg: SignalConfig, ind: IndicatorMeta): string {
       return `${sLabel}${start ?? 0}${sUnit}, ${eLabel}${end ?? 0}${eUnit}`
     }
     default:
-      return Object.entries(cfg.params).map(([k, v]) => `${k}=${v}`).join(', ')
+      return Object.entries(params).map(([k, v]) => `${k}=${v}`).join(', ')
   }
 }
 function onClearClick() {

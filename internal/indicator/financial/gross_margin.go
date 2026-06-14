@@ -18,10 +18,10 @@ type GrossMargin struct {
 }
 
 var grossMarginDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于20%", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 20},
-	{Seq: "02", Desc: "20%~50%", Operator: indicator.OpBetween, MinThreshold: 20, MaxThreshold: 50},
-	{Seq: "03", Desc: "50%~70%", Operator: indicator.OpBetween, MinThreshold: 50, MaxThreshold: 70},
-	{Seq: "04", Desc: "大于70%", Operator: indicator.OpGT, MinThreshold: 70, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于20%", Alias: "低毛利", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 20},
+	{Seq: "02", Desc: "20%~50%", Alias: "中毛利", Operator: indicator.OpBetween, MinThreshold: 20, MaxThreshold: 50},
+	{Seq: "03", Desc: "50%~70%", Alias: "高毛利", Operator: indicator.OpBetween, MinThreshold: 50, MaxThreshold: 70},
+	{Seq: "04", Desc: "大于70%", Alias: "超高毛利", Operator: indicator.OpGT, MinThreshold: 70, MaxThreshold: 0},
 }
 
 func NewGrossMargin() *GrossMargin {
@@ -37,14 +37,15 @@ func NewGrossMargin() *GrossMargin {
 
 	numberOps := signalutil.NumberOpsByUnit(gm.UnitStr)
 
-	builtInSigs := signalutil.BuildRangeSignals(grossMarginDefs, "毛利率", numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &grossMarginSignal{bs}
+	indicatorName := "毛利率"
+	builtInSigs := signalutil.BuildRangeSignals(grossMarginDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &grossMarginSignal{BaseSignal: bs}
 	})
 	gm.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", "毛利率", "自定义毛利率筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义毛利率筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpGT, Params: map[string]any{indicator.ParamKeyThreshold: 40.0}})
-	gm.SetCustomSignals([]indicator.Signal{&grossMarginSignal{cs1}})
+	gm.SetCustomSignals([]indicator.Signal{&grossMarginSignal{BaseSignal: cs1}})
 	return gm
 }
 

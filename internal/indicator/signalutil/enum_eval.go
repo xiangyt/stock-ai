@@ -17,6 +17,7 @@ import (
 type EnumDef struct {
 	Seq      string                    // 2位信号序号，如 "01"
 	Desc     string                    // 显示名称，如 "属于主板"
+	Alias    string                    // 展示别名（非空时前端优先展示别名，同类型多实例时用于区分）
 	Operator indicator.CompareOperator // 操作符
 	Options  []indicator.EnumOption   // 枚举可选项（前端渲染用）
 	Value    string                    // 单值匹配默认值（OpEQ/OpNEQ 使用）
@@ -66,6 +67,9 @@ func BuildEnumSignals(defs []EnumDef, name string, ops []indicator.OperatorOptio
 			ops,
 			cfg,
 		)
+		if def.Alias != "" {
+			bs.SetAlias(def.Alias)
+		}
 		sigs = append(sigs, wrapFn(bs))
 	}
 	return sigs

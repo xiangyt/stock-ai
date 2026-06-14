@@ -18,10 +18,10 @@ type BasicEPS struct {
 }
 
 var basicEPSDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于0", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 0},
-	{Seq: "02", Desc: "0~0.5", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 0.5},
-	{Seq: "03", Desc: "0.5~1", Operator: indicator.OpBetween, MinThreshold: 0.5, MaxThreshold: 1},
-	{Seq: "04", Desc: "大于1", Operator: indicator.OpGT, MinThreshold: 1, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于0", Alias: "亏损", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 0},
+	{Seq: "02", Desc: "0~0.5", Alias: "偏低", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 0.5},
+	{Seq: "03", Desc: "0.5~1", Alias: "中档", Operator: indicator.OpBetween, MinThreshold: 0.5, MaxThreshold: 1},
+	{Seq: "04", Desc: "大于1", Alias: "优秀", Operator: indicator.OpGT, MinThreshold: 1, MaxThreshold: 0},
 }
 
 func NewBasicEPS() *BasicEPS {
@@ -37,14 +37,15 @@ func NewBasicEPS() *BasicEPS {
 
 	numberOps := signalutil.NumberOpsByUnitMin(eps.UnitStr, -99)
 
-	builtInSigs := signalutil.BuildRangeSignals(basicEPSDefs, "基本每股收益", numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &basicEPSSignal{bs}
+	indicatorName := "基本每股收益"
+	builtInSigs := signalutil.BuildRangeSignals(basicEPSDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &basicEPSSignal{BaseSignal: bs}
 	})
 	eps.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", "基本每股收益", "自定义基本每股收益筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义基本每股收益筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpGT, Params: map[string]any{indicator.ParamKeyThreshold: 0.5}})
-	eps.SetCustomSignals([]indicator.Signal{&basicEPSSignal{cs1}})
+	eps.SetCustomSignals([]indicator.Signal{&basicEPSSignal{BaseSignal: cs1}})
 	return eps
 }
 

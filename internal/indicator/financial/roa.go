@@ -18,10 +18,10 @@ type ROA struct {
 }
 
 var roaDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于0", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 0},
-	{Seq: "02", Desc: "0~5", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 5},
-	{Seq: "03", Desc: "5~15", Operator: indicator.OpBetween, MinThreshold: 5, MaxThreshold: 15},
-	{Seq: "04", Desc: "大于15", Operator: indicator.OpGT, MinThreshold: 15, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于0", Alias: "亏损", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 0},
+	{Seq: "02", Desc: "0~5", Alias: "偏低", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 5},
+	{Seq: "03", Desc: "5~15", Alias: "良好", Operator: indicator.OpBetween, MinThreshold: 5, MaxThreshold: 15},
+	{Seq: "04", Desc: "大于15", Alias: "优秀", Operator: indicator.OpGT, MinThreshold: 15, MaxThreshold: 0},
 }
 
 func NewROA() *ROA {
@@ -37,14 +37,15 @@ func NewROA() *ROA {
 
 	numberOps := signalutil.NumberOpsByUnit(roa.UnitStr)
 
-	builtInSigs := signalutil.BuildRangeSignals(roaDefs, "总资产收益率", numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &roaSignal{bs}
+	indicatorName := "总资产收益率"
+	builtInSigs := signalutil.BuildRangeSignals(roaDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &roaSignal{BaseSignal: bs}
 	})
 	roa.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", "总资产收益率", "自定义总资产收益率筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义总资产收益率筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpGT, Params: map[string]any{indicator.ParamKeyThreshold: 5.0}})
-	roa.SetCustomSignals([]indicator.Signal{&roaSignal{cs1}})
+	roa.SetCustomSignals([]indicator.Signal{&roaSignal{BaseSignal: cs1}})
 	return roa
 }
 

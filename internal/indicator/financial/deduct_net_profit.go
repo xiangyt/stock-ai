@@ -19,10 +19,10 @@ type DeductNetProfit struct {
 }
 
 var deductNetProfitDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "小于0", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 0},
-	{Seq: "02", Desc: "0~10亿", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 10},
-	{Seq: "03", Desc: "10~100亿", Operator: indicator.OpBetween, MinThreshold: 10, MaxThreshold: 100},
-	{Seq: "04", Desc: "大于100亿", Operator: indicator.OpGT, MinThreshold: 100, MaxThreshold: 0},
+	{Seq: "01", Desc: "小于0", Alias: "亏损", Operator: indicator.OpLT, MinThreshold: 0, MaxThreshold: 0},
+	{Seq: "02", Desc: "0~10亿", Alias: "薄利", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 10},
+	{Seq: "03", Desc: "10~100亿", Alias: "中利", Operator: indicator.OpBetween, MinThreshold: 10, MaxThreshold: 100},
+	{Seq: "04", Desc: "大于100亿", Alias: "厚利", Operator: indicator.OpGT, MinThreshold: 100, MaxThreshold: 0},
 }
 
 func NewDeductNetProfit() *DeductNetProfit {
@@ -38,14 +38,15 @@ func NewDeductNetProfit() *DeductNetProfit {
 
 	numberOps := signalutil.NumberOpsByUnitMin(d.UnitStr, 0)
 
-	builtInSigs := signalutil.BuildRangeSignals(deductNetProfitDefs, d.NameStr, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &deductNetProfitSignal{bs}
+	indicatorName := d.NameStr
+	builtInSigs := signalutil.BuildRangeSignals(deductNetProfitDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &deductNetProfitSignal{BaseSignal: bs}
 	})
 	d.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", d.NameStr, "自定义扣非净利润筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义扣非净利润筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpGT, Params: map[string]any{indicator.ParamKeyThreshold: 5.0}})
-	d.SetCustomSignals([]indicator.Signal{&deductNetProfitSignal{cs1}})
+	d.SetCustomSignals([]indicator.Signal{&deductNetProfitSignal{BaseSignal: cs1}})
 	return d
 }
 

@@ -18,10 +18,10 @@ type PSTTM struct {
 }
 
 var psDefs = []signalutil.RangeDef{
-	{Seq: "01", Desc: "0~1", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 1},
-	{Seq: "02", Desc: "1~3", Operator: indicator.OpBetween, MinThreshold: 1, MaxThreshold: 3},
-	{Seq: "03", Desc: "3~10", Operator: indicator.OpBetween, MinThreshold: 3, MaxThreshold: 10},
-	{Seq: "04", Desc: "大于10", Operator: indicator.OpGT, MinThreshold: 10, MaxThreshold: 0},
+	{Seq: "01", Desc: "0~1", Alias: "低估值", Operator: indicator.OpBetween, MinThreshold: 0, MaxThreshold: 1},
+	{Seq: "02", Desc: "1~3", Alias: "合理估值", Operator: indicator.OpBetween, MinThreshold: 1, MaxThreshold: 3},
+	{Seq: "03", Desc: "3~10", Alias: "偏高估值", Operator: indicator.OpBetween, MinThreshold: 3, MaxThreshold: 10},
+	{Seq: "04", Desc: "大于10", Alias: "高估值", Operator: indicator.OpGT, MinThreshold: 10, MaxThreshold: 0},
 }
 
 func NewPSTTM() *PSTTM {
@@ -37,14 +37,15 @@ func NewPSTTM() *PSTTM {
 
 	numberOps := signalutil.NumberOpsByUnit(ps.UnitStr)
 
-	builtInSigs := signalutil.BuildRangeSignals(psDefs, "市销率(TTM)", numberOps, func(bs indicator.BaseSignal) indicator.Signal {
-		return &psTTMSignal{bs}
+	indicatorName := "市销率(TTM)"
+	builtInSigs := signalutil.BuildRangeSignals(psDefs, indicatorName, numberOps, func(bs indicator.BaseSignal) indicator.Signal {
+		return &psTTMSignal{BaseSignal: bs}
 	})
 	ps.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", "市销率(TTM)", "自定义市销率(TTM)筛选条件", indicator.ValNumber, numberOps,
+	cs1 := indicator.NewBaseSignal("01", indicatorName, "自定义市销率(TTM)筛选条件", indicator.ValNumber, numberOps,
 		&indicator.SignalConfig{Operator: indicator.OpLT, Params: map[string]any{indicator.ParamKeyThreshold: 5.0}})
-	ps.SetCustomSignals([]indicator.Signal{&psTTMSignal{cs1}})
+	ps.SetCustomSignals([]indicator.Signal{&psTTMSignal{BaseSignal: cs1}})
 	return ps
 }
 
