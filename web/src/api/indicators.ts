@@ -104,6 +104,8 @@ export interface SignalDef {
   /** 8位数字唯一标识, 如 "03001001" */
   signal_id: string
   name: string
+  /** 展示别名（非空时前端优先展示，hover 展示 description） */
+  alias?: string
   description?: string
   operators: SignalOperatorOption[]
   default_config?: SignalConfig

@@ -127,8 +127,10 @@
                 v-for="sig in builtinSigs" :key="sig.signal_id"
                 class="preset-mini"
                 @click="addBuiltinSignal(sig)"
+                @mouseenter="hoveredSigID = sig.signal_id; updateTooltipPos($event)"
+                @mouseleave="hoveredSigID = ''"
               >
-                <span class="pm-name">{{ sig.description }}</span>
+                <span class="pm-name">{{ sig.alias || sig.name }}</span>
               </button>
             </div>
           </template>
@@ -137,6 +139,7 @@
           <template v-if="customSigs.length > 0">
           <div class="expand-label">自定义信号</div>
           <div class="quick-add-form">
+            <div class="qf-row">
             <!-- 步骤1: 选择自定义信号 -->
             <div class="qf-operator">
               <select v-model="customSignalID" class="qf-op-select qf-select-sig">
@@ -205,6 +208,8 @@
             >
               ✅ 添加到策略
             </button>
+            </div>
+            <div class="qf-sig-desc" v-if="currentCustomSig?.description">{{ currentCustomSig.description }}</div>
           </div>
           </template>
 
@@ -214,6 +219,14 @@
           </transition>
         </div>
       </transition>
+
+      <!-- 内置信号 fixed tooltip（脱离父容器 overflow 裁剪，放在 transition 外） -->
+      <Teleport to="body" :disabled="!hoveredSigID">
+        <div v-if="hoveredSigID && hoveredSigDesc" class="builtin-tooltip"
+          :style="{ top: tooltipPos.top, left: tooltipPos.left, maxWidth: '380px' }">
+          {{ hoveredSigDesc }}
+        </div>
+      </Teleport>
 
       <!-- 空状态 -->
       <div v-if="signals.length === 0" class="empty-signals">
@@ -228,7 +241,7 @@
           <div v-for="(s, i) in signals" :key="s.uid"
             class="sig-chip" :class="'chip-' + s.category">
             <span class="chip-bar"></span>
-            <span class="chip-name">{{ s.name }}</span>
+            <span class="chip-name">{{ s.name === s.indicator_name ? s.name : `${s.indicator_name}: ${s.name}` }}</span>
             <span v-if="s.operator !== 'none'" class="chip-op">{{ s.opSym }} {{ s.paramText }}</span>
             <button v-if="isOwner" class="chip-del" @click="removeSignal(i)">✕</button>
           </div>
@@ -431,6 +444,7 @@ const isOwner = computed(() => {
 interface Sig {
   uid: number
   indicator_id: string       // 指标 ID（5位, 如 "03001"）
+  indicator_name: string     // 指标名称（如 "筹码分布"）
   signal_id: string          // 8位数字信号ID（如 "03001001", "04001001"）
   name: string               // 显示名
   category: Category
@@ -516,6 +530,30 @@ const customSignalID = ref<string>('')
 const customOperator = ref<CompareOperator>('gt')
 const paramValues = reactive<Record<string, any>>({})
 const multiVals = reactive<Record<string, string[]>>({})
+
+/** 内置信号 fixed tooltip 状态 */
+const hoveredSigID = ref<string>('')
+const hoveredSigDesc = computed(() => {
+  if (!hoveredSigID.value) return ''
+  const sig = builtinSigs.value.find(s => s.signal_id === hoveredSigID.value)
+  return sig?.description ?? ''
+})
+const tooltipPos = ref({ top: '0px', left: '0px' })
+
+/** 更新 fixed tooltip 位置 — 左对齐按钮，靠右留边距 */
+function updateTooltipPos(e: MouseEvent) {
+  const el = e.currentTarget as HTMLElement
+  const rect = el.getBoundingClientRect()
+  const w = Math.min(380, window.innerWidth - 16)
+  // 左边缘对齐按钮左边缘（+4px 偏移），而非居中
+  let left = rect.left + 4
+  if (left < 8) left = 8
+  if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8
+  tooltipPos.value = {
+    top: `${Math.round(rect.bottom + 6)}px`,
+    left: `${Math.round(left)}px`,
+  }
+}
 
 /** 监听指标切换：一次性拆分内置/自定义信号 + 初始化表单 */
 watch(expandedIndicatorID, (newID) => {
@@ -778,8 +816,9 @@ function selectSignalQuick(sig: SignalDef) {
   const newSig: Sig = {
     uid: ++uidCounter,
     indicator_id: ind.id,
+    indicator_name: ind.name,
     signal_id: cfg.signal_id,
-    name: sig.name || ind.name,
+    name: sig.alias || sig.name || ind.name,
     category: ind.category,
     operator: cfg.operator,
     opSym: operatorSymbols[cfg.operator] || cfg.operator,
@@ -808,8 +847,9 @@ function addBuiltinSignal(sig: SignalDef) {
   const newSig: Sig = {
     uid: ++uidCounter,
     indicator_id: ind.id,
+    indicator_name: ind.name,
     signal_id: cfg.signal_id,
-    name: sig.name,
+    name: sig.alias || sig.name,
     category: ind.category,
     operator: cfg.operator,
     opSym: cfg.operator === 'none' ? '' : (operatorSymbols[cfg.operator] || cfg.operator),
@@ -826,6 +866,7 @@ function addBuiltinSignal(sig: SignalDef) {
 function formatBuiltinDesc(sig: SignalDef): string {
   const cfg = sig.default_config
   if (!cfg) return ''
+  if (!sig.operators) return cfg.operator || ''
   const op = sig.operators.find(o => o.operator === cfg.operator)
   const opLabel = op?.label ?? cfg.operator
   // 枚举型：提取 values 并映射为 label
@@ -874,8 +915,9 @@ function addCustomSignal() {
   const newSig: Sig = {
     uid: ++uidCounter,
     indicator_id: ind.id,
+    indicator_name: ind.name,
     signal_id: sig.signal_id,
-    name: sig.name || ind.name,
+    name: sig.alias || sig.name || ind.name,
     category: ind.category,
     operator: customOperator.value,
     opSym: operatorSymbols[customOperator.value] || customOperator.value,
@@ -922,6 +964,7 @@ function operatorSymbol(op: CompareOperator): string { return operatorSymbols[op
 function findOpLabel(ind: IndicatorMeta, op: CompareOperator): string {
   // 遍历所有信号的操作符查找标签
   for (const sig of ind.signals) {
+    if (!sig.operators) continue
     const found = sig.operators.find(o => o.operator === op)
     if (found) return found.label
   }
@@ -934,6 +977,7 @@ function formatSignalParamText(cfg: SignalConfig, ind: IndicatorMeta): string {
   const findEnumLabels = (sigId: string, key: string): Map<string, string> | null => {
     for (const sig of ind.signals) {
       if (sig.signal_id === sigId) {
+        if (!sig.operators) continue
         for (const op of sig.operators) {
           for (const p of op.params) {
             if (p.key === key && p.options) return new Map(p.options.map(o => [o.value, o.label]))
@@ -1010,7 +1054,7 @@ function removeSignal(idx: number) { signals.value.splice(idx, 1); markDirty() }
 /** 根据 signal_id 查找信号名称 */
 function findSignalName(ind: IndicatorMeta, signalId: string): string {
   const sig = ind.signals.find(s => s.signal_id === signalId)
-  return sig ? sig.name : signalId
+  return sig ? (sig.alias || sig.name) : signalId
 }
 
 /** 从 signal_id 提取 indicator_id（前5位） */
@@ -1030,6 +1074,7 @@ function enrichSignal(raw: any): Sig {
     return {
       uid: ++uidCounter,
       indicator_id: indId,
+      indicator_name: indId,
       signal_id: raw.signal_id,
       name: raw.signal_id,
       category: 'technical',
@@ -1044,6 +1089,7 @@ function enrichSignal(raw: any): Sig {
   return {
     uid: ++uidCounter,
     indicator_id: indId,
+    indicator_name: ind.name,
     signal_id: raw.signal_id,
     name: findSignalName(ind, raw.signal_id),
     category: ind.category,
@@ -1444,7 +1490,7 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .cat-column {
   display: flex;
   flex-direction: column;
-  border: 1px solid #f0f0f0;
+  border: 1px solid #d0d0d0;
   border-radius: 8px;
   padding: 10px 12px;
   background: #fafafa;
@@ -1471,7 +1517,7 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 /* ====== 展开面板 ====== */
 .ind-expand-panel {
   margin: 10px 0 14px; padding: 16px 18px;
-  border: 1.5px solid #bae0ff; border-radius: 10px;
+  border: 1px solid #d0d0d0; border-radius: 10px;
   background: linear-gradient(to bottom, #f0f9ff, #fff);
 }
 .expand-header {
@@ -1496,9 +1542,18 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
   border: 1.5px solid #e8e8e8; border-radius: 6px; cursor: pointer;
   background: #fafafa; transition: all .12s; text-align: left;
   font-size: 13px; flex: 0 0 calc(16.66% - 6px); max-width: calc(16.66% - 6px);
+  position: relative;
 }
 .preset-mini:hover { border-color: #91caff; background: #f0f7ff; }
 .preset-mini.selected { border-color: #1677ff; background: #e6f4ff; }
+/* 内置信号按钮：tooltip 改为 Teleport + position:fixed（见 .builtin-tooltip），此处不再需要伪元素 */
+.builtin-tooltip {
+  position: fixed; z-index: 9999;
+  padding: 8px 12px; background: #fff; color: #333; font-size: 12px; line-height: 1.6;
+  border: 1px solid #d0d0d0; border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.14);
+  pointer-events: none; white-space: normal; word-break: break-word;
+}
 .pm-name { font-size: 13px; font-weight: 600; color: #1a1a2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-desc { font-size: 11.5px; color: #999; margin-left: 4px; }
 .pm-add {
@@ -1507,11 +1562,15 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 
 /* 自定义快速添加表单 */
 .quick-add-form {
-  display: flex; align-items: center; gap: 8px;
-  padding: 10px 12px; border: 1px dashed #d9d9d9; border-radius: 8px;
-  background: #fafafa; flex-wrap: wrap;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px;
+  border: 1.5px solid #e8e8e8; border-radius: 8px;
+  background: #fafafa;
 }
-.qf-operator { }
+.qf-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.qf-operator { display: flex; align-items: center; }
 .qf-op-select {
   padding: 5px 10px; border: 1px solid #d9d9d9; border-radius: 6px;
   font-size: 13px; font-weight: 500; color: #333; outline: none; cursor: pointer;
@@ -1530,6 +1589,7 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .qf-input:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.08); }
 .qf-select { width: 130px; }
 .qf-select-sig { min-width: 100px; font-weight: 600; color: #1a1a2e; }
+.qf-sig-desc { font-size: 12px; color: #888; line-height: 1.5; }
 .qf-no-params { font-size: 12px; color: #aaa; font-style: italic; }
 .qf-add-btn {
   padding: 5px 16px; font-size: 13px; font-weight: 600; color: #fff;
@@ -1723,8 +1783,8 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .pag-jump-input:focus { border-color: #1677ff; }
 
 /* ====== 动画 ====== */
-.expand-down-enter-active { transition: all .25s ease-out; overflow: hidden; }
-.expand-down-leave-active { transition: all .2s ease-in; overflow: hidden; }
+.expand-down-enter-active { transition: all .25s ease-out; }
+.expand-down-leave-active { transition: all .2s ease-in; }
 .expand-down-enter-from { opacity: 0; max-height: 0; margin-top: 0; padding-top: 0; padding-bottom: 0; }
 .expand-down-leave-to { opacity: 0; max-height: 0; margin-top: 0; padding-top: 0; padding-bottom: 0; }
 

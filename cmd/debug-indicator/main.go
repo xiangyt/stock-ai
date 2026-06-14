@@ -45,7 +45,7 @@ var stockCode = "300484"
 //	基本面: 03001001 主板上市
 //	财务面: 04001001 PE-TTM大于 / 04002002 PB小于 / 04004001 ROE大于
 var signalIDs = []string{
-	"01004001", // KDJ
+	"01007001", // KDJ
 }
 
 // tradeDate 交易日期 YYYYMMDD，0 = 自动取当前日期
