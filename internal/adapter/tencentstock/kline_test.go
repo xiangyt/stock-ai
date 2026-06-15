@@ -33,8 +33,8 @@ func TestGetDailyKLine_HFQ(t *testing.T) {
 	if first.High < first.Low {
 		t.Errorf("最高价(%d) < 最低价(%d)", first.High, first.Low)
 	}
-	if !strings.HasPrefix(first.Code, "sh") && !strings.HasPrefix(first.Code, "sz") {
-		t.Errorf("Code 应为腾讯格式(sh/sz): %s", first.Code)
+	if len(first.Code) != 6 {
+		t.Errorf("Code 应为6位纯数字: %s", first.Code)
 	}
 }
 
@@ -208,10 +208,10 @@ func TestSZKLine(t *testing.T) {
 		t.Fatal("预期返回数据，实际为空")
 	}
 	first := data[0]
-	if !strings.HasPrefix(first.Code, "sz") {
-		t.Errorf("深交所股票 Code 应以 sz 开头: %s", first.Code)
+	if first.Code != "002404" {
+		t.Errorf("Code 应为纯数字 002404: %s", first.Code)
 	}
-	t.Logf("sz002404 周K: 共%d条", len(data))
+	t.Logf("002404 周K: 共%d条", len(data))
 }
 
 // ========== 边界测试 ==========

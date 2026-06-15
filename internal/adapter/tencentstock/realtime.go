@@ -253,8 +253,9 @@ func (a *Adapter) fetchBatchSnapshot(ctx context.Context, codes []string) (map[s
 		if l == 0 {
 			l = priceCents
 		}
+		_, symbol := splitTencentCode(tc)
 		result[tc] = &adapter.StockPriceDaily{
-			Code:      tc,
+			Code:      symbol,
 			Date:      today,
 			Open:      helpers.ParsePriceToCents(item.Open.String()),
 			High:      h,
