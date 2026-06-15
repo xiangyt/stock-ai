@@ -145,6 +145,13 @@ func (s *SyncKLineService) SyncDividendForAll(ctx context.Context, periods []db.
 	return results
 }
 
+// SyncSingleDividend 对单只股票的指定周期执行 dividend 模式同步。
+// 供外部（如除权检测 handler）按需调用，只同步命中的股票。
+func (s *SyncKLineService) SyncSingleDividend(ctx context.Context, code string, period db.KLinePeriod) SyncResult {
+	result := &SyncResult{Code: code, Period: period}
+	return s.syncSingleDividend(ctx, code, period, result)
+}
+
 // DebugSyncSingle 调试同步单只股票的逻辑
 func (s *SyncKLineService) DebugSyncSingle(ctx context.Context, periods []db.KLinePeriod, code string, mode string) error {
 	if len(periods) == 0 || code == "" || mode == "" {

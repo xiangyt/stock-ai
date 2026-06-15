@@ -128,6 +128,9 @@ func NewDataCollectRunner() *DataCollectRunner {
 	// Task 10: 分红历史同步 → RunDividendHistoryBatch
 	r.handlers[model.TaskDividendSync] = r.handleDividendSync
 
+	// Task 11: 除权K线同步（日/周/月）→ 检查除权日后 dividend 模式刷新
+	r.handlers[model.TaskDividendKlineSync] = r.handleDividendKlineSync
+
 	return r
 }
 
@@ -316,6 +319,83 @@ func (r *DataCollectRunner) handleDividendSync(ctx context.Context, task *model.
 		return "", err
 	}
 	return fmt.Sprintf("total=%d, 新增=%d, 更新=%d, 失败=%d", res.Total, res.NewCount, res.UpdCount, res.FailCount), nil
+}
+
+// handleDividendKlineSync 处理【除权K线同步】(Task 11)
+// 遍历所有股票，对每只股票检查最新除权日是否与今天在同一周期（日/周/月）。
+// 若在同一周期，则以 dividend 模式同步该股票的对应周期 K 线数据。
+// 仅处理日/周/月三个周期。
+func (r *DataCollectRunner) handleDividendKlineSync(ctx context.Context, task *model.DataCollectTask) (string, error) {
+	periods := parseDividendPeriods(task.Params)
+	stocks := db.LoadAllStockCodes()
+	today := utils.TodayTradeDate()
+
+	type dividendHit struct {
+		code   string
+		period db.KLinePeriod
+	}
+	var hits []dividendHit
+
+	// 第一遍：收集所有需要除权同步的 (股票, 周期) 组合
+	for _, stock := range stocks {
+		dividend, err := db.FindLatestDividend(stock.Code)
+		if err != nil {
+			continue
+		}
+		for _, p := range periods {
+			if db.IsSamePeriod(p, today, dividend.ExDividendDate) {
+				hits = append(hits, dividendHit{code: stock.Code, period: p})
+				log.Printf("[DataCollect] 除权检测: %s(%s) 除权日=%d, 今日=%d, 周期=%s → 触发同步",
+					stock.Code, stock.Name, dividend.ExDividendDate, today, db.KLineLabel(p))
+			}
+		}
+	}
+
+	if len(hits) == 0 {
+		return "无股票处于除权周期，跳过", nil
+	}
+
+	// 第二遍：执行 dividend 模式同步
+	svc := GetSyncKLineService()
+	success, fail := 0, 0
+	for _, h := range hits {
+		sr := svc.SyncSingleDividend(ctx, h.code, h.period)
+		if sr.Error != nil {
+			fail++
+			log.Printf("[DataCollect] 除权同步失败 %s(%s): %v", h.code, db.KLineLabel(h.period), sr.Error)
+		} else {
+			success++
+		}
+	}
+
+	return fmt.Sprintf("除权命中=%d, 成功=%d, 失败=%d", len(hits), success, fail), nil
+}
+
+// parseDividendPeriods 从 params JSON 中解析除权同步的周期列表。
+// 默认返回 [daily, weekly, monthly]，支持逗号分隔如 "daily,weekly,monthly"。
+func parseDividendPeriods(paramsJSON string) []db.KLinePeriod {
+	params, err := ParseTaskParams(paramsJSON)
+	if err != nil {
+		return []db.KLinePeriod{db.KLinePeriodDaily, db.KLinePeriodWeekly, db.KLinePeriodMonthly}
+	}
+	periodsStr, _ := params["periods"].(string)
+	if periodsStr == "" {
+		return []db.KLinePeriod{db.KLinePeriodDaily, db.KLinePeriodWeekly, db.KLinePeriodMonthly}
+	}
+
+	parts := strings.Split(periodsStr, ",")
+	periods := make([]db.KLinePeriod, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		switch db.KLinePeriod(p) {
+		case db.KLinePeriodDaily, db.KLinePeriodWeekly, db.KLinePeriodMonthly:
+			periods = append(periods, db.KLinePeriod(p))
+		}
+	}
+	if len(periods) == 0 {
+		return []db.KLinePeriod{db.KLinePeriodDaily, db.KLinePeriodWeekly, db.KLinePeriodMonthly}
+	}
+	return periods
 }
 
 // parseSourceFromParams 从任务 params JSON 中提取 source 参数

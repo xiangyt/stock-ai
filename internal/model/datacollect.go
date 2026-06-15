@@ -45,6 +45,7 @@ const (
 	TaskWeeklyKlineIncSync   uint = 8 // 每周增量同步K线数据（weekly）
 	TaskMonthlyKlineIncSync  uint = 9 // 每月增量同步K线数据（monthly）
 	TaskDividendSync         uint = 10 // 同步分红历史
+	TaskDividendKlineSync    uint = 11 // 除权K线同步（日/周/月）
 )
 
 // ============================================================================
@@ -167,6 +168,13 @@ func GetInitialDataCollectTasks() []InitialDataCollectTask {
 			CronExpr: "0 5 0 ? * 1-5",
 			IsActive: true,
 			Params:   `{"source":"eastmoney"}`,
+		},
+		{
+			ID:       TaskDividendKlineSync,
+			Name:     "除权K线同步",
+			CronExpr: "0 0 22 * * *",
+			IsActive: true,
+			Params:   `{"periods":"daily,weekly,monthly"}`,
 		},
 	}
 }
