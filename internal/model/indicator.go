@@ -389,6 +389,10 @@ type Strategy struct {
 	// 信号条件（JSON 存储 Signal 数组）
 	Conditions    string     `gorm:"type:text;not null" json:"conditions_raw"`            // JSON: []Signal
 
+	// 卖出规则与仓位管理（JSON 存储）
+	ExitRules     string     `gorm:"type:json" json:"exit_rules"`                         // ExitRules JSON
+	PositionRules string     `gorm:"type:json" json:"position_rules"`                     // PositionRules JSON
+
 	// 回测相关
 	BacktestCount int        `gorm:"default:0" json:"backtest_count"`                    // 回测次数
 	LastRunAt     *time.Time `json:"last_run_at"`                                       // 最后运行时间

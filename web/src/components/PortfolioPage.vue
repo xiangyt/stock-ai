@@ -320,14 +320,12 @@
             <span class="form-desc">例如：输入 2.5 表示万分之2.5（默认券商标准费率）</span>
           </label>
           <label class="form-group">
-            <span class="form-label">最低手续费（免五）</span>
-            <div class="switch-row">
-              <label class="switch-wrap">
-                <input type="checkbox" v-model="configForm.min_commission" />
-                <span class="switch-slider"></span>
-              </label>
-              <span class="switch-text">{{ configForm.min_commission ? '不免五（最低收费5元）' : '免五（无最低收费）' }}</span>
-            </div>
+            <span class="form-label">手续费规则</span>
+            <label class="checkbox-row">
+              <input type="checkbox" v-model="configForm.min_commission" />
+              <span class="checkbox-text">免五（无最低收费限制）</span>
+            </label>
+            <span class="form-desc">勾选 = 免五，未勾选 = 不免五（单笔最低收费5元）</span>
           </label>
           <div class="modal-actions">
             <button type="button" class="btn-outline" @click="showConfig = false">取消</button>
@@ -393,7 +391,7 @@ const formClose = reactive({
 
 const configForm = reactive<Partial<TradeConfig>>({
   commission_rate: 2.5,
-  min_commission: true,
+  min_commission: false,
 })
 
 // ========== 计算属性 ==========
@@ -435,7 +433,8 @@ async function loadPositions() {
 async function loadConfig() {
   try {
     const cfg = await portfolioApi.fetchTradeConfig()
-    Object.assign(configForm, cfg)
+    // 前端取反：后端 true=不免五，前端勾选=true=免五
+    Object.assign(configForm, { ...cfg, min_commission: !cfg.min_commission })
   } catch (e) {
     console.error('加载交易配置失败:', e)
   }
@@ -585,7 +584,11 @@ async function handleSubmitConfig() {
   if (configSubmitting.value) return
   configSubmitting.value = true
   try {
-    await portfolioApi.updateTradeConfig(configForm as TradeConfig)
+    // 提交前取反：前端勾选=true=免五 → 后端 true=不免五
+    await portfolioApi.updateTradeConfig({
+      ...configForm,
+      min_commission: !configForm.min_commission,
+    } as TradeConfig)
     showConfig.value = false
   } catch (e: any) {
     errorMsg.value = e.message || '保存失败'
@@ -952,23 +955,15 @@ onMounted(() => {
   margin-top: 18px; padding-top: 14px; border-top: 1px solid #f0f0f0;
 }
 
-/* 开关样式 */
-.switch-row { display: flex; align-items: center; gap: 10px; }
-.switch-wrap { position: relative; display: inline-block; width: 42px; height: 24px; }
-.switch-wrap input { opacity: 0; width: 0; height: 0; }
-.switch-slider {
-  position: absolute; inset: 0;
-  background: #ccc; border-radius: 24px;
-  cursor: pointer; transition: .2s;
+/* 勾选框样式 */
+.checkbox-row {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; padding: 4px 0;
 }
-.switch-slider::before {
-  content: ''; position: absolute;
-  left: 3px; top: 3px;
-  width: 18px; height: 18px;
-  background: #fff; border-radius: 50%;
-  transition: .2s;
+.checkbox-row input[type="checkbox"] {
+  width: 16px; height: 16px;
+  accent-color: #1677ff;
+  cursor: pointer;
 }
-.switch-wrap input:checked + .switch-slider { background: #1677ff; }
-.switch-wrap input:checked + .switch-slider::before { transform: translateX(18px); }
-.switch-text { font-size: 13px; color: #666; }
+.checkbox-text { font-size: 14px; color: #333; }
 </style>

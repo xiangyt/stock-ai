@@ -139,3 +139,169 @@ export async function setStrategyPublic(id: number, isPublic: boolean): Promise<
 export async function copyStrategy(id: number): Promise<StrategyDetail> {
   return request<StrategyDetail>(`${BASE}/${id}/copy`, { method: 'POST' })
 }
+
+// ========== 回测 API ==========
+
+const BACKTEST_BASE = 'http://localhost:9100/api/v1'
+
+// --- 回测类型 ---
+
+export type RunStatus = 'pending' | 'running' | 'done' | 'failed'
+
+export interface StopLossRule {
+  enabled: boolean
+  threshold_pct: number   // 负数, 如 -8.0
+}
+
+export interface TakeProfitRule {
+  enabled: boolean
+  threshold_pct: number   // 正数, 如 20.0
+}
+
+export interface TimeExitRule {
+  enabled: boolean
+  hold_days: number       // 0 = 不启用
+}
+
+export interface ExitRules {
+  stop_loss?: StopLossRule
+  take_profit?: TakeProfitRule
+  time_exit?: TimeExitRule
+  exit_signals?: any[]        // P2 预留
+  slippage_pct: number        // 默认 0.3
+}
+
+export interface PositionRules {
+  max_positions: number       // 0 = 不限制
+  max_single_pct: number      // 0 = 不限制
+  allocation: string           // "equal"
+}
+
+export interface BacktestRun {
+  id: number
+  strategy_id: number
+  uid: number
+  stock_pool: string[]         // JSON 数组
+  start_date: string
+  end_date: string
+  initial_capital: number
+  final_equity: number | null
+  exit_rules: string           // JSON string, 前端用 JSON.parse
+  position_rules: string       // JSON string
+  status: RunStatus
+  progress_pct: number
+  error_message?: string
+  total_return: number | null
+  annual_return: number | null
+  max_drawdown: number | null
+  sharpe_ratio: number | null
+  win_rate: number | null
+  profit_factor: number | null
+  trade_count: number
+  stop_loss_count: number
+  take_profit_count: number
+  time_exit_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface BacktestTrade {
+  id: number
+  run_id: number
+  stock_code: string
+  stock_name: string            // 股票名称（后端查询时填充）
+  trade_type: number           // 1=买入 2=卖出
+  quantity: number
+  price: number
+  amount: number
+  commission: number
+  stamp_tax: number
+  trade_date: string
+  exit_reason?: string         // "stop_loss" | "take_profit" | "time_exit"
+  pre_exit_price?: number
+  profit_loss?: number
+  profit_loss_pct?: number
+  created_at: string
+}
+
+export interface DailySnapshot {
+  id: number
+  run_id: number
+  snap_date: string
+  total_equity: number
+  cash: number
+  market_value: number
+  position_count: number
+  daily_return: number | null
+  cumulative_return: number | null
+  benchmark_value: number | null
+  created_at: string
+}
+
+export interface InitiateBacktestRequest {
+  stock_pool: string[]
+  start_date: string
+  end_date: string
+  initial_capital: number
+  exit_rules_override?: ExitRules    // 可选覆盖策略默认规则
+  position_rules_override?: PositionRules
+}
+
+export interface InitiateBacktestResponse {
+  run_id: number
+  status: RunStatus
+}
+
+export interface RunStatusResponse {
+  status: RunStatus
+  progress_pct: number
+}
+
+export interface TradeListResponse {
+  total: number
+  items: BacktestTrade[]
+}
+
+export interface SnapshotListResponse {
+  snapshots: DailySnapshot[]
+}
+
+// --- 回测 API 方法 ---
+
+/** 发起回测 */
+export async function initiateBacktest(strategyId: number, data: InitiateBacktestRequest): Promise<InitiateBacktestResponse> {
+  return request<InitiateBacktestResponse>(`${BACKTEST_BASE}/strategies/${strategyId}/backtest`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+/** 获取单次回测详情 */
+export async function getBacktestRun(runId: number): Promise<BacktestRun> {
+  return request<BacktestRun>(`${BACKTEST_BASE}/backtest/runs/${runId}`)
+}
+
+/** 获取回测运行状态（用于轮询进度） */
+export async function getBacktestRunStatus(runId: number): Promise<RunStatusResponse> {
+  return request<RunStatusResponse>(`${BACKTEST_BASE}/backtest/runs/${runId}/status`)
+}
+
+/** 获取回测交易明细（分页） */
+export async function getBacktestTrades(runId: number, page = 1, pageSize = 20): Promise<TradeListResponse> {
+  return request<TradeListResponse>(`${BACKTEST_BASE}/backtest/runs/${runId}/trades?page=${page}&page_size=${pageSize}`)
+}
+
+/** 获取回测每日快照（净值曲线数据） */
+export async function getBacktestSnapshots(runId: number): Promise<SnapshotListResponse> {
+  return request<SnapshotListResponse>(`${BACKTEST_BASE}/backtest/runs/${runId}/snapshots`)
+}
+
+/** 获取策略的历史回测列表 */
+export async function getBacktestRuns(strategyId: number, limit = 20): Promise<BacktestRun[]> {
+  return request<BacktestRun[]>(`${BACKTEST_BASE}/strategies/${strategyId}/backtest/runs?limit=${limit}`)
+}
+
+/** 删除回测记录 */
+export async function deleteBacktestRun(runId: number): Promise<void> {
+  await request<void>(`${BACKTEST_BASE}/backtest/runs/${runId}`, { method: 'DELETE' })
+}

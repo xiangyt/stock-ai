@@ -2,6 +2,7 @@ package router
 
 import (
 	"stock-ai/internal/api/handler"
+	"stock-ai/internal/backtest"
 	"stock-ai/internal/config"
 	"stock-ai/internal/datacollect"
 	"stock-ai/internal/service"
@@ -14,6 +15,9 @@ var SubscriptionServiceRef *service.SubscriptionService
 
 // DataCollectServiceRef 保存路由层创建的数据采集服务引用，供 main.go 注入 Scheduler
 var DataCollectServiceRef *service.DataCollectTaskService
+
+// BacktestHandlerRef 保存路由层创建的回测 Handler 引用，供 main.go 注入依赖
+var BacktestHandlerRef *backtest.Handler
 
 // SetupRouter 创建路由并返回 gin.Engine 实例
 func SetupRouter(runner *datacollect.DataCollectRunner) *gin.Engine {
@@ -59,6 +63,11 @@ func SetupRouter(runner *datacollect.DataCollectRunner) *gin.Engine {
 		RegisterPortfolioRoutes(apiV1, authSvc)
 		RegisterSubscriptionRoutes(apiV1, authSvc, subSvc)
 		RegisterDataCollectRoutes(apiV1, authSvc, dcSvc, runner)
+
+		// 回测路由（通过 BacktestHandlerRef 注入）
+		if BacktestHandlerRef != nil {
+			RegisterBacktestRoutes(apiV1, BacktestHandlerRef)
+		}
 	}
 
 	return r

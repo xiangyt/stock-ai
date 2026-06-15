@@ -18,6 +18,7 @@ import (
 	"stock-ai/internal/adapter/ths2"
 	"stock-ai/internal/api/handler"
 	"stock-ai/internal/api/router"
+	"stock-ai/internal/backtest"
 	"stock-ai/internal/config"
 	"stock-ai/internal/datacollect"
 	"stock-ai/internal/db"
@@ -168,7 +169,14 @@ func main() {
 	// 8. 初始化数据采集运行器（供前端手动触发执行 + 调度器使用）
 	dcRunner := datacollect.NewDataCollectRunner()
 
-	// 9. 设置 Router（router 内部创建 subSvc，通过 SubscriptionServiceRef 获取）
+	// 9. 初始化回测服务
+	var backtestHandler *backtest.Handler
+	btSvc := backtest.NewService(reg.Engine())
+	backtestHandler = backtest.NewHandler(btSvc)
+	log.Println("✅ 回测服务已初始化")
+	router.BacktestHandlerRef = backtestHandler
+
+	// 10. 设置 Router（router 内部创建 subSvc，通过 SubscriptionServiceRef 获取）
 	rtr := router.SetupRouter(dcRunner)
 
 	// 注入 Runner 和 NotifyChange 回调到 SubscriptionService

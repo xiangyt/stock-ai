@@ -304,17 +304,14 @@
               <th>股票简称</th>
               <th>现价(元)</th>
               <th>涨跌幅(%)</th>
-              <th>最低价</th>
-              <th>最高价</th>
-              <th>开盘价</th>
-              <th>成交量</th>
+              <th>外部链接</th>
               <th>匹配信号</th>
             </tr>
           </thead>
           <tbody>
             <!-- 筛选中 -->
             <tr v-if="isScreening">
-              <td colspan="11" style="text-align:center; padding:40px 20px; color:#999;">
+              <td colspan="8" style="text-align:center; padding:40px 20px; color:#999;">
                 <span class="loading-spinner"></span> 正在筛选 {{ screenResult?.total ?? 0 }} 只股票...
               </td>
             </tr>
@@ -329,34 +326,35 @@
                 </td>
                 <td>{{ stock.price?.toFixed(2) ?? '-' }}</td>
                 <td>-</td>
-                <td>-</td>
-                <td>-</td>
-                <td>-</td>
-                <td>-</td>
+                <td class="links-col">
+                  <a :href="getEastMoneyUrl(stock.code)" target="_blank" class="ext-link" title="东方财富">东财</a>
+                  <a :href="getTHSUrl(stock.code)" target="_blank" class="ext-link" title="同花顺">同花顺</a>
+                  <a :href="getTencentUrl(stock.code)" target="_blank" class="ext-link" title="腾讯自选股">腾讯</a>
+                </td>
                 <td><span class="match-tag" :title="stock.message">✓ {{ stock.message || '通过' }}</span></td>
               </tr>
             </template>
             <!-- 搜索无匹配 -->
             <tr v-else-if="screenResult && screenResult.passed.length > 0 && paginatedData.length === 0">
-              <td colspan="11" style="text-align:center; padding:40px 20px; color:#bbb;">
+              <td colspan="8" style="text-align:center; padding:40px 20px; color:#bbb;">
                 🔍 未找到与「{{ searchKeyword }}」匹配的股票
               </td>
             </tr>
             <!-- 无结果 -->
             <tr v-else-if="screenResult && !screenError">
-              <td colspan="11" style="text-align:center; padding:40px 20px; color:#bbb;">
+              <td colspan="8" style="text-align:center; padding:40px 20px; color:#bbb;">
                 {{ screenResult.total > 0 ? '😔 没有符合条件的股票，请尝试调整条件' : '🔍 运行筛选后显示结果' }}
               </td>
             </tr>
             <!-- 错误 -->
             <tr v-else-if="screenError">
-              <td colspan="11" style="text-align:center; padding:30px; color:#cf1322;">
+              <td colspan="8" style="text-align:center; padding:30px; color:#cf1322;">
                 ⚠️ {{ screenError }}
               </td>
             </tr>
             <!-- 初始状态 -->
             <tr v-else>
-              <td colspan="11" style="text-align:center; padding:60px 20px; color:#bbb; font-size:14px;">
+              <td colspan="8" style="text-align:center; padding:60px 20px; color:#bbb; font-size:14px;">
                 🔍 运行筛选后显示结果
               </td>
             </tr>
@@ -1242,6 +1240,27 @@ function onKLineEnter() {
   if (klineHideTimer) { clearTimeout(klineHideTimer); klineHideTimer = null }
 }
 
+/** 根据纯数字代码推导交易所前缀 */
+function getExchangePrefix(code: string): string {
+  const c = code.charAt(0)
+  if (c === '6') return 'sh'
+  if (c === '0' || c === '3') return 'sz'
+  if (c === '8' || c === '9') return 'bj'
+  return 'sz'
+}
+
+function getEastMoneyUrl(code: string): string {
+  return `https://quote.eastmoney.com/concept/${getExchangePrefix(code)}${code}.html#chart-k-cyq`
+}
+
+function getTHSUrl(code: string): string {
+  return `https://www.iwencai.com/screener/result?w=${code}&querytype=stock&sign=1781436668603`
+}
+
+function getTencentUrl(code: string): string {
+  return `https://gu.qq.com/${getExchangePrefix(code)}${code}/gp`
+}
+
 /** 先过滤，后分页 */
 const filteredData = computed(() => {
   if (!screenResult.value) return []
@@ -1743,6 +1762,24 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .col-cb input[type="checkbox"] { accent-color: #1677ff; width: 14px; height: 14px; cursor: pointer; }
 .code-col { font-family: 'SF Mono', Monaco, monospace; font-weight: 600; color: #333; }
 .name-col { font-weight: 600; color: #1a1a2e; cursor: pointer; }
+.links-col { white-space: nowrap; }
+.ext-link {
+  display: inline-block;
+  padding: 2px 8px;
+  margin-right: 4px;
+  border-radius: 3px;
+  font-size: 12px;
+  text-decoration: none;
+  background: #f0f5ff;
+  color: #1677ff;
+  border: 1px solid #d6e4ff;
+  transition: all .15s;
+}
+.ext-link:hover {
+  background: #1677ff;
+  color: #fff;
+  border-color: #1677ff;
+}
 .stock-name-hover {
   border-bottom: 1px dashed #1677ff;
   transition: color .12s;

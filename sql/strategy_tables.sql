@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS strategies (
     backtest_count    INT             NOT NULL DEFAULT 0 COMMENT '回测次数',
     last_run_at       DATETIME        COMMENT '最后运行时间',
 
+    -- 回测 — 卖出规则与仓位管理
+    exit_rules        JSON            COMMENT '卖出规则集: {stop_loss, take_profit, time_exit, exit_signals, slippage_pct}',
+    position_rules    JSON            COMMENT '仓位管理: {max_positions, max_single_pct, allocation}',
+
     -- 元数据
     is_public         TINYINT(1)      NOT NULL DEFAULT 0 COMMENT '是否公开',
     star_count        INT             NOT NULL DEFAULT 0 COMMENT '收藏数',
