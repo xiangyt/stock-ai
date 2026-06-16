@@ -5,10 +5,10 @@ import (
 	"math"
 	"sort"
 	"strings"
-	"time"
 
 	"stock-ai/internal/indicator"
 	"stock-ai/internal/model"
+	"stock-ai/utils"
 )
 
 // ============================================================================
@@ -24,86 +24,12 @@ func newExitCheckerChain() exitCheckerChain {
 
 // getTradingDays 返回 [startDate, endDate] 区间内所有 A 股交易日（日期字符串）
 func getTradingDays(startDate, endDate string) ([]string, error) {
-	start, err := time.Parse("2006-01-02", startDate)
-	if err != nil {
-		return nil, err
-	}
-	end, err := time.Parse("2006-01-02", endDate)
-	if err != nil {
-		return nil, err
-	}
-
-	holidays := getHolidaySet()
-	var days []string
-	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
-		// 排除周末
-		wd := d.Weekday()
-		if wd == time.Saturday || wd == time.Sunday {
-			continue
-		}
-		dateStr := d.Format("2006-01-02")
-		// 排除法定节假日
-		if holidays[dateStr] {
-			continue
-		}
-		days = append(days, dateStr)
-	}
-	return days, nil
+	return utils.GetTradingDays(startDate, endDate)
 }
 
 // addTradingDays 从给定日期往后加 N 个交易日，返回新日期字符串
 func addTradingDays(dateStr string, n int) (string, error) {
-	holidays := getHolidaySet()
-	t, err := time.Parse("2006-01-02", dateStr)
-	if err != nil {
-		return "", err
-	}
-	added := 0
-	for added < n {
-		t = t.AddDate(0, 0, 1)
-		wd := t.Weekday()
-		if wd == time.Saturday || wd == time.Sunday {
-			continue
-		}
-		if holidays[t.Format("2006-01-02")] {
-			continue
-		}
-		added++
-	}
-	return t.Format("2006-01-02"), nil
-}
-
-// getHolidaySet 从 utils 节假日列表构建集合（日期格式统一为 2006-01-02）
-func getHolidaySet() map[string]bool {
-	holidays := getHolidays()
-	set := make(map[string]bool, len(holidays))
-	for _, h := range holidays {
-		set[h] = true
-	}
-	return set
-}
-
-// getHolidays 返回 A 股法定节假日（与 utils 保持一致）
-func getHolidays() []string {
-	return []string{
-		// 2025
-		"2025-01-01",
-		"2025-01-28", "2025-01-29", "2025-01-30", "2025-01-31",
-		"2025-02-03", "2025-02-04",
-		"2025-04-04",
-		"2025-05-01", "2025-05-02", "2025-05-05",
-		"2025-05-31", "2025-06-02",
-		"2025-10-01", "2025-10-02", "2025-10-03", "2025-10-06",
-		"2025-10-07", "2025-10-08",
-		// 2026
-		"2026-01-01", "2026-01-02",
-		"2026-02-16", "2026-02-17", "2026-02-18",
-		"2026-04-05",
-		"2026-05-01", "2026-05-02", "2026-05-03", "2026-05-04", "2026-05-05",
-		"2026-06-19",
-		"2026-09-25",
-		"2026-10-01", "2026-10-02", "2026-10-05", "2026-10-06", "2026-10-07",
-	}
+	return utils.AddTradingDays(dateStr, n)
 }
 
 // =========================== 序列化 ===========================
@@ -130,9 +56,9 @@ func calcCommission(amount, commissionRate float64, minCommission bool) float64 
 	return fee
 }
 
-// calcStampTax 计算 A 股卖出印花税（成交金额 × 0.1%）
+// calcStampTax 计算 A 股卖出印花税（成交金额 × 0.05%，仅卖出时收取）
 func calcStampTax(amount float64) float64 {
-	tax := amount * 0.001
+	tax := amount * 0.0005
 	return math.Round(tax*10000) / 10000
 }
 

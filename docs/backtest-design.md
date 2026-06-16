@@ -53,7 +53,7 @@
 | 止盈执行价 | 预止盈价本身 | 限价单，到了就成交 |
 | 同日双触发 | 止损优先 | 风险控制 > 利润保护 |
 | 卖出规则架构 | ExitChecker 接口 + 优先级链 | 可插拔，未来扩展只需加一个实现 |
-| 手续费 | 复用现有持仓系统费率模型 | 佣金万分之2.5 + 卖出印花税0.1%，MinCommission可配 |
+| 手续费 | 复用现有持仓系统费率模型 | 佣金万分之2.5 + 卖出印花税0.05%，MinCommission可配 |
 | 执行方式 | 异步 goroutine + 状态机轮询 | 长耗时任务不阻塞 HTTP |
 
 ---
@@ -77,7 +77,7 @@
 | `indicator.Engine.Execute()` | `internal/indicator/` | 无状态信号评估，直接作为每日买入信号的评判器 |
 | K 线适配器 | `internal/adapter/{eastmoney,ths,tencentstock}/` | OHLCV 历史数据，日/周/月/年多周期 |
 | `ScreenService.BuildAll()` | `internal/service/screen_service.go` | 构建 `[]StockSource` 数据源快照，可加历史日期参数 |
-| 手续费模型 | `internal/model/portfolio.go` | `commission_rate`(万分之2.5) + `MinCommission` + A股卖出印花税0.1% |
+| 手续费模型 | `internal/model/portfolio.go` | `commission_rate`(万分之2.5) + `MinCommission` + A股卖出印花税0.05% |
 | 交易日判断 | `utils/trading.go` | `IsTradingDay()` / 节假日列表，回测引擎复用 |
 | 前端组件 | `BacktestPage.vue` / `StrategyBuilder.vue` | 策略选择下拉、日期选择器、SVG 图表渲染均可复用 |
 
@@ -314,7 +314,7 @@ type PositionRules struct {
 
 ```
 买入: 佣金 = 成交金额 × commission_rate/10000
-卖出: 佣金 = 成交金额 × commission_rate/10000 + 印花税 = 成交金额 × 0.1%
+卖出: 佣金 = 成交金额 × commission_rate/10000 + 印花税 = 成交金额 × 0.05%
 ```
 
 默认 `commission_rate = 2.5`（万分之 2.5），`MinCommission` 控制是否免五。回测引擎交易执行时调用现有费率计算函数。

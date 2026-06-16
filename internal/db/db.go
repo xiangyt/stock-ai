@@ -72,6 +72,8 @@ func AutoMigrate() error {
 		// 数据采集
 		&model.DataCollectTask{},
 		&model.DataCollectBot{},
+		// 法定节假日
+		&model.TradingHoliday{},
 		// 基本面/财务数据表
 		// &model.PerformanceReport{},
 		// &model.ShareholderCount{},

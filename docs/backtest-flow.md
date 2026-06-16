@@ -61,7 +61,7 @@ POST /api/v1/strategies/:id/backtest
 | 异步执行 | `Initiate` 立即返回 runID，实际回测在 goroutine 中运行 |
 | 前端轮询 | 每 2 秒调 `GET /backtest/runs/:id/status` 获取进度 |
 | K线数据源 | 直接从 `daily_kline` 表批量查，不经过采集器 API |
-| 手续费 | 佣金（万分之2.5，可配不免五）+ 印花税（0.1%） |
+| 手续费 | 佣金（万分之2.5，可配不免五）+ 卖出印花税（0.05%） |
 | 卖出优先级 | 止损 > 止盈 > 到期退出（可插拔链式调用） |
 | 信号评估 | 通过 `indicator.Engine.Execute` 批量评估，并发度 10 |
 | 快照写入 | 每个交易日计算完立即写入 DB（`s.dao.CreateSnapshot`），前端可实时轮询 |
@@ -862,8 +862,8 @@ calcCommission(amount, commissionRate, minCommission):
 ```
 calcStampTax(amount):
 
-    tax := amount * 0.001  // 成交金额 × 0.1%
-    // 例: 卖出 15000 元 → tax = 15 元
+    tax := amount * 0.0005  // 成交金额 × 0.05%
+    // 例: 卖出 15000 元 → tax = 7.5 元
 
     return round(tax, 4)
 ```

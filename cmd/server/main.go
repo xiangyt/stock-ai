@@ -22,6 +22,7 @@ import (
 	"stock-ai/internal/config"
 	"stock-ai/internal/datacollect"
 	"stock-ai/internal/db"
+	"stock-ai/internal/holiday"
 	"stock-ai/internal/indicator"
 	"stock-ai/internal/notifier"
 	"stock-ai/internal/subscription/quotecache"
@@ -49,6 +50,11 @@ func main() {
 	// 自动迁移表结构
 	if err := db.AutoMigrate(); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
+	}
+
+	// 加载法定节假日数据到内存
+	if err := holiday.GetProvider().Load(); err != nil {
+		log.Printf("⚠️ 节假日数据加载失败: %v", err)
 	}
 
 	// 初始化数据采集内置任务
