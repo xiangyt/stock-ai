@@ -115,30 +115,64 @@
       <div v-if="showRulesPanel" class="rules-panel">
         <div class="rules-section">
           <h4 class="rules-title">📐 卖出规则</h4>
-          <div class="rules-grid">
-            <label class="rule-item">
-              <input type="checkbox" v-model="exitRulesOverride.stop_loss!.enabled" />
-              <span>止损</span>
-              <input type="number" v-model.number="exitRulesOverride.stop_loss!.threshold_pct" class="rule-input" step="1" :disabled="!exitRulesOverride.stop_loss?.enabled" />
-              <span class="rule-unit">%</span>
-            </label>
-            <label class="rule-item">
-              <input type="checkbox" v-model="exitRulesOverride.take_profit!.enabled" />
-              <span>止盈</span>
-              <input type="number" v-model.number="exitRulesOverride.take_profit!.threshold_pct" class="rule-input" step="1" :disabled="!exitRulesOverride.take_profit?.enabled" />
-              <span class="rule-unit">%</span>
-            </label>
-            <label class="rule-item">
-              <input type="checkbox" v-model="exitRulesOverride.time_exit!.enabled" />
-              <span>到期退出</span>
-              <input type="number" v-model.number="exitRulesOverride.time_exit!.hold_days" class="rule-input" step="1" min="1" :disabled="!exitRulesOverride.time_exit?.enabled" />
-              <span class="rule-unit">天</span>
-            </label>
-            <label class="rule-item">
-              <span>滑点</span>
-              <input type="number" v-model.number="exitRulesOverride.slippage_pct" class="rule-input" step="0.1" min="0" max="5" />
-              <span class="rule-unit">%</span>
-            </label>
+          <div class="rules-list">
+            <div v-for="(rule, ri) in exitRulesOverride.rules" :key="rule.type" class="rule-row">
+              <label class="rule-check">
+                <input type="checkbox" v-model="rule.enabled" />
+                <span class="rule-label">{{ ruleName(rule.type) }}</span>
+              </label>
+              <template v-if="rule.enabled">
+                <!-- stop_loss -->
+                <template v-if="rule.type === 'stop_loss'">
+                  <input type="number" v-model.number="rule.params.threshold_pct" class="rule-input-sm" step="1" />
+                  <span class="rule-unit">%</span>
+                </template>
+                <!-- take_profit -->
+                <template v-else-if="rule.type === 'take_profit'">
+                  <input type="number" v-model.number="rule.params.threshold_pct" class="rule-input-sm" step="1" />
+                  <span class="rule-unit">%</span>
+                </template>
+                <!-- time_exit -->
+                <template v-else-if="rule.type === 'time_exit'">
+                  <input type="number" v-model.number="rule.params.hold_days" class="rule-input-sm" step="1" min="1" />
+                  <span class="rule-unit">天</span>
+                </template>
+                <!-- trailing_stop -->
+                <template v-else-if="rule.type === 'trailing_stop'">
+                  <span class="rule-param-label">激活</span>
+                  <input type="number" v-model.number="rule.params.activation_pct" class="rule-input-sm" step="1" />
+                  <span class="rule-unit">%</span>
+                  <span class="rule-param-label">回撤</span>
+                  <input type="number" v-model.number="rule.params.trail_pct" class="rule-input-sm" step="0.5" />
+                  <span class="rule-unit">%</span>
+                </template>
+                <!-- segment_profit -->
+                <template v-else-if="rule.type === 'segment_profit'">
+                  <span class="rule-param-label">档位</span>
+                  <div v-for="(lv, li) in rule.params.levels" :key="li" class="segment-level">
+                    <span>涨</span><input type="number" v-model.number="lv.threshold_pct" class="rule-input-xs" step="1" /><span>%卖</span>
+                    <input type="number" v-model.number="lv.sell_ratio" class="rule-input-xs" step="0.1" min="0.1" max="1" /><span>成</span>
+                    <button v-if="rule.params.levels.length > 1" class="btn-level-del" @click="rule.params.levels.splice(li,1)">✕</button>
+                  </div>
+                  <button class="btn-level-add" @click="rule.params.levels.push({ threshold_pct: 30, sell_ratio: 0.5 })">+ 添加档位</button>
+                </template>
+                <!-- signal_exit -->
+                <template v-else-if="rule.type === 'signal_exit'">
+                  <input type="text" v-model="rule.params.signal_id" class="rule-input-sm" placeholder="信号ID" style="width:80px" />
+                  <select v-model="rule.params.operator" class="rule-select">
+                    <option value="gt">大于</option>
+                    <option value="lt">小于</option>
+                    <option value="cross_below">下穿</option>
+                    <option value="cross_above">上穿</option>
+                  </select>
+                </template>
+              </template>
+            </div>
+          </div>
+          <div class="rules-footer">
+            <span>滑点</span>
+            <input type="number" v-model.number="exitRulesOverride.slippage_pct" class="rule-input-sm" step="0.1" min="0" max="5" />
+            <span class="rule-unit">%</span>
           </div>
         </div>
         <div class="rules-section">
@@ -158,6 +192,9 @@
               <span>分配方式</span>
               <select v-model="positionRulesOverride.allocation" class="rule-select">
                 <option value="equal">等权分配</option>
+                <option value="signal_weighted">信号加权</option>
+                <option value="volatility_weighted">波动率加权</option>
+                <option value="risk_parity">风险平价</option>
               </select>
             </label>
           </div>
@@ -354,9 +391,14 @@ const startDate = ref(formatDate(new Date(new Date().setMonth(new Date().getMont
 const initialCapital = ref(100000)
 
 const exitRulesOverride = ref<strategyApi.ExitRules>({
-  stop_loss: { enabled: true, threshold_pct: -8 },
-  take_profit: { enabled: true, threshold_pct: 20 },
-  time_exit: { enabled: false, hold_days: 60 },
+  rules: [
+    { type: 'stop_loss', enabled: true, params: { threshold_pct: -8 }, priority: 1 },
+    { type: 'take_profit', enabled: true, params: { threshold_pct: 20 }, priority: 2 },
+    { type: 'time_exit', enabled: false, params: { hold_days: 60 }, priority: 3 },
+    { type: 'trailing_stop', enabled: false, params: { trail_pct: 5, activation_pct: 10 }, priority: 2 },
+    { type: 'segment_profit', enabled: false, params: { levels: [{ threshold_pct: 10, sell_ratio: 0.5 }, { threshold_pct: 20, sell_ratio: 0.5 }] }, priority: 2 },
+    { type: 'signal_exit', enabled: false, params: { signal_id: '', operator: '', params: {} }, priority: 5 },
+  ],
   slippage_pct: 0.3,
 })
 const positionRulesOverride = ref<strategyApi.PositionRules>({
@@ -682,8 +724,21 @@ async function loadRunError(runId: number) {
 }
 
 function reasonLabel(reason: string): string {
-  const map: Record<string, string> = { stop_loss: '🛑 止损', take_profit: '✅ 止盈', time_exit: '⏰ 到期', signal: '📡 信号', force_close: '🏁 清仓' }
+  const map: Record<string, string> = {
+    stop_loss: '🛑 止损', take_profit: '✅ 止盈', time_exit: '⏰ 到期',
+    trailing_stop: '📉 移动止盈', segment_profit: '📊 分段止盈',
+    signal_exit: '📡 信号', signal: '📡 信号', force_close: '🏁 清仓',
+  }
   return map[reason] || reason
+}
+
+function ruleName(type: string): string {
+  const map: Record<string, string> = {
+    stop_loss: '止损', take_profit: '止盈', time_exit: '到期退出',
+    trailing_stop: '移动止盈', segment_profit: '分段止盈',
+    signal_exit: '信号退出',
+  }
+  return map[type] || type
 }
 
 function onGoBack() {
@@ -904,8 +959,23 @@ const stratPoints = computed(() => snapshotData.value.map((d, i) => `${xPos(i)},
 .reason-stop_loss { background: #fff2f0; color: #cf1322; }
 .reason-take_profit { background: #f6ffed; color: #389e0d; }
 .reason-time_exit { background: #fffbe6; color: #d48806; }
+.reason-trailing_stop { background: #fff0f6; color: #c41d7f; }
+.reason-segment_profit { background: #f9f0ff; color: #722ed1; }
 .reason-signal { background: #f5f5f5; color: #999; }
 .reason-force_close { background: #e6f4ff; color: #1677ff; }
+
+/* ===== 动态规则列表 ===== */
+.rules-list { display: flex; flex-direction: column; gap: 8px; }
+.rule-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rule-check { display: flex; align-items: center; gap: 4px; cursor: pointer; min-width: 90px; }
+.rule-label { font-size: 13px; font-weight: 500; color: #333; }
+.rule-input-sm { width: 56px; padding: 3px 6px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; text-align: center; }
+.rule-input-xs { width: 44px; padding: 2px 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 12px; text-align: center; }
+.rule-param-label { font-size: 12px; color: #888; }
+.rules-footer { margin-top: 8px; display: flex; align-items: center; gap: 6px; font-size: 13px; color: #666; }
+.segment-level { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: #666; }
+.btn-level-del { padding: 0 4px; border: none; background: transparent; color: #cf1322; cursor: pointer; font-size: 12px; }
+.btn-level-add { margin-top: 2px; padding: 1px 8px; border: 1px dashed #d9d9d9; border-radius: 4px; background: transparent; color: #1677ff; cursor: pointer; font-size: 11px; }
 
 /* ===== 回测历史选择器 ===== */
 .history-select-wrap { position: relative; display: inline-block; }

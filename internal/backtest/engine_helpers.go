@@ -15,11 +15,6 @@ import (
 //  回测引擎辅助 — 交易日计算 / 序列化 / 费用 / 工厂函数
 // ============================================================================
 
-// newExitCheckerChain 创建默认卖出规则优先级链
-func newExitCheckerChain() exitCheckerChain {
-	return exitCheckerChain{&StopLossChecker{}, &TakeProfitChecker{}, &TimeExitChecker{}}
-}
-
 // =========================== 交易日 ===========================
 
 // getTradingDays 返回 [startDate, endDate] 区间内所有 A 股交易日（日期字符串）

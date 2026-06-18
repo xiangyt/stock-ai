@@ -45,13 +45,14 @@
       <div class="ai-input-area">
         <textarea
           v-model="aiText"
-          placeholder="例如：&#10;• MACD金叉且PE在20-50倍之间&#10;• 高ROE(>15%)的小盘成长股，市值小于50亿"
-          rows="3"
+          placeholder="例如：MACD金叉且PE在20-50倍之间 ｜ 高ROE(>15%)小盘成长股"
+          :rows="aiExpanded ? 4 : 1"
           @keydown.meta.enter="handleAISubmit"
           @keydown.ctrl.enter="handleAISubmit"
         ></textarea>
         <div class="ai-toolbar">
           <div class="ai-tools-left">
+            <span class="ai-tool-label" :class="{ active: aiExpanded }" @click="aiExpanded = !aiExpanded">{{ aiExpanded ? '收起 ▲' : '展开 ▼' }}</span>
             <span class="ai-tool-label">☰ A股 ▾</span>
             <span class="ai-tool-label" @click="scrollToIndicators">🔍 条件选股</span>
             <span class="ai-tool-label dim">★ 我的收藏</span>
@@ -68,19 +69,47 @@
 
     <!-- ========== Section 2: 条件选股（指标平铺网格） ========== -->
     <section class="sec-signals">
+      <!-- 页签 + 操作按钮同行 -->
       <div class="sec-header-row">
-        <div class="sec-left">
-          <h3 class="sec-title">条件选股</h3>
-          <span class="sig-count-tag" v-if="signals.length > 0">{{ signals.length }} 个条件</span>
+        <div class="signal-tabs-inline">
+          <button
+            :class="['signal-tab', { active: activeTab === 'buy_signals' }]"
+            @click="activeTab = 'buy_signals'"
+          >
+            信号买入
+            <span v-if="signals.length > 0" class="tab-badge">{{ signals.length }}</span>
+          </button>
+          <button
+            :class="['signal-tab', { active: activeTab === 'sell_signals' }]"
+            @click="activeTab = 'sell_signals'"
+          >
+            信号卖出
+            <span v-if="sellSignals.length > 0" class="tab-badge">{{ sellSignals.length }}</span>
+          </button>
+          <button
+            :class="['signal-tab', { active: activeTab === 'position' }]"
+            @click="activeTab = 'position'"
+          >
+            仓位管理
+          </button>
+          <button
+            :class="['signal-tab', { active: activeTab === 'exit_rules' }]"
+            @click="activeTab = 'exit_rules'"
+          >
+            卖出规则
+          </button>
         </div>
-        <div class="sec-right">
-          <button class="btn-sec-sm" v-if="isOwner && signals.length > 0" @click="onClearClick">清空全部</button>
-          <button class="btn-sec-sm" v-if="isOwner" @click="exportJSON" :disabled="signals.length === 0" title="导出信号">导出</button>
-          <label v-if="isOwner" class="btn-sec-sm" title="导入信号">导入
+        <div class="sec-right" v-if="isOwner && isSignalTab">
+          <button class="btn-sec-sm" v-if="(activeTab === 'buy_signals' ? signals.length > 0 : sellSignals.length > 0)" @click="onClearClick">清空全部</button>
+          <button class="btn-sec-sm" @click="exportJSON" :disabled="signals.length === 0 && sellSignals.length === 0" title="导出信号">导出</button>
+          <label class="btn-sec-sm" title="导入信号">导入
             <input type="file" accept=".json" @change="importJSON" style="display:none" />
           </label>
         </div>
       </div>
+
+      <!-- 信号页签内容：指标网格 + 信号选择 -->
+      <template v-if="isSignalTab">
 
       <!-- 分类 + 指标平铺区域（四列横排，仅自己的策略可编辑） -->
       <div class="indicators-flat-area" v-if="isOwner && !indicatorsLoading">
@@ -202,11 +231,11 @@
               <span v-if="currentOpParams.length === 0" class="qf-no-params">该操作符无需额外参数</span>
             </div>
             <button
-              class="qf-add-btn"
+              :class="['qf-add-btn', 'qf-add-btn--' + activeTab]"
               :disabled="!canQuickAdd"
               @click="addCustomSignal"
             >
-              ✅ 添加到策略
+              {{ activeTab === 'buy_signals' ? '📈 添加为买入信号' : '📉 添加为卖出信号' }}
             </button>
             </div>
             <div class="qf-sig-desc" v-if="currentCustomSig?.description">{{ currentCustomSig.description }}</div>
@@ -228,32 +257,129 @@
         </div>
       </Teleport>
 
-      <!-- 空状态 -->
-      <div v-if="signals.length === 0" class="empty-signals">
+      <!-- 空状态（根据活跃页签显示） -->
+      <div v-if="activeTabSignals.length === 0" class="empty-signals">
         <div class="empty-icon">📭</div>
-        <p>还没有信号条件</p>
+        <p>还没有{{ activeTab === 'buy_signals' ? '买入' : '卖出' }}信号条件</p>
         <p class="empty-sub">点击上方指标的 ▾ 展开并选择信号条件，或使用 AI 输入框自动生成</p>
       </div>
 
-      <!-- 已添加信号标签行 -->
-      <div v-if="signals.length > 0" class="signals-chips-area">
+      <!-- 已添加信号标签行（根据活跃页签显示） -->
+      <div v-if="activeTabSignals.length > 0" class="signals-chips-area">
         <transition-group name="sig-chip" tag="div" class="chips-row">
-          <div v-for="(s, i) in signals" :key="s.uid"
+          <div v-for="(s, i) in activeTabSignals" :key="i"
             class="sig-chip" :class="'chip-' + s.category">
             <span class="chip-bar"></span>
             <span class="chip-name">{{ s.name === s.indicator_name ? s.name : `${s.indicator_name}: ${s.name}` }}</span>
             <span v-if="s.operator !== 'none'" class="chip-op">{{ s.opSym }} {{ s.paramText }}</span>
-            <button v-if="isOwner" class="chip-del" @click="removeSignal(i)">✕</button>
+            <button v-if="isOwner" class="chip-del" @click="removeActiveTabSignal(i)">✕</button>
           </div>
         </transition-group>
       </div>
 
-      <!-- 底部操作栏 -->
-      <div v-if="signals.length > 0" class="sec-footer">
+      <!-- 底部操作栏（仅买入页签显示） -->
+      <div v-if="activeTab === 'buy_signals' && signals.length > 0" class="sec-footer">
         <div class="logic-toggle">
           <span class="logic-label">逻辑关系：</span>
           <button :class="['logic-btn', { active: logicalOp === 'AND' }]" :disabled="!isOwner" @click="isOwner && (logicalOp = 'AND')">AND</button>
           <button :class="['logic-btn', { active: logicalOp === 'OR' }]" :disabled="!isOwner" @click="isOwner && (logicalOp = 'OR')">OR</button>
+        </div>
+      </div>
+      </template>
+
+      <!-- 仓位管理页签内容 -->
+      <div v-if="activeTab === 'position' && isOwner" class="rules-body">
+        <div class="rules-subsection">
+          <h4 class="rules-subtitle">📦 仓位管理</h4>
+          <div class="rules-pos-grid">
+            <label class="rule-item">
+              <span>最大持仓</span>
+              <input type="number" v-model.number="positionRules.max_positions" class="rule-input" step="1" min="1" max="50" @change="markRulesDirty" />
+              <span class="rule-unit">只</span>
+            </label>
+            <label class="rule-item">
+              <span>单票上限</span>
+              <input type="number" v-model.number="positionRules.max_single_pct" class="rule-input" step="5" min="0" max="100" @change="markRulesDirty" />
+              <span class="rule-unit">%</span>
+            </label>
+            <label class="rule-item">
+              <span>分配方式</span>
+              <select v-model="positionRules.allocation" class="rule-select" @change="markRulesDirty">
+                <option value="equal">等权分配</option>
+                <option value="signal_weighted">信号加权</option>
+                <option value="volatility_weighted">波动率加权</option>
+                <option value="risk_parity">风险平价</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- 卖出规则页签内容 -->
+      <div v-if="activeTab === 'exit_rules' && isOwner" class="rules-body">
+        <!-- 卖出规则 -->
+        <div class="rules-subsection">
+          <h4 class="rules-subtitle">📐 卖出规则</h4>
+          <div class="rules-list">
+            <!-- 滑点 -->
+            <div class="rule-row">
+              <label class="rule-check">
+                <input type="checkbox" checked disabled />
+                <span class="rule-label">滑点</span>
+                <span class="rule-help" data-tooltip="模拟实际交易中成交价与触发价的偏差，卖出时以低于触发价滑点%的价格成交，使回测更接近真实">?</span>
+              </label>
+              <div class="rule-params-wrap">
+                <input type="number" v-model.number="exitRules.slippage_pct" class="rule-input-sm" step="0.1" min="0" max="5" @change="markRulesDirty" />
+                <span class="rule-unit">%</span>
+              </div>
+            </div>
+
+            <div v-for="(rule, ri) in exitRules.rules" :key="rule.type" class="rule-row">
+              <label class="rule-check">
+                <input type="checkbox" v-model="rule.enabled" @change="markRulesDirty" />
+                <span class="rule-label">{{ ruleName(rule.type) }}</span>
+                <span class="rule-help" :data-tooltip="ruleDesc(rule.type)">?</span>
+              </label>
+              <template v-if="rule.enabled">
+                <div class="rule-params-wrap">
+                <template v-if="rule.type === 'stop_loss'">
+                  <input type="number" v-model.number="rule.params.threshold_pct" class="rule-input-sm" step="1" @change="markRulesDirty" />
+                  <span class="rule-unit">%</span>
+                </template>
+                <template v-else-if="rule.type === 'take_profit'">
+                  <input type="number" v-model.number="rule.params.threshold_pct" class="rule-input-sm" step="1" @change="markRulesDirty" />
+                  <span class="rule-unit">%</span>
+                </template>
+                <template v-else-if="rule.type === 'time_exit'">
+                  <input type="number" v-model.number="rule.params.hold_days" class="rule-input-sm" step="1" min="1" @change="markRulesDirty" />
+                  <span class="rule-unit">天</span>
+                </template>
+                <template v-else-if="rule.type === 'trailing_stop'">
+                  <span class="rule-param-label">激活</span>
+                  <input type="number" v-model.number="rule.params.activation_pct" class="rule-input-sm" step="1" @change="markRulesDirty" />
+                  <span class="rule-unit">%</span>
+                  <span class="rule-param-label">回撤</span>
+                  <input type="number" v-model.number="rule.params.trail_pct" class="rule-input-sm" step="0.5" @change="markRulesDirty" />
+                  <span class="rule-unit">%</span>
+                </template>
+                <template v-else-if="rule.type === 'segment_profit'">
+                  <div class="segment-list">
+                    <div v-for="(lv, li) in rule.params.levels" :key="li" class="segment-level">
+                      <span class="seg-idx">#{{ Number(li) + 1 }}</span>
+                      <span class="seg-label">涨</span>
+                      <input type="number" v-model.number="lv.threshold_pct" class="rule-input-xs" step="1" @change="markRulesDirty" />
+                      <span class="seg-unit">% 卖</span>
+                      <input type="number" v-model.number="lv.sell_ratio" class="rule-input-xs" step="0.1" min="0.1" max="1" @change="markRulesDirty" />
+                      <span class="seg-unit">成</span>
+                      <button v-if="rule.params.levels.length > 1" class="btn-level-del" @click="rule.params.levels.splice(li,1); markRulesDirty()">✕</button>
+                    </div>
+                    <button v-if="rule.params.levels.length < 5" class="btn-level-add" @click="rule.params.levels.push({ threshold_pct: 30, sell_ratio: 0.5 }); markRulesDirty()">+ 添加档位</button>
+                  </div>
+                </template>
+                </div>
+              </template>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -704,6 +830,86 @@ const editingId = ref<number | null>(null) // 后端数字 ID，null = 新建模
 /** 脏标记：是否进行了信号增删操作（未保存） */
 const isDirty = ref(false)
 
+// ===== 卖出规则 & 仓位管理 =====
+const showRulesPanel = ref(true)
+const rulesDirty = ref(false)
+const exitRules = reactive<strategyApi.ExitRules>({
+  rules: [
+    { type: 'stop_loss', enabled: true, params: { threshold_pct: -8 }, priority: 1 },
+    { type: 'take_profit', enabled: true, params: { threshold_pct: 20 }, priority: 2 },
+    { type: 'time_exit', enabled: false, params: { hold_days: 10 }, priority: 3 },
+    { type: 'trailing_stop', enabled: false, params: { trail_pct: 5, activation_pct: 10 }, priority: 2 },
+    { type: 'segment_profit', enabled: false, params: { levels: [{ threshold_pct: 10, sell_ratio: 0.5 }, { threshold_pct: 20, sell_ratio: 0.5 }] }, priority: 2 },
+  ],
+  slippage_pct: 0.3,
+})
+const positionRules = reactive<strategyApi.PositionRules>({
+  max_positions: 5, max_single_pct: 20, allocation: 'equal',
+})
+
+function markRulesDirty() { rulesDirty.value = true }
+function ruleName(type: string): string {
+  const map: Record<string, string> = {
+    stop_loss: '止损', take_profit: '止盈', time_exit: '到期退出',
+    trailing_stop: '移动止盈', segment_profit: '分段止盈',
+  }
+  return map[type] || type
+}
+
+function ruleDesc(type: string): string {
+  const map: Record<string, string> = {
+    stop_loss: '股价跌破止损线后立即平仓，控制最大亏损幅度',
+    take_profit: '股价达到目标收益后自动止盈卖出',
+    time_exit: '持仓超过指定自然日天数后，到期以当日收盘价强制平仓',
+    trailing_stop: '从最高点回撤超过指定幅度后触发卖出，锁定利润',
+    segment_profit: '分档位分批卖出，每达到一个收益目标卖出一定比例仓位',
+  }
+  return map[type] || ''
+}
+
+// ===== 信号退出选择器（复用条件选股模块） =====
+// 已改为页签模式，sellSignals 独立管理卖出信号
+
+/** 当前活跃的页签 */
+type TabKey = 'buy_signals' | 'sell_signals' | 'exit_rules' | 'position'
+const activeTab = ref<TabKey>('buy_signals')
+
+/** 是否为信号类页签 */
+const isSignalTab = computed(() => activeTab.value === 'buy_signals' || activeTab.value === 'sell_signals')
+
+/** 卖出信号列表 */
+interface SellSig {
+  _key: number
+  signal_id: string
+  indicator_id: string
+  indicator_name: string
+  name: string
+  category: Category
+  operator: string  // 使用 string 以兼容 'none' 等特殊操作符
+  opSym: string
+  params: Record<string, any>
+  paramText: string
+}
+let sellKeyCounter = 0
+const sellSignals = ref<SellSig[]>([])
+
+/** 当前活跃页签对应的信号数组 */
+const activeTabSignals = computed(() => {
+  return activeTab.value === 'buy_signals' ? signals.value : sellSignals.value
+})
+
+/** 从活跃页签移除信号 */
+function removeActiveTabSignal(idx: number) {
+  if (activeTab.value === 'buy_signals') {
+    signals.value.splice(idx, 1)
+  } else {
+    sellSignals.value.splice(idx, 1)
+  }
+  markDirty()
+}
+function rulesToJSON(): string { return JSON.stringify({ ...exitRules }) }
+function posRulesToJSON(): string { return JSON.stringify({ ...positionRules }) }
+
 /** 标记脏状态 */
 function markDirty() { isDirty.value = true }
 /** 清除脏状态 */
@@ -726,6 +932,7 @@ function scrollToIndicators() {
 
 // AI 输入文本
 const aiText = ref('')
+const aiExpanded = ref(false)
 
 // ========== API 保存逻辑 ==========
 import * as strategyApi from '../api/strategies'
@@ -737,7 +944,20 @@ async function saveStrategy() {
   if (!name) { alert('请输入策略名称'); return }
 
   try {
-    const payload = {
+    // 构建 exit_rules：合并基础规则 + 卖出信号
+    const baseRules = exitRules.rules.filter((r: any) => r.type !== 'signal_exit')
+    const sellSignalRules = sellSignals.value.map(ss => ({
+      type: 'signal_exit',
+      enabled: true,
+      params: { signal_id: ss.signal_id, operator: ss.operator, params: ss.params },
+      priority: 5,
+    }))
+    const mergedExitRules = {
+      rules: [...baseRules, ...sellSignalRules],
+      slippage_pct: exitRules.slippage_pct,
+    }
+
+    const payload: Record<string, any> = {
       name,
       logical_op: logicalOp.value,
       signals: signals.value.map(s => ({
@@ -746,20 +966,23 @@ async function saveStrategy() {
         params: s.params,
       })),
       description: '',
+      exit_rules: mergedExitRules,
+      position_rules: { ...positionRules },
     }
 
     let result
     if (editingId.value) {
       // 更新已有策略
-      result = await strategyApi.updateStrategy(editingId.value, payload)
+      result = await strategyApi.updateStrategy(editingId.value, payload as any)
     } else {
       // 创建新策略
-      result = await strategyApi.createStrategy(payload)
+      result = await strategyApi.createStrategy(payload as any)
       editingId.value = result.id  // 保存后进入编辑模式
     }
 
     emit('saved', { id: result.id, name: result.name })
     clearDirty()
+    rulesDirty.value = false
   } catch (e) {
     console.error('保存策略失败:', e)
     alert('保存失败: ' + (e as Error).message)
@@ -768,7 +991,7 @@ async function saveStrategy() {
 
 /** 判断当前是否有未保存的修改（信号增删操作） */
 function hasUnsavedChanges(): boolean {
-  return isDirty.value
+  return isDirty.value || rulesDirty.value
 }
 
 /** 点击历史回测按钮 */
@@ -800,35 +1023,6 @@ function toggleExpandIndicator(indID: string) {
   expandedIndicatorID.value = indID
 }
 
-/** 选择信号模板并直接添加（使用默认配置） */
-function selectSignalQuick(sig: SignalDef) {
-  if (!expandedInd.value || !sig.default_config) return
-  selectedSignalID.value = sig.signal_id
-
-  const ind = expandedInd.value
-  const cfg = sig.default_config
-
-  // 使用 default_config 中的默认操作符和参数，直接构建 Sig
-  const text = formatSignalParamText(cfg, ind)
-
-  const newSig: Sig = {
-    uid: ++uidCounter,
-    indicator_id: ind.id,
-    indicator_name: ind.name,
-    signal_id: cfg.signal_id,
-    name: sig.alias || sig.name || ind.name,
-    category: ind.category,
-    operator: cfg.operator,
-    opSym: operatorSymbols[cfg.operator] || cfg.operator,
-    opLbl: findOpLabel(ind, cfg.operator),
-    params: { ...cfg.params },
-    paramText: text,
-  }
-  signals.value.push(newSig)
-  markDirty()
-  emit('addSignals', [newSig])
-}
-
 /** 添加内置信号（一键添加，无需配置） */
 function addBuiltinSignal(sig: SignalDef) {
   if (!expandedInd.value) return
@@ -837,10 +1031,29 @@ function addBuiltinSignal(sig: SignalDef) {
   // 使用 default_config（如果有），否则使用空配置（无参内置信号如 513 战法）
   const cfg: SignalConfig = sig.default_config || {
     signal_id: sig.signal_id,
-    operator: 'none',  // 无参信号使用特殊操作符
+    operator: 'none' as CompareOperator,  // 无参信号使用特殊操作符
     params: {},
   }
   const text = formatSignalParamText(cfg, ind)
+  const isNoneOp = (cfg.operator as string) === 'none'
+
+  if (activeTab.value === 'sell_signals') {
+    // 卖出信号
+    sellSignals.value.push({
+      _key: ++sellKeyCounter,
+      signal_id: cfg.signal_id,
+      indicator_id: ind.id,
+      indicator_name: ind.name,
+      name: sig.alias || sig.name,
+      category: ind.category,
+      operator: cfg.operator,
+      opSym: isNoneOp ? '' : ((operatorSymbols as any)[cfg.operator] || cfg.operator),
+      params: { ...cfg.params },
+      paramText: text,
+    })
+    markDirty()
+    return
+  }
 
   const newSig: Sig = {
     uid: ++uidCounter,
@@ -850,7 +1063,7 @@ function addBuiltinSignal(sig: SignalDef) {
     name: sig.alias || sig.name,
     category: ind.category,
     operator: cfg.operator,
-    opSym: cfg.operator === 'none' ? '' : (operatorSymbols[cfg.operator] || cfg.operator),
+    opSym: isNoneOp ? '' : ((operatorSymbols as any)[cfg.operator] || cfg.operator),
     opLbl: findOpLabel(ind, cfg.operator),
     params: { ...cfg.params },
     paramText: text,
@@ -912,6 +1125,25 @@ function addCustomSignal() {
     { signal_id: sig.signal_id, operator: customOperator.value, params: collected } as SignalConfig,
     ind,
   )
+
+  if (activeTab.value === 'sell_signals') {
+    // 卖出信号
+    sellSignals.value.push({
+      _key: ++sellKeyCounter,
+      signal_id: sig.signal_id,
+      indicator_id: ind.id,
+      indicator_name: ind.name,
+      name: sig.alias || sig.name || ind.name,
+      category: ind.category,
+      operator: customOperator.value,
+      opSym: operatorSymbols[customOperator.value] || customOperator.value,
+      params: collected,
+      paramText: text,
+    })
+    markDirty()
+    clearParams()
+    return
+  }
 
   const newSig: Sig = {
     uid: ++uidCounter,
@@ -1045,14 +1277,21 @@ function formatSignalParamText(cfg: SignalConfig, ind: IndicatorMeta): string {
   }
 }
 function onClearClick() {
+  const tabLabel = activeTab.value === 'buy_signals' ? '买入信号' : '卖出信号'
+  const count = activeTab.value === 'buy_signals' ? signals.value.length : sellSignals.value.length
   showConfirmModal({
     title: '⚠️ 确认清空',
-    body: '确定要清空所有信号条件吗？此操作不可撤销。',
-    onOk: () => { signals.value = []; markDirty() },
+    body: `确定要清空全部${tabLabel}（${count} 个条件）吗？此操作不可撤销。`,
+    onOk: () => {
+      if (activeTab.value === 'buy_signals') {
+        signals.value = []
+      } else {
+        sellSignals.value = []
+      }
+      markDirty()
+    },
   })
 }
-
-function removeSignal(idx: number) { signals.value.splice(idx, 1); markDirty() }
 
 
 /** 根据 signal_id 查找信号名称 */
@@ -1108,15 +1347,18 @@ function enrichSignal(raw: any): Sig {
 function handleAISubmit() { /* TODO: 对接 AI 解析 */ }
 
 function exportJSON() {
-  const json = JSON.stringify(
-    signals.value.map(s => ({
+  const json = JSON.stringify({
+    buy_signals: signals.value.map(s => ({
       signal_id: s.signal_id,
       operator: s.operator,
       params: s.params,
     })),
-    null,
-    2
-  )
+    sell_signals: sellSignals.value.map(ss => ({
+      signal_id: ss.signal_id,
+      operator: ss.operator,
+      params: ss.params,
+    })),
+  }, null, 2)
   const blob = new Blob([json], { type: 'application/json' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
@@ -1374,14 +1616,74 @@ async function loadStrategyFromOutside(s: { id: string | number; name: string; s
       return enrichSignal(raw)
     })
     signals.value = enriched
-    clearDirty()
-    console.warn('[StrategyBuilder] signals loaded', signals.value)
     logicalOp.value = s.logicalOp || 'AND'
+    // 加载卖出规则和仓位管理
+    sellSignals.value = []
+    sellKeyCounter = 0
+    if ((s as any).exit_rules) {
+      try {
+        const er = JSON.parse((s as any).exit_rules)
+        if (er.rules) {
+          exitRules.rules.length = 0
+          // 分离 signal_exit 规则 → sellSignals
+          const nonSignalRules: any[] = []
+          for (const rule of er.rules) {
+            if (rule.type === 'signal_exit' && rule.enabled && rule.params?.signal_id) {
+              // 重建 sellSignal 条目
+              const sigName = findSignalNameById(rule.params.signal_id)
+              sellSignals.value.push({
+                _key: ++sellKeyCounter,
+                signal_id: rule.params.signal_id,
+                indicator_id: getIndicatorID(rule.params.signal_id),
+                indicator_name: sigName ? sigName.indicatorName : '',
+                name: sigName ? sigName.sigName : rule.params.signal_id,
+                category: sigName ? sigName.category : 'technical',
+                operator: rule.params.operator || '',
+                opSym: (operatorSymbols as any)[rule.params.operator] || rule.params.operator || '',
+                params: { ...(rule.params.params || {}) },
+                paramText: '',
+              })
+            } else {
+              nonSignalRules.push(rule)
+            }
+          }
+          exitRules.rules.push(...nonSignalRules)
+        }
+        if (er.slippage_pct != null) exitRules.slippage_pct = er.slippage_pct
+      } catch {}
+    }
+    if ((s as any).position_rules) {
+      try {
+        const pr = JSON.parse((s as any).position_rules)
+        if (pr.max_positions != null) positionRules.max_positions = pr.max_positions
+        if (pr.max_single_pct != null) positionRules.max_single_pct = pr.max_single_pct
+        if (pr.allocation) positionRules.allocation = pr.allocation
+      } catch {}
+    }
+    clearDirty()
+    rulesDirty.value = false
   } catch (e) {
     console.error('[StrategyBuilder] 加载策略失败:', e)
   }
 }
-function resetAllSignals() { editingId.value = null; strategyOwnerId.value = 0; strategyName.value = ''; signals.value = []; logicalOp.value = 'AND'; uidCounter = 0; clearDirty() }
+
+/** 根据 signal_id 在整个指标数据中查找信号名称（跨分类） */
+function findSignalNameById(signalId: string): { sigName: string; indicatorName: string; category: Category } | null {
+  const indId = getIndicatorID(signalId)
+  for (const cat of ['technical', 'market', 'fundamental', 'financial'] as Category[]) {
+    const ind = allData.value[cat]?.find(i => i.id === indId)
+    if (ind) {
+      const sig = ind.signals.find(s => s.signal_id === signalId)
+      return {
+        sigName: sig ? (sig.alias || sig.name) : signalId,
+        indicatorName: ind.name,
+        category: cat,
+      }
+    }
+  }
+  return null
+}
+function resetAllSignals() { editingId.value = null; strategyOwnerId.value = 0; strategyName.value = ''; signals.value = []; sellSignals.value = []; sellKeyCounter = 0; logicalOp.value = 'AND'; uidCounter = 0; clearDirty(); rulesDirty.value = false; activeTab.value = 'buy_signals' }
 
 defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 </script>
@@ -1466,6 +1768,7 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
   font-size: 13px; color: #555; padding: 4px 12px; border-radius: 4px;
   cursor: pointer; transition: .12s;
 }
+.ai-tool-label.active { color: #1677ff; font-weight: 500; }
 .ai-tool-label:hover { background: #f5f5f5; color: #333; }
 .ai-tool-label.active { color: #cf1322; font-weight: 600; }
 .ai-tool-label.dim { color: #bbb; cursor: default; }
@@ -1495,6 +1798,35 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .btn-sec-sm { padding: 5px 14px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; font-size: 12px; cursor: pointer; color: #666; }
 .btn-sec-sm:hover { border-color: #cf1322; color: #cf1322; }
 
+/* ====== 信号页签（买入/卖出） ====== */
+.signal-tabs {
+  display: flex; gap: 0; margin-bottom: 14px;
+  border-bottom: 2px solid #e8e8e8;
+}
+.signal-tabs-inline {
+  display: flex; gap: 0;
+}
+.signal-tab {
+  padding: 8px 18px; border: none; background: transparent;
+  font-size: 14px; font-weight: 500; color: #888; cursor: pointer;
+  transition: all .15s; border-bottom: 2px solid transparent;
+  margin-bottom: -2px; display: flex; align-items: center; gap: 6px;
+}
+.signal-tab:hover { color: #1677ff; }
+.signal-tab.active {
+  color: #1677ff; font-weight: 700;
+  border-bottom-color: #1677ff;
+}
+.tab-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 4px;
+  border-radius: 10px; font-size: 11px; font-weight: 700;
+  background: #e6f4ff; color: #1677ff;
+}
+.signal-tab.active .tab-badge {
+  background: #1677ff; color: #fff;
+}
+
 /* ====== 指标平铺网格（四列横排） ====== */
 .indicators-loading {
   display: flex; align-items: center; justify-content: center;
@@ -1518,7 +1850,7 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
   border: 1px solid #d0d0d0;
   border-radius: 8px;
   padding: 10px 12px;
-  background: #fafafa;
+  background: linear-gradient(to bottom, #f0f9ff, #fff);
 }
 .cat-section-header {
   font-size: 12.5px; font-weight: 700; color: #888;
@@ -1619,10 +1951,14 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .qf-add-btn {
   padding: 5px 16px; font-size: 13px; font-weight: 600; color: #fff;
   background: linear-gradient(135deg, #1677ff, #0958d9); border: none;
-  border-radius: 6px; cursor: pointer; transition: .15s; white-space: nowrap;
+  border-radius: 6px; cursor: pointer; transition: all .15s; white-space: nowrap;
 }
-.qf-add-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(22,119,255,.3); }
+.qf-add-btn:hover:not(:disabled) { transform: translateY(-1px); }
 .qf-add-btn:disabled { background: #d9d9d9; cursor: not-allowed; }
+.qf-add-btn--buy_signals { background: linear-gradient(135deg, #1677ff, #0958d9); }
+.qf-add-btn--buy_signals:hover:not(:disabled) { box-shadow: 0 2px 8px rgba(22,119,255,.3); }
+.qf-add-btn--sell_signals { background: linear-gradient(135deg, #52c41a, #389e0d); }
+.qf-add-btn--sell_signals:hover:not(:disabled) { box-shadow: 0 2px 8px rgba(82,196,26,.35); }
 /* 多选 checkbox 组 */
 .qf-multi-select {
   display: inline-flex; gap: 4px; flex-wrap: wrap;
@@ -1850,4 +2186,89 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .btn-modal-cancel:hover { border-color: #aaa; }
 .btn-modal-danger { padding: 7px 18px; border: none; border-radius: 6px; background: #cf1322; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-modal-danger:hover { background: #a8071a; }
+
+/* ===== 卖出规则 & 仓位管理 ===== */
+.rules-body {
+  margin-top: 0; display: flex; flex-direction: column; gap: 16px;
+}
+.rules-subsection {
+  background: linear-gradient(to bottom, #f0f9ff, #fff);
+  border: 1px solid #e8e8e8; border-radius: 8px; padding: 14px 16px;
+}
+.rules-subtitle { font-size: 14px; font-weight: 700; color: #333; margin: 0 0 10px; }
+.rules-list { display: flex; flex-direction: column; gap: 8px; }
+.rule-row { display: flex; align-items: center; gap: 8px; min-height: 34px; }
+.rule-row .rule-params-wrap { display: flex; align-items: center; gap: 6px; }
+.rule-check { display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 90px; flex-shrink: 0; }
+.rule-check input[type="checkbox"] {
+  width: 15px; height: 15px; accent-color: #1677ff; cursor: pointer;
+}
+.rule-label { font-size: 13px; font-weight: 500; color: #333; min-width: 56px; }
+.rule-help {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 1px solid #bbb; color: #999; font-size: 10px; font-weight: 700;
+  cursor: help; flex-shrink: 0; line-height: 1;
+  transition: all .15s; position: relative;
+}
+.rule-help:hover { border-color: #1677ff; color: #1677ff; background: #e6f4ff; }
+.rule-help::after {
+  content: attr(data-tooltip);
+  position: absolute; top: calc(100% + 6px); left: 50%;
+  transform: translateX(-50%);
+  display: inline-block;
+  background: #333; color: #fff; font-size: 12px; font-weight: 400;
+  padding: 8px 12px; border-radius: 6px;
+  white-space: normal;
+  min-width: 200px; max-width: 320px;
+  line-height: 1.6;
+  word-break: normal; overflow-wrap: break-word;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .15s, visibility .15s;
+  z-index: 999;
+}
+.rule-help:hover::after { opacity: 1; visibility: visible; }
+.rule-input-sm {
+  width: 60px; padding: 5px 8px; border: 1px solid #d9d9d9; border-radius: 6px;
+  font-size: 13px; text-align: center; color: #333; background: #fff; outline: none;
+  transition: border-color .15s;
+}
+.rule-input-sm:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.06); }
+.rule-input-xs {
+  width: 44px; padding: 4px 4px; border: 1px solid #d9d9d9; border-radius: 6px;
+  font-size: 12px; text-align: center; color: #333; background: #fff; outline: none;
+  transition: border-color .15s;
+}
+.rule-input-xs:focus { border-color: #1677ff; }
+.rule-input {
+  width: 60px; padding: 5px 8px; border: 1px solid #d9d9d9; border-radius: 6px;
+  font-size: 13px; text-align: center; color: #333; background: #fff; outline: none;
+  transition: border-color .15s;
+}
+.rule-input:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.06); }
+.rule-param-label { font-size: 12.5px; color: #888; }
+.rule-unit { font-size: 12.5px; color: #888; }
+.rule-select {
+  padding: 5px 10px; border: 1px solid #d9d9d9; border-radius: 6px;
+  font-size: 13px; color: #333; background: #fff; outline: none; cursor: pointer;
+  transition: border-color .15s;
+}
+.rule-select:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.06); }
+.rules-pos-grid { display: flex; flex-wrap: wrap; gap: 16px; }
+.rules-pos-grid .rule-item {
+  display: flex; align-items: center; gap: 6px; font-size: 13px; color: #555;
+}
+.segment-list { display: flex; flex-direction: column; gap: 4px; margin-left: 0; padding-left: 0; }
+.segment-level {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: #555;
+  padding: 3px 0; border-radius: 6px;
+  white-space: nowrap;
+}
+.seg-idx { color: #999; font-size: 11px; min-width: 18px; }
+.seg-label { font-size: 12px; color: #888; }
+.seg-unit { font-size: 12px; color: #888; }
+.btn-level-del { padding: 0 4px; border: none; background: transparent; color: #cf1322; cursor: pointer; font-size: 12px; }
+.btn-level-add { padding: 4px 12px; border: 1px dashed #bae0ff; border-radius: 6px; background: #f0f7ff; color: #1677ff; cursor: pointer; font-size: 12px; transition: .15s; white-space: nowrap; flex-shrink: 0; }
+.btn-level-add:hover { border-color: #1677ff; background: #e6f4ff; }
 </style>

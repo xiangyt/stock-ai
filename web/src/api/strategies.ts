@@ -26,6 +26,8 @@ export interface StrategyDetail {
   logical_op: string      // "and" | "or"
   signals: StrategySignalInput[]
   description: string
+  exit_rules: string       // v1.1: 卖出规则 JSON
+  position_rules: string   // v1.1: 仓位规则 JSON
   backtest_count: number
   created_at: string
   updated_at: string
@@ -89,6 +91,7 @@ export async function fetchStrategyById(id: number): Promise<StrategyDetail> {
 /** 创建策略 */
 export async function createStrategy(data: {
   name: string; logical_op?: string; signals?: StrategySignalInput[]; description?: string
+  exit_rules?: ExitRules; position_rules?: PositionRules
 }): Promise<StrategyDetail> {
   return request<StrategyDetail>(BASE, {
     method: 'POST',
@@ -99,6 +102,7 @@ export async function createStrategy(data: {
 /** 更新策略（全量） */
 export async function updateStrategy(id: number, data: {
   name: string; logical_op?: string; signals?: StrategySignalInput[]; description?: string
+  exit_rules?: ExitRules; position_rules?: PositionRules
 }): Promise<StrategyDetail> {
   return request<StrategyDetail>(`${BASE}/${id}`, {
     method: 'PUT',
@@ -148,33 +152,32 @@ const BACKTEST_BASE = 'http://localhost:9100/api/v1'
 
 export type RunStatus = 'pending' | 'running' | 'done' | 'failed'
 
-export interface StopLossRule {
+/** 单条卖出规则配置（v1.1 可插拔架构） */
+export interface ExitRuleConfig {
+  type: string               // "stop_loss" | "take_profit" | "time_exit" | "trailing_stop" | "segment_profit"
   enabled: boolean
-  threshold_pct: number   // 负数, 如 -8.0
+  params: Record<string, any> // 类型专属参数
+  priority?: number           // 可选，覆盖默认优先级
 }
 
-export interface TakeProfitRule {
-  enabled: boolean
-  threshold_pct: number   // 正数, 如 20.0
-}
-
-export interface TimeExitRule {
-  enabled: boolean
-  hold_days: number       // 0 = 不启用
-}
-
+/** 卖出规则集（v1.1: rules[] 数组格式） */
 export interface ExitRules {
-  stop_loss?: StopLossRule
-  take_profit?: TakeProfitRule
-  time_exit?: TimeExitRule
-  exit_signals?: any[]        // P2 预留
+  rules: ExitRuleConfig[]
   slippage_pct: number        // 默认 0.3
 }
 
+/** 仓位分配配置（v1.1 对象格式） */
+export interface AllocationConfig {
+  type: string                // "equal" | "signal_weighted" | "volatility_weighted" | "risk_parity" | "custom_weight"
+  params?: Record<string, any>
+}
+
+/** 仓位管理规则 */
 export interface PositionRules {
   max_positions: number       // 0 = 不限制
   max_single_pct: number      // 0 = 不限制
-  allocation: string           // "equal"
+  allocation: string | AllocationConfig  // v1.1: "equal" 或 {"type":"equal","params":{}}
+  cash_buffer_pct?: number    // 现金缓冲比例，默认 5
 }
 
 export interface BacktestRun {

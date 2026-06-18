@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
@@ -16,10 +17,12 @@ func NewStrategyService() *StrategyService {
 
 // CreateStrategyReq 创建/更新策略的请求体
 type CreateStrategyReq struct {
-	Name        string               `json:"name" binding:"required"`
-	LogicalOp   string               `json:"logical_op"` // AND / OR (前端传大写)
-	Signals     []model.StrategySignal `json:"signals"`
-	Description string              `json:"description"`
+	Name          string               `json:"name" binding:"required"`
+	LogicalOp     string               `json:"logical_op"` // AND / OR (前端传大写)
+	Signals       []model.StrategySignal `json:"signals"`
+	Description   string               `json:"description"`
+	ExitRules     json.RawMessage      `json:"exit_rules,omitempty"`      // v1.1: 卖出规则 JSON
+	PositionRules json.RawMessage      `json:"position_rules,omitempty"`  // v1.1: 仓位规则 JSON
 }
 
 // RenameReq 重命名请求
@@ -53,6 +56,13 @@ func (svc *StrategyService) Create(req *CreateStrategyReq, uid uint) (*model.Str
 
 	if err := strategy.SetConditions(req.Signals); err != nil {
 		return nil, err
+	}
+
+	if len(req.ExitRules) > 0 {
+		strategy.ExitRules = string(req.ExitRules)
+	}
+	if len(req.PositionRules) > 0 {
+		strategy.PositionRules = string(req.PositionRules)
 	}
 
 	if err := db.CreateStrategy(strategy); err != nil {
@@ -126,6 +136,13 @@ func (svc *StrategyService) Update(id uint, req *CreateStrategyReq) (*model.Stra
 	s.LogicalOp = normalizeLogicalOp(req.LogicalOp)
 	s.Description = req.Description
 	s.UID = originalUID // 确保 UID 不变
+
+	if len(req.ExitRules) > 0 {
+		s.ExitRules = string(req.ExitRules)
+	}
+	if len(req.PositionRules) > 0 {
+		s.PositionRules = string(req.PositionRules)
+	}
 
 	if err := s.SetConditions(req.Signals); err != nil {
 		return nil, err

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	stocksource "stock-ai/internal/indicator/stocksource"
 	"stock-ai/internal/model"
 	"stock-ai/utils"
+
+	"stock-ai/internal/backtest/exit"
 )
 
 // Service 回测异步执行管理器
@@ -178,8 +181,32 @@ func (s *Service) run(runID uint64, strategy *model.Strategy, stockPool []string
 		minCommission:  minCommission,
 	}
 
-	// 5. 创建卖出规则检查链
-	exitChain := newExitCheckerChain()
+	// 5. 构建卖出规则检查链（可插拔架构）
+	exitChain, err := BuildExitChain(exitRules.Rules, exitRules.SlippagePct)
+	if err != nil {
+		s.failRun(runID, "构建卖出规则链失败: "+err.Error())
+		return
+	}
+
+	// 5.5 为信号退出规则注入评估器
+	for _, c := range exitChain {
+		if sc, ok := c.(*exit.SignalExitChecker); ok {
+			sc.SetEvaluator(func(signalID, operator string, params map[string]any, code string, dateInt int) bool {
+				stock, err := db.FindStockByCode(code)
+				if err != nil {
+					return false
+				}
+				src := stocksource.NewDBStock(&stock, dateInt)
+				cfg := &indicator.SignalConfig{
+					SignalID: signalID,
+					Operator: indicator.CompareOperator(operator),
+					Params:   params,
+				}
+				results := s.engine.Execute([]indicator.StockSource{src}, []*indicator.SignalConfig{cfg}, 1)
+				return len(results) > 0 && results[0].Result == indicator.ResultPassed
+			})
+		}
+	}
 
 	// 6. 逐日执行回测
 	prevEquity := initialCapital
@@ -211,9 +238,22 @@ func (s *Service) run(runID uint64, strategy *model.Strategy, stockPool []string
 			if !ok {
 				continue
 			}
-			decision := exitChain.Check(pos, bar, exitRules)
-			if decision != nil {
-				s.executeSell(rc, code, pos, bar, decision, date)
+			// 更新所有实现 DailyUpdateHook 的 checker 状态
+			for _, c := range exitChain {
+				if h, ok := c.(DailyUpdateHook); ok {
+					h.OnDailyUpdate(pos, bar)
+				}
+			}
+			// 按优先级检查（exitChain 已排序）
+			for _, c := range exitChain {
+				if decision := c.Check(pos, bar); decision != nil {
+					if decision.Quantity > 0 {
+						s.executePartialSell(rc, code, pos, bar, decision, date)
+					} else {
+						s.executeSell(rc, code, pos, bar, decision, date)
+					}
+					break // 触发一个就卖出，不再检查低优先级规则
+				}
 			}
 		}
 
@@ -230,7 +270,7 @@ func (s *Service) run(runID uint64, strategy *model.Strategy, stockPool []string
 				}
 			}
 			if len(candidates) > 0 {
-				s.checkBuySignals(rc, candidates, bars, sc, exitRules, positionRules, date)
+				s.checkBuySignals(rc, candidates, bars, sc, positionRules, exitChain, date)
 			}
 		}
 
@@ -414,13 +454,13 @@ func (s *Service) executeForceClose(rc *runContext, code string, pos *HoldingPos
 
 // checkBuySignals 检查买入信号并执行买入
 func (s *Service) checkBuySignals(rc *runContext, candidates []string, bars map[string]DayBar,
-	sc *strategyConditions, exitRules *model.ExitRules, posRules *model.PositionRules, date string) {
+	sc *strategyConditions, posRules *model.PositionRules, exitChain []ExitChecker, date string) {
 
 	if len(sc.Conditions) == 0 {
 		return
 	}
 
-	// 1. 只对有当日行情数据的候选股做信号评估（无行情数据的不评估）
+	// 1. 只对有当日行情数据的候选股做信号评估
 	tradeDate, err := utils.ParseDateToTradeDate(date)
 	if err != nil {
 		return
@@ -463,37 +503,63 @@ func (s *Service) checkBuySignals(rc *runContext, candidates []string, bars map[
 		}
 	}
 
-	// 4. 对通过信号评估的候选股执行买入
+	// 4. 收集通过信号的候选股信息，构建 Allocator 请求
+	candidateInfos := make([]CandidateInfo, 0, len(passed))
 	for _, code := range validCandidates {
 		if !passed[code] {
 			continue
 		}
-		bar, ok := bars[code]
+		bar := bars[code]
+		// 计算波动率（从 StockSource 获取近期 K 线）
+		volatility := calcVolatility(sourceMap[code])
+		candidateInfos = append(candidateInfos, CandidateInfo{
+			Code:        code,
+			Price:       bar.Close,
+			SignalScore: 1.0, // 默认评分（未来可从信号评估结果获取）
+			Volatility:  volatility,
+		})
+	}
+
+	if len(candidateInfos) == 0 {
+		return
+	}
+
+	// 5. 计算总权益
+	totalEquity := rc.cash
+	for _, p := range rc.holdings {
+		if b, ok2 := bars[p.StockCode]; ok2 {
+			totalEquity += float64(p.Quantity) * b.Close
+		}
+	}
+
+	// 6. 创建 Allocator 并分配资金
+	allocator, err := CreateAllocator(posRules.Allocation)
+	if err != nil {
+		return
+	}
+
+	allocReq := &AllocRequest{
+		Cash:            rc.cash,
+		TotalEquity:     totalEquity,
+		MaxPositions:    posRules.MaxPositions,
+		CurrentHoldings: len(rc.holdings),
+		MaxSinglePct:    posRules.MaxSinglePct,
+		CashBufferPct:   posRules.CashBufferPct,
+		Candidates:      candidateInfos,
+	}
+	allocResult := allocator.Allocate(allocReq)
+
+	// 7. 按分配结果执行买入
+	for _, order := range allocResult.Orders {
+		bar, ok := bars[order.Code]
 		if !ok {
 			continue
 		}
 
-		// 计算分配金额
-		totalEquity := rc.cash
-		for _, p := range rc.holdings {
-			if b, ok2 := bars[p.StockCode]; ok2 {
-				totalEquity += float64(p.Quantity) * b.Close
-			}
-		}
-
-		allocAmount := calcAllocation(rc.cash, posRules.MaxPositions, len(rc.holdings),
-			posRules.MaxSinglePct, totalEquity)
-		if allocAmount <= 0 {
-			continue
-		}
-
 		buyPrice := bar.Close
-		buyQty := int(allocAmount/buyPrice/100) * 100
-		if buyQty < 100 {
-			continue
-		}
-
+		buyQty := order.Quantity
 		buyAmount := buyPrice * float64(buyQty)
+
 		commission := calcCommission(buyAmount, rc.commissionRate, rc.minCommission)
 		totalCost := buyAmount + commission
 
@@ -506,7 +572,7 @@ func (s *Service) checkBuySignals(rc *runContext, candidates []string, bars map[
 
 		rc.trades = append(rc.trades, BacktestTrade{
 			RunID:      rc.runID,
-			StockCode:  code,
+			StockCode:  order.Code,
 			TradeType:  1, // 买入
 			Quantity:   buyQty,
 			Price:      buyPrice,
@@ -516,27 +582,103 @@ func (s *Service) checkBuySignals(rc *runContext, candidates []string, bars map[
 			CreatedAt:  time.Now(),
 		})
 
-		// 创建持仓 — 使用 exitRules（带 override）而非 sc.ExitRules（DB 原始值）
-		preStop, preProfit := calcEntryExitPrices(buyPrice, exitRules, date)
-		expiryDate := date
-		if exitRules.TimeExit != nil && exitRules.TimeExit.Enabled && exitRules.TimeExit.HoldDays > 0 {
-			exp, err := addTradingDays(date, exitRules.TimeExit.HoldDays)
-			if err == nil {
-				expiryDate = exp
+		// 创建持仓 — 调用所有 checker 的 OnEntry 钩子
+		pos := &HoldingPosition{
+			StockCode:  order.Code,
+			Quantity:   buyQty,
+			EntryPrice: buyPrice,
+			EntryDate:  date,
+			HoldDays:   0,
+		}
+		for _, c := range exitChain {
+			if h, ok := c.(EntryHook); ok {
+				h.OnEntry(pos, buyPrice, date)
 			}
 		}
+		rc.holdings[order.Code] = pos
+	}
+}
 
-		rc.holdings[code] = &HoldingPosition{
-			StockCode:     code,
-			Quantity:      buyQty,
-			EntryPrice:    buyPrice,
-			EntryDate:     date,
-			PreStopLoss:   preStop,
-			PreTakeProfit: preProfit,
-			ExpiryDate:    expiryDate,
-			HoldDays:      0,
+// calcVolatility 从 StockSource 计算近 20 日波动率
+func calcVolatility(src indicator.StockSource) float64 {
+	klines, err := src.GetDailyKline()
+	if err != nil || len(klines) < 2 {
+		return 1.0 // 默认波动率
+	}
+	// 取最近 20 条
+	start := 0
+	if len(klines) > 20 {
+		start = len(klines) - 20
+	}
+	klines = klines[start:]
+	// 计算日收益率的标准差（Close 是 int 类型，单位：分）
+	returns := make([]float64, 0, len(klines)-1)
+	for i := 1; i < len(klines); i++ {
+		if klines[i-1].Close > 0 {
+			prev := float64(klines[i-1].Close)
+			curr := float64(klines[i].Close)
+			r := (curr - prev) / prev
+			returns = append(returns, r)
 		}
 	}
+	if len(returns) == 0 {
+		return 1.0
+	}
+	mean := 0.0
+	for _, r := range returns {
+		mean += r
+	}
+	mean /= float64(len(returns))
+	variance := 0.0
+	for _, r := range returns {
+		variance += (r - mean) * (r - mean)
+	}
+	variance /= float64(len(returns))
+	return math.Sqrt(variance) * math.Sqrt(250) // 年化波动率
+}
+
+// executePartialSell 执行部分卖出
+func (s *Service) executePartialSell(rc *runContext, code string, pos *HoldingPosition, bar DayBar, decision *ExitDecision, date string) {
+	sellQty := decision.Quantity
+	if sellQty >= pos.Quantity {
+		sellQty = pos.Quantity
+	}
+
+	sellPrice := decision.Price
+	sellAmount := sellPrice * float64(sellQty)
+
+	commission := calcCommission(sellAmount, rc.commissionRate, rc.minCommission)
+	stampTax := calcStampTax(sellAmount)
+
+	rc.cash += sellAmount - commission - stampTax
+
+	// 计算盈亏（按持仓均价）
+	entryAmount := pos.EntryPrice * float64(sellQty)
+	profitLoss := sellAmount - entryAmount - commission - stampTax
+	profitLossPct := profitLoss / entryAmount * 100
+
+	exitReason := decision.Reason
+	preExitPrice := sellPrice
+
+	rc.trades = append(rc.trades, BacktestTrade{
+		RunID:         rc.runID,
+		StockCode:     code,
+		TradeType:     2, // 卖出
+		Quantity:      sellQty,
+		Price:         sellPrice,
+		Amount:        sellAmount,
+		Commission:    commission,
+		StampTax:      stampTax,
+		TradeDate:     NewDateOnly(date),
+		ExitReason:    &exitReason,
+		PreExitPrice:  &preExitPrice,
+		ProfitLoss:    &profitLoss,
+		ProfitLossPct: &profitLossPct,
+		CreatedAt:     time.Now(),
+	})
+
+	// 减少持仓数量，不删除持仓
+	pos.Quantity -= sellQty
 }
 
 // ============================================================================

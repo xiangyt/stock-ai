@@ -26,10 +26,12 @@ type StrategyDetail struct {
 	LogicalOp         string           `json:"logical_op"`
 	Signals           []StrategySignal `json:"signals"`
 	Description       string           `json:"description"`
+	ExitRules         string           `json:"exit_rules"`          // v1.1: 卖出规则 JSON
+	PositionRules     string           `json:"position_rules"`      // v1.1: 仓位规则 JSON
 	BacktestCount     int              `json:"backtest_count"`
-	SubscriptionCount int64            `json:"subscription_count"`          // 订阅数量
-	LastRunAt         *string          `json:"last_run_at,omitempty"`       // 最后运行时间
-	IsPublic          bool             `json:"is_public"`                   // 是否公开
+	SubscriptionCount int64            `json:"subscription_count"`
+	LastRunAt         *string          `json:"last_run_at,omitempty"`
+	IsPublic          bool             `json:"is_public"`
 	CreatedAt         string           `json:"created_at"`
 	UpdatedAt         string           `json:"updated_at"`
 }
@@ -56,6 +58,8 @@ func (s *Strategy) ToDetail() (*StrategyDetail, error) {
 		LogicalOp:     string(s.LogicalOp),
 		Signals:       signals,
 		Description:   s.Description,
+		ExitRules:     s.ExitRules,
+		PositionRules: s.PositionRules,
 		BacktestCount: s.BacktestCount,
 		LastRunAt:     lastRunAt,
 		IsPublic:      s.IsPublic,
