@@ -100,3 +100,14 @@ func CountTradesByPositionID(positionID uint) (int64, error) {
 		Count(&count).Error
 	return count, err
 }
+
+// GetAllActiveStockCodes 获取用户所有持有的股票代码（status=holding，去重）
+// 用于 Monitor 等需要知道所有持仓股代码的场景
+func GetAllActiveStockCodes(uid uint) ([]string, error) {
+	var codes []string
+	err := GetDB().Model(&model.Position{}).
+		Where("uid = ? AND status = ?", uid, model.PositionHolding).
+		Distinct("stock_code").
+		Pluck("stock_code", &codes).Error
+	return codes, err
+}

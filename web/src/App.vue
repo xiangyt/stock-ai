@@ -49,6 +49,11 @@
         <SubscriptionPage />
       </div>
 
+      <!-- ====== 盯盘监控页面 ====== -->
+      <div v-else-if="currentPage === 'monitor-config'" class="page">
+        <MonitorConfigPage />
+      </div>
+
       <!-- ====== 持仓管理页面 ====== -->
       <div v-else-if="currentPage === 'my-positions'" class="page positions-page">
         <PortfolioPage />
@@ -88,6 +93,7 @@ import AccountManagementPage from './components/AccountManagementPage.vue'
 import BotConfigPage from './components/BotConfigPage.vue'
 import DataCollectPage from './components/DataCollectPage.vue'
 import SubscriptionPage from './components/SubscriptionPage.vue'
+import MonitorConfigPage from './components/MonitorConfigPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import PortfolioPage from './components/PortfolioPage.vue'
 import * as strategyApi from './api/strategies'

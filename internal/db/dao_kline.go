@@ -444,3 +444,22 @@ func FormatTradeDate(tradeDate int) string {
 		(tradeDate%10000)/100,
 		tradeDate%100)
 }
+
+// GetAvgVolume5Day 获取近5个交易日日均成交量
+// 用于量比计算：当日量 / 近5日均量
+func GetAvgVolume5Day(code string) (float64, error) {
+	var volumes []int64
+	err := GetDB().Model(&model.DailyKline{}).
+		Where("stock_code = ?", code).
+		Order("trade_date DESC").
+		Limit(5).
+		Pluck("volume", &volumes).Error
+	if err != nil || len(volumes) == 0 {
+		return 0, err
+	}
+	var sum int64
+	for _, v := range volumes {
+		sum += v
+	}
+	return float64(sum) / float64(len(volumes)), nil
+}

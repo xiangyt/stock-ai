@@ -48,6 +48,19 @@ func DeletePushBot(id, userID uint) error {
 	return result.Error
 }
 
+// GetPushBotByIDForSystem 按 ID 查询机器人（不校验 UID，Monitor 等系统组件用）
+func GetPushBotByIDForSystem(id uint) (*model.PushBot, error) {
+	var bot model.PushBot
+	err := GetDB().Where("id = ?", id).First(&bot).Error
+	if err != nil {
+		if err.Error() == "record not found" {
+			return nil, ErrRecordNotFound
+		}
+		return nil, err
+	}
+	return &bot, nil
+}
+
 // UpdatePushStatus 更新推送状态（启用/禁用，带归属校验）
 func UpdatePushStatus(id, userID uint, status int) error {
 	result := GetDB().Model(&model.PushBot{}).Where("id = ? AND user_id = ?", id, userID).Update("status", status)

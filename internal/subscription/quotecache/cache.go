@@ -44,16 +44,48 @@ type QuoteCache interface {
 
 	// Stats 返回缓存统计信息（命中/未命中/大小等）
 	Stats() CacheStats
+
+	// QuoteEventBus 行情事件推送
+	QuoteEventBus
+
+	// Subscriber 返回 model.QuoteSubscriber（Monitor 依赖注入用）
+	Subscriber() model.QuoteSubscriber
 }
 
-// CachedQuoteData 缓存的行情数据（日/周/月/年四周期 + 快照）
+// CachedQuoteData 缓存的行情数据（日/周/月/年四周期 + 快照 + 分时）
 type CachedQuoteData struct {
-	Code     string
-	Daily    *adapter.StockPriceDaily // 当日行情
-	Weekly   *adapter.StockPriceDaily // 本周行情
-	Monthly  *adapter.StockPriceDaily // 本月行情
-	Yearly   *adapter.StockPriceDaily // 本年行情
+	Code     string                    // 股票代码
+	Name     string                    // 股票名称（TODO: 从 adapter 获取）
+	Daily    *adapter.StockPriceDaily  // 当日行情
+	Weekly   *adapter.StockPriceDaily  // 本周行情
+	Monthly  *adapter.StockPriceDaily  // 本月行情
+	Yearly   *adapter.StockPriceDaily  // 本年行情
+	Minute   *MinuteData               // 分时行情（TODO: adapter 扩展后填充）
 	Snapshot *model.StockDailySnapshot // 完整快照（市值/PE/PB/ROE 等 20+ 字段）
+}
+
+// ============================================================================
+//  QuoteEventBus — 行情事件推送
+//
+//  内部使用 model.QuoteEvent（而非自定义 QuoteEvent），
+//  在 notifySubscribers 中直接完成 CachedQuoteData → QuoteData 转换，
+//  消费者无需再做二次转换。
+// ============================================================================
+
+// QuoteEventBus 行情事件总线接口
+//
+// 消费方通过此接口订阅感兴趣的股票代码，
+// 当 quotecache 刷新行情数据后通过 channel 推送更新。
+//
+// 当前实现：quotecache 内存版
+// 未来可替换：Redis Pub/Sub 等分布式实现
+type QuoteEventBus interface {
+	// Subscribe 订阅指定股票代码的行情更新
+	// 返回带缓冲的 channel（cap=64）和订阅 ID
+	Subscribe(codes []string) (<-chan model.QuoteEvent, int)
+
+	// Unsubscribe 取消订阅
+	Unsubscribe(subID int)
 }
 
 // CacheStats 缓存统计
@@ -107,11 +139,23 @@ type cacheItem struct {
 	priority  string // "high" 或 "normal"
 }
 
+// subEntry 单个订阅者
+type subEntry struct {
+	id    int
+	codes map[string]struct{} // 关注的股票代码集合
+	ch    chan model.QuoteEvent // 推送 channel（缓冲 64）
+}
+
 // quoteCacheImpl QuoteCache 实现
 type quoteCacheImpl struct {
 	mu      sync.RWMutex
 	items   map[string]*cacheItem // code → 缓存项
 	highSet map[string]struct{}   // 高优先级集合
+
+	// 订阅推送
+	subMu       sync.RWMutex
+	subscribers []*subEntry
+	nextSubID   int
 
 	registry        *adapter.Registry // 数据源注册中心
 	adapterPriority []string          // 数据源优先级列表
@@ -358,6 +402,68 @@ func (q *quoteCacheImpl) Stats() CacheStats {
 	}
 }
 
+// ============================================================================
+//  QuoteEventBus 实现：Subscribe / Unsubscribe
+// ============================================================================
+
+// Subscribe 订阅指定股票代码的行情更新
+func (q *quoteCacheImpl) Subscribe(codes []string) (<-chan model.QuoteEvent, int) {
+	q.subMu.Lock()
+	defer q.subMu.Unlock()
+
+	ch := make(chan model.QuoteEvent, 64)
+	codeSet := make(map[string]struct{}, len(codes))
+	for _, c := range codes {
+		codeSet[c] = struct{}{}
+	}
+
+	subID := q.nextSubID
+	q.nextSubID++
+	q.subscribers = append(q.subscribers, &subEntry{
+		id:    subID,
+		codes: codeSet,
+		ch:    ch,
+	})
+
+	return ch, subID
+}
+
+// Unsubscribe 取消订阅
+func (q *quoteCacheImpl) Unsubscribe(subID int) {
+	q.subMu.Lock()
+	defer q.subMu.Unlock()
+
+	for i, sub := range q.subscribers {
+		if sub.id == subID {
+			close(sub.ch)
+			q.subscribers = append(q.subscribers[:i], q.subscribers[i+1:]...)
+			return
+		}
+	}
+}
+
+// notifySubscribers 行情刷新后通知所有匹配的订阅者
+// 在此直接完成 CachedQuoteData → model.QuoteData 转换，消费者无需二次转换
+func (q *quoteCacheImpl) notifySubscribers(code string, data *CachedQuoteData) {
+	q.subMu.RLock()
+	defer q.subMu.RUnlock()
+
+	qd := toQuoteData(data)
+	if qd == nil {
+		return
+	}
+	event := model.QuoteEvent{Code: code, Data: qd}
+	for _, sub := range q.subscribers {
+		if _, ok := sub.codes[code]; ok {
+			select {
+			case sub.ch <- event:
+			default:
+				// channel 满（消费方慢），丢弃事件，不阻塞刷新 loop
+			}
+		}
+	}
+}
+
 // reloadHoldingCodes 从 DB 加载所有用户持仓股 codes 并设为高优先级
 // 同时清理昨日的所有行情缓存和优先级缓存
 func (q *quoteCacheImpl) reloadHoldingCodes() {
@@ -433,6 +539,9 @@ func (q *quoteCacheImpl) fetchAndCache(ctx context.Context, code string) (*Cache
 		fetchedAt: time.Now(),
 		priority:  priority,
 	}
+
+	// 通知订阅者（异步写入 channel，消费方慢时不阻塞）
+	q.notifySubscribers(code, data)
 
 	return data, nil
 }
@@ -601,3 +710,44 @@ func (q *quoteCacheImpl) getAllCachedCodes() []string {
 	}
 	return codes
 }
+
+// ============================================================================
+//  Subscriber — 为 Monitor 提供 model.QuoteSubscriber
+//
+//	将 quotecache 内部的 QuoteEventBus 适配为 model.QuoteSubscriber 函数签名。
+//	Subscribe 已直接返回 model.QuoteEvent，转换在 notifySubscribers 中完成。
+// ============================================================================
+
+// Subscriber 返回 model.QuoteSubscriber
+func (q *quoteCacheImpl) Subscriber() model.QuoteSubscriber {
+	return func(codes []string) (<-chan model.QuoteEvent, func()) {
+		ch, subID := q.Subscribe(codes)
+		return ch, func() { q.Unsubscribe(subID) }
+	}
+}
+
+// toQuoteData 将内部 CachedQuoteData 转为 model.QuoteData
+func toQuoteData(d *CachedQuoteData) *model.QuoteData {
+	if d == nil || d.Daily == nil {
+		return nil
+	}
+	qd := &model.QuoteData{
+		Code:      d.Code,
+		Name:      d.Name,
+		Price:     float64(d.Daily.Close) / 100,
+		ChangePct: d.Daily.ChangePct,
+		Volume:    d.Daily.Volume,
+		Turnover:  d.Daily.Turnover,
+		Snapshot:  d.Snapshot,
+	}
+	if d.Minute != nil {
+		for _, b := range d.Minute.Bars {
+			qd.Minutes = append(qd.Minutes, model.MinuteBar{
+				Time:  b.Time,
+				Price: float64(b.Price) / 100,
+			})
+		}
+	}
+	return qd
+}
+

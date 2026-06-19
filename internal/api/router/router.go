@@ -16,6 +16,9 @@ var SubscriptionServiceRef *service.SubscriptionService
 // DataCollectServiceRef 保存路由层创建的数据采集服务引用，供 main.go 注入 Scheduler
 var DataCollectServiceRef *service.DataCollectTaskService
 
+// MonitorConfigServiceRef 保存路由层创建的监控配置服务引用，供 main.go 注入 Monitor
+var MonitorConfigServiceRef *service.MonitorConfigService
+
 // BacktestHandlerRef 保存路由层创建的回测 Handler 引用，供 main.go 注入依赖
 var BacktestHandlerRef *backtest.Handler
 
@@ -46,10 +49,12 @@ func SetupRouter(runner *datacollect.DataCollectRunner) *gin.Engine {
 	screenSvc := service.NewScreenService()
 	subSvc := service.NewSubscriptionService()
 	dcSvc := service.NewDataCollectTaskService()
+	monitorCfgSvc := service.NewMonitorConfigService()
 
-	// 保存订阅服务引用，供 main.go 注入 Scheduler
+	// 保存服务引用，供 main.go 注入依赖
 	SubscriptionServiceRef = subSvc
 	DataCollectServiceRef = dcSvc
+	MonitorConfigServiceRef = monitorCfgSvc
 
 	// API v1 路由组
 	apiV1 := r.Group("/api/v1")
@@ -63,6 +68,7 @@ func SetupRouter(runner *datacollect.DataCollectRunner) *gin.Engine {
 		RegisterPortfolioRoutes(apiV1, authSvc)
 		RegisterSubscriptionRoutes(apiV1, authSvc, subSvc)
 		RegisterDataCollectRoutes(apiV1, authSvc, dcSvc, runner)
+		RegisterMonitorConfigRoutes(apiV1, authSvc, monitorCfgSvc)
 
 		// 回测路由（通过 BacktestHandlerRef 注入）
 		if BacktestHandlerRef != nil {

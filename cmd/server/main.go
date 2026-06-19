@@ -24,6 +24,7 @@ import (
 	"stock-ai/internal/db"
 	"stock-ai/internal/holiday"
 	"stock-ai/internal/indicator"
+	"stock-ai/internal/monitor"
 	"stock-ai/internal/notifier"
 	"stock-ai/internal/subscription/quotecache"
 	"stock-ai/internal/subscription/runner"
@@ -196,6 +197,31 @@ func main() {
 	}
 
 	// ====================================================================
+	//  初始化盯盘监控模块
+	// ====================================================================
+
+	var mon *monitor.Monitor
+	if quoteCache != nil {
+		mon = monitor.NewMonitor(
+			quoteCache.Subscriber(),
+			ntf,
+		)
+
+		// 注入 Monitor 引用和 NotifyChange 回调
+		if router.MonitorConfigServiceRef != nil {
+			router.MonitorConfigServiceRef.SetNotifyChange(func(ct monitor.ChangeType, id uint) {
+				mon.NotifyChange(monitor.ConfigChange{Type: ct, ConfigID: id})
+			})
+		}
+
+		if err := mon.Start(); err != nil {
+			log.Printf("⚠️ Monitor 启动失败: %v", err)
+		} else {
+			log.Println("✅ Monitor 已启动")
+		}
+	}
+
+	// ====================================================================
 	//  初始化数据采集调度模块
 	// ====================================================================
 
@@ -248,6 +274,12 @@ func main() {
 		if quoteCache != nil {
 			log.Println("正在停止 QuoteCache...")
 			quoteCache.Stop()
+		}
+
+		// 停止 Monitor
+		if mon != nil {
+			log.Println("正在停止 Monitor...")
+			mon.Stop()
 		}
 
 		if err := srv.Shutdown(ctx); err != nil {

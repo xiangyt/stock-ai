@@ -69,6 +69,9 @@ func AutoMigrate() error {
 		&model.Subscription{},
 		&model.SubscriptionBot{},
 		&model.SubscriptionLog{},
+		// 盯盘监控
+		&model.MonitorConfig{},
+		&model.MonitorConfigBot{},
 		// 数据采集
 		&model.DataCollectTask{},
 		&model.DataCollectBot{},
