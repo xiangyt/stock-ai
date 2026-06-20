@@ -370,11 +370,11 @@ func presetTypeToCrons(preset model.PresetType) []string {
 	case model.PresetEveryHour:
 		return []string{"0 0 * * * *"}
 	case model.PresetDailyOpen:
-		return []string{"0 15 9 * * 1-5"}
+		return []string{"0 30 9 * * 1-5"}
 	case model.PresetDailyClose:
 		return []string{"0 0 15 * * 1-5"}
 	case model.PresetDailyTwice:
-		return []string{"0 15 9 * * 1-5", "0 0 15 * * 1-5"}
+		return []string{"0 30 9 * * 1-5", "0 0 15 * * 1-5"}
 	case model.PresetWeekly:
 		return []string{"0 0 9 * * 1"}
 	case model.PresetCustom:

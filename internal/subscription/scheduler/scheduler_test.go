@@ -22,9 +22,9 @@ func TestPresetTypeToCrons(t *testing.T) {
 		{"每15分钟", model.PresetEvery15min, []string{"0 */15 * * * *"}},
 		{"每30分钟", model.PresetEvery30min, []string{"0 */30 * * * *"}},
 		{"每小时", model.PresetEveryHour, []string{"0 0 * * * *"}},
-		{"每日开盘", model.PresetDailyOpen, []string{"0 15 9 * * 1-5"}},
+		{"每日开盘", model.PresetDailyOpen, []string{"0 30 9 * * 1-5"}},
 		{"每日收盘", model.PresetDailyClose, []string{"0 0 15 * * 1-5"}},
-		{"每日两次(2个表达式)", model.PresetDailyTwice, []string{"0 15 9 * * 1-5", "0 0 15 * * 1-5"}},
+		{"每日两次(2个表达式)", model.PresetDailyTwice, []string{"0 30 9 * * 1-5", "0 0 15 * * 1-5"}},
 		{"每周一", model.PresetWeekly, []string{"0 0 9 * * 1"}},
 		{"自定义返回nil", model.PresetCustom, nil},
 		{"未知类型走默认", model.PresetType("unknown_type"), []string{"0 */30 * * * *"}},
@@ -257,9 +257,9 @@ func TestAllPresetCronsAreValid(t *testing.T) {
 		"every_15min": {"0 */15 * * * *"},
 		"every_30min": {"0 */30 * * * *"},
 		"every_hour":  {"0 0 * * * *"},
-		"daily_open":  {"0 15 9 * * 1-5"},
+		"daily_open":  {"0 30 9 * * 1-5"},
 		"daily_close": {"0 0 15 * * 1-5"},
-		"daily_twice": {"0 15 9 * * 1-5", "0 0 15 * * 1-5"},
+		"daily_twice": {"0 30 9 * * 1-5", "0 0 15 * * 1-5"},
 		"weekly":      {"0 0 9 * * 1"},
 	}
 

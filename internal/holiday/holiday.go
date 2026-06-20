@@ -91,11 +91,11 @@ func (p *Provider) IsTradingDay(t time.Time) bool {
 	return !p.IsHoliday(t.Format("2006-01-02"))
 }
 
-// IsTradingHours 判断当前时间是否在 A 股交易时段（9:15-11:30, 13:00-15:00）
+// IsTradingHours 判断当前时间是否在 A 股交易时段（9:30-11:30, 13:00-15:00）
 func (p *Provider) IsTradingHours(t time.Time) bool {
 	totalMinutes := t.Hour()*60 + t.Minute()
-	// 上午盘 9:15-11:30
-	if totalMinutes >= 9*60+15 && totalMinutes <= 11*60+30 {
+	// 上午盘 9:30-11:30
+	if totalMinutes >= 9*60+30 && totalMinutes <= 11*60+30 {
 		return true
 	}
 	// 下午盘 13:00-15:00

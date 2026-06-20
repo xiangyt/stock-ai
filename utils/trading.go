@@ -51,15 +51,31 @@ func IsTradingDayForDate(dateStr string) (bool, error) {
 	return wd != time.Saturday && wd != time.Sunday, nil
 }
 
-// IsTradingHours 判断当前时间是否在交易时段（9:15-11:30, 13:00-15:00）
+// IsTradingHours 判断当前时间是否在交易时段（9:30-11:30, 13:00-15:00）
 func IsTradingHours() bool {
 	if holidayProvider != nil {
 		return holidayProvider.IsTradingHours(time.Now())
 	}
 	// 降级模式：基础交易时段检查
 	totalMinutes := time.Now().Hour()*60 + time.Now().Minute()
-	return (totalMinutes >= 9*60+15 && totalMinutes <= 11*60+30) ||
+	return (totalMinutes >= 9*60+30 && totalMinutes <= 11*60+30) ||
 		(totalMinutes >= 13*60 && totalMinutes <= 15*60)
+}
+
+// IsPriceUpdateTime 判断当前是否在「可更新现价」时段：交易日 10:00~19:00
+// 用于持仓管理获取现价的时机判断：
+//   - 在时段内 → 从行情接口获取实时价
+//   - 不在时段内 → 从数据库日K线取最新收盘价
+func IsPriceUpdateTime() bool {
+	// 1. 必须是交易日
+	if !IsTradingDay() {
+		return false
+	}
+	// 2. 时间在 10:00~19:00
+	now := time.Now()
+	h, m := now.Hour(), now.Minute()
+	totalMinutes := h*60 + m
+	return totalMinutes >= 10*60 && totalMinutes <= 19*60
 }
 
 // GetTradingDays 返回 [startDate, endDate] 区间内所有 A 股交易日
