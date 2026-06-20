@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterMonitorConfigRoutes 注册盯盘监控相关路由 /api/v1/monitor-configs/*
+// RegisterMonitorConfigRoutes 注册盯盘助手相关路由 /api/v1/monitor-configs/*
 func RegisterMonitorConfigRoutes(apiV1 *gin.RouterGroup, authSvc *service.AuthService, monitorCfgSvc *service.MonitorConfigService) {
 	monitorHandler := handler.NewMonitorConfigHandler(monitorCfgSvc)
 	authMid := middleware.AuthRequired(authSvc)

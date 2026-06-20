@@ -86,7 +86,7 @@ const menuItems = computed(() => {
   ]
   if (!isAdmin) {
     base.push({ key: 'strategy-subscribe', label: '策略订阅', icon: '🔔' })
-    base.push({ key: 'monitor-config', label: '盯盘监控', icon: '📈' })
+    base.push({ key: 'monitor-config', label: '盯盘助手', icon: '📈' })
     base.push({ key: 'my-positions', label: '持仓管理', icon: '💼' })
   }
   base.push({ key: 'bot-config', label: '机器人配置', icon: '🤖' })

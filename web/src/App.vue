@@ -49,7 +49,7 @@
         <SubscriptionPage />
       </div>
 
-      <!-- ====== 盯盘监控页面 ====== -->
+      <!-- ====== 盯盘助手页面 ====== -->
       <div v-else-if="currentPage === 'monitor-config'" class="page">
         <MonitorConfigPage />
       </div>

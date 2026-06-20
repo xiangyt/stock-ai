@@ -179,7 +179,7 @@ func InitializeApp(cfg *config.Config) (*App, error) {
 		backtest.NewService,
 		backtest.NewHandler,
 
-		// --- 盯盘监控 ---
+		// --- 盯盘助手 ---
 		monitor.NewMonitor,
 
 		wire.Struct(new(App), "*"),

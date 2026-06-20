@@ -22,7 +22,7 @@ import (
 //   Config       — 配置（由 main 加载后传入 wire）
 //   Registry     — 数据源注册中心（单例）
 //   QuoteCache → StockProvider → SubRunner → SubScheduler  — 策略订阅链路
-//   QuoteCache → QuoteSub → Monitor                        — 盯盘监控链路
+//   QuoteCache → QuoteSub → Monitor                        — 盯盘助手链路
 //   AllBuiltins → IndicatorReg → Engine                    — 指标引擎链路
 //   Notifier     — 推送通知（被 Runner / Monitor 共用）
 //   DCRunner → DCScheduler                                 — 数据采集链路
@@ -58,7 +58,7 @@ type App struct {
 	BtService *backtest.Service
 	BtHandler *backtest.Handler
 
-	// 盯盘监控
+	// 盯盘助手
 	Monitor *monitor.Monitor
 
 	// HTTP 路由

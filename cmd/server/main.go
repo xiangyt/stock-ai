@@ -184,7 +184,7 @@ func main() {
 		})
 	}
 
-	// 盯盘监控: NotifyChange 回调
+	// 盯盘助手: NotifyChange 回调
 	if router.MonitorConfigServiceRef != nil && app.Monitor != nil {
 		router.MonitorConfigServiceRef.SetNotifyChange(func(ct monitor.ChangeType, id uint) {
 			app.Monitor.NotifyChange(monitor.ConfigChange{Type: ct, ConfigID: id})

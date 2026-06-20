@@ -1,7 +1,7 @@
 <template>
   <div class="monitor-page">
     <header class="page-header">
-      <h1>📈 盯盘监控</h1>
+      <h1>📈 盯盘助手</h1>
       <p>配置监控规则，持仓异动自动推送到指定机器人</p>
     </header>
 

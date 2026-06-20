@@ -1,4 +1,4 @@
--- monitor_configs: 盯盘监控配置主表
+-- monitor_configs: 盯盘助手配置主表
 CREATE TABLE IF NOT EXISTS `monitor_configs` (
     `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `uid`        INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '用户ID',
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS `monitor_configs` (
     INDEX `idx_uid` (`uid`),
     INDEX `idx_is_active` (`is_active`),
     INDEX `idx_deleted_at` (`deleted_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='盯盘监控配置表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='盯盘助手配置表';
 
 -- monitor_config_bots: 监控配置与推送机器人的关联表
 CREATE TABLE IF NOT EXISTS `monitor_config_bots` (

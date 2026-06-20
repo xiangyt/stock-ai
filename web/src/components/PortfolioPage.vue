@@ -81,6 +81,7 @@
               持仓盈亏
               <span class="sort-icon">{{ sortField === '_profitAmount' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</span>
             </th>
+            <th class="status-col">状态</th>
             <th class="col-actions">操作</th>
           </tr>
         </thead>
@@ -111,6 +112,11 @@
               </span>
               <span v-else class="profit-na">--</span>
             </td>
+            <td class="status-col">
+              <span :class="['status-badge', pos.status === 'closed' ? 'badge-closed' : 'badge-holding']">
+                {{ pos.status === 'closed' ? '已清仓' : '持有中' }}
+              </span>
+            </td>
             <td class="col-actions" @click.stop>
               <template v-if="pos.status === 'holding'">
                 <button class="btn-sm btn-buy" @click="openBuyModal(pos)" title="加仓">加仓</button>
@@ -125,7 +131,7 @@
           </tr>
           <!-- 展开行：交易记录明细 -->
           <tr v-if="expandedId === pos.id && pos.trades" class="expand-row">
-            <td colspan="7">
+            <td colspan="8">
               <div class="trade-detail">
                 <div class="trade-title">交易记录（{{ pos.trades?.length || 0 }}笔）</div>
                 <table class="trade-table" v-if="pos.trades && pos.trades.length > 0">
@@ -558,7 +564,10 @@ async function toggleExpand(id: number) {
     try {
       const detail = await portfolioApi.fetchPositionById(id)
       const idx = positions.value.findIndex(p => p.id === id)
-      if (idx !== -1) positions.value[idx] = detail
+      if (idx !== -1) {
+        (detail as any)._profit = calcProfit(detail)
+        positions.value[idx] = detail
+      }
     } catch (e) { /* ignore */ }
   }
   expandedId.value = id
@@ -903,6 +912,7 @@ onMounted(() => {
 .row-closed td { opacity: 0.55; }
 .num-col { text-align: center; }
 .col-actions { text-align: center; white-space: nowrap; }
+.status-col { text-align: center; }
 
 /* ====== 排序样式 ====== */
 .sortable {

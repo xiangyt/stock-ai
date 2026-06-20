@@ -8,10 +8,10 @@ import (
 // MonitorScope / ScopeHeld / ScopeCustom 已在 subscription.go 中定义，此处复用
 
 // ============================================================================
-//  MonitorConfig 盯盘监控配置
+//  MonitorConfig 盯盘助手配置
 // ============================================================================
 
-// MonitorConfig 盯盘监控配置
+// MonitorConfig 盯盘助手配置
 type MonitorConfig struct {
 	ID        uint           `gorm:"primarykey" json:"id"`
 	UID       uint           `gorm:"index;not null" json:"uid"`

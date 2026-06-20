@@ -71,7 +71,7 @@ func AutoMigrate() error {
 	// 	&model.Subscription{},
 	// 	&model.SubscriptionBot{},
 	// 	&model.SubscriptionLog{},
-	// 	// 盯盘监控
+	// 	// 盯盘助手
 	// 	&model.MonitorConfig{},
 	// 	&model.MonitorConfigBot{},
 	// 	// 数据采集

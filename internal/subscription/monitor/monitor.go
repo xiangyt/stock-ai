@@ -13,7 +13,7 @@ import (
 )
 
 // ============================================================================
-//  Monitor — 盯盘监控调度器（单例）
+//  Monitor — 盯盘助手调度器（单例）
 //
 //  生命周期:
 //    Start() → 加载活跃配置 → 每个 code 启动独立 goroutine
@@ -30,7 +30,7 @@ type codeWorker struct {
 	cancel func() // unsubscribe
 }
 
-// Monitor 盯盘监控调度器
+// Monitor 盯盘助手调度器
 type Monitor struct {
 	subscribe model.QuoteSubscriber // 行情订阅函数（注入）
 	ntf       notifier.Notifier
