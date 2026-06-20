@@ -9,6 +9,7 @@ import (
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
 	"stock-ai/internal/notifier"
+	"stock-ai/utils"
 )
 
 // ============================================================================
@@ -292,6 +293,11 @@ func (m *Monitor) processCode(_ string, ch <-chan model.QuoteEvent) {
 // processEvent 处理单次行情推送事件
 func (m *Monitor) processEvent(event model.QuoteEvent) {
 	if event.Data == nil {
+		return
+	}
+
+	// 非交易时间收到的行情事件直接丢弃
+	if !utils.IsTradingHours() {
 		return
 	}
 

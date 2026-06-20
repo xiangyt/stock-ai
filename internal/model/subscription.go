@@ -29,8 +29,9 @@ const (
 	PresetDailyOpen  PresetType = "daily_open"
 	PresetDailyClose PresetType = "daily_close"
 	PresetDailyTwice PresetType = "daily_twice"
-	PresetWeekly     PresetType = "weekly"
-	PresetCustom     PresetType = "custom" // 自定义 cron
+	PresetNoon       PresetType = "noon"        // 中午12点
+	PresetCloseAlert PresetType = "close_alert" // 14:45 收盘预警
+	PresetCustom     PresetType = "custom"      // 自定义 cron
 )
 
 // LogStatus 执行日志状态

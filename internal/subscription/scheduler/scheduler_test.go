@@ -19,15 +19,16 @@ func TestPresetTypeToCrons(t *testing.T) {
 		preset   model.PresetType
 		expected []string
 	}{
-		{"每15分钟", model.PresetEvery15min, []string{"0 */15 * * * *"}},
-		{"每30分钟", model.PresetEvery30min, []string{"0 */30 * * * *"}},
-		{"每小时", model.PresetEveryHour, []string{"0 0 * * * *"}},
-		{"每日开盘", model.PresetDailyOpen, []string{"0 30 9 * * 1-5"}},
-		{"每日收盘", model.PresetDailyClose, []string{"0 0 15 * * 1-5"}},
-		{"每日两次(2个表达式)", model.PresetDailyTwice, []string{"0 30 9 * * 1-5", "0 0 15 * * 1-5"}},
-		{"每周一", model.PresetWeekly, []string{"0 0 9 * * 1"}},
+		{"每15分钟", model.PresetEvery15min, []string{"10 */15 * * * *"}},
+		{"每30分钟", model.PresetEvery30min, []string{"10 */30 * * * *"}},
+		{"每小时", model.PresetEveryHour, []string{"10 0 * * * *"}},
+		{"每日开盘", model.PresetDailyOpen, []string{"10 30 9 * * 1-5"}},
+		{"每日收盘", model.PresetDailyClose, []string{"10 0 15 * * 1-5"}},
+		{"每日两次", model.PresetDailyTwice, []string{"10 0 10,14 * * 1-5"}},
+		{"中午12点", model.PresetNoon, []string{"10 0 12 * * 1-5"}},
+		{"14:45收盘预警", model.PresetCloseAlert, []string{"10 45 14 * * 1-5"}},
 		{"自定义返回nil", model.PresetCustom, nil},
-		{"未知类型走默认", model.PresetType("unknown_type"), []string{"0 */30 * * * *"}},
+		{"未知类型走默认", model.PresetType("unknown_type"), []string{"10 */30 * * * *"}},
 	}
 
 	for _, tt := range tests {
@@ -63,7 +64,7 @@ func TestResolveCronExpr_CustomWithoutExpr(t *testing.T) {
 func TestResolveCronExpr_NonCustomIgnoresExpr(t *testing.T) {
 	// 非自定义类型应忽略 cronExpr 参数，走预设映射
 	got := resolveCronExpr(model.PresetEvery15min, "should_be_ignored")
-	expected := []string{"0 */15 * * * *"}
+	expected := []string{"10 */15 * * * *"}
 	if len(got) != 1 || got[0] != expected[0] {
 		t.Errorf("非自定义类型不应使用 cronExpr: got %v, want %v", got, expected)
 	}
@@ -203,8 +204,8 @@ func TestAddSubscription_DailyTwice_MultipleEntries(t *testing.T) {
 	}
 
 	entries, ok2 := impl.entryMap[200]
-	if !ok2 || len(entries) != 2 {
-		t.Errorf("daily_twice 应产生 2 个 entry, 实际 %d, ok=%v", len(entries), ok2)
+	if !ok2 || len(entries) != 1 {
+		t.Errorf("daily_twice 应产生 1 个 entry（已合并为 10 0 10,14 * * 1-5）, 实际 %d, ok=%v", len(entries), ok2)
 	}
 }
 
@@ -254,13 +255,14 @@ func TestAllPresetCronsAreValid(t *testing.T) {
 	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
 	allExprs := map[string][]string{
-		"every_15min": {"0 */15 * * * *"},
-		"every_30min": {"0 */30 * * * *"},
-		"every_hour":  {"0 0 * * * *"},
-		"daily_open":  {"0 30 9 * * 1-5"},
-		"daily_close": {"0 0 15 * * 1-5"},
-		"daily_twice": {"0 30 9 * * 1-5", "0 0 15 * * 1-5"},
-		"weekly":      {"0 0 9 * * 1"},
+		"every_15min": {"10 */15 * * * *"},
+		"every_30min": {"10 */30 * * * *"},
+		"every_hour":  {"10 0 * * * *"},
+		"daily_open":  {"10 30 9 * * 1-5"},
+		"daily_close": {"10 0 15 * * 1-5"},
+		"daily_twice": {"10 0 10,14 * * 1-5"},
+		"noon":        {"10 0 12 * * 1-5"},
+		"close_alert": {"10 45 14 * * 1-5"},
 	}
 
 	for name, exprs := range allExprs {
@@ -372,8 +374,8 @@ func TestConcurrentAddRemove(t *testing.T) {
 func TestResolveCronExpr_EmptyPresetType(t *testing.T) {
 	// 空字符串 PresetType 应走 default 分支
 	got := resolveCronExpr(model.PresetType(""), "")
-	// 空字符串不是任何已知 preset，走 default → "0 */30 * * * *"
-	if len(got) != 1 || got[0] != "0 */30 * * * *" {
+	// 空字符串不是任何已知 preset，走 default → "10 */30 * * * *"
+	if len(got) != 1 || got[0] != "10 */30 * * * *" {
 		t.Errorf("空 PresetType 应返回默认值, got %v", got)
 	}
 }

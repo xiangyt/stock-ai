@@ -18,7 +18,7 @@ import (
 //
 //  嵌入 DBStock，覆盖 K线/Snapshot 方法实现缓存优先策略：
 //  - DB 历史K线 + quotecache 缓存当期数据（拼接至头部）
-//  - GetDailySnapshot: quotecache 当日行情 + DB 财报/股本
+//  - GetDailySnapshot: DB 财报/股本 + 缓存实时价更新市值
 //  - 其余方法（PerformanceReport、ShareholderCount、Detail 等）委托 DBStock
 // ============================================================================
 
@@ -47,22 +47,47 @@ func (c *CachedStock) SetTradeDate(tradeDate int) {
 	c.tradeDate = tradeDate
 }
 
-// GetDailySnapshot 覆盖 DBStock，使用缓存元数据中的快照。
+// GetDailySnapshot 覆盖 DBStock。
 //
-// 快照由上层 OnQuoteReady hook 预计算并存入 data.Meta["snapshot"]。
-// 无快照时降级到 DBStock。
+// 先从 DB 读取预计算快照（PE/PB/ROE 等来自财报），
+// 再从缓存取实时价重算市值（TotalMarketCap / CirculateMarketCap）。
 func (c *CachedStock) GetDailySnapshot() (*model.StockDailySnapshot, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// 1. 从 DB 读取基础快照
+	snap, err := c.DBStock.GetDailySnapshot()
+	if err != nil {
+		return nil, err
+	}
+	if snap == nil {
+		return nil, indicator.ErrDataEmpty
+	}
+
+	// 2. 从缓存取实时价，重算市值
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	data, err := c.cache.Get(ctx, c.code)
-	if err == nil && data.Meta != nil {
-		if snap, ok := data.Meta["snapshot"].(*model.StockDailySnapshot); ok && snap != nil {
-			return snap, nil
-		}
+	if err != nil || data == nil {
+		return snap, nil // 无缓存，返回 DB 快照（昨收价计算的市值）
 	}
 
-	return c.DBStock.GetDailySnapshot()
+	daily := data.Daily() // 从分时 bar 聚合的当日日线
+	if daily == nil {
+		return snap, nil
+	}
+
+	price := float64(daily.Close) / 100 // Close 单位：分，转为元
+	if price <= 0 {
+		return snap, nil
+	}
+
+	// 3. 用实时价重算市值（TotalShares/FloatShares 单位：股；市值单位：万元）
+	if snap.TotalShares > 0 {
+		snap.TotalMarketCap = price * float64(snap.TotalShares) / 10000
+	}
+	if snap.FloatShares > 0 {
+		snap.CirculateMarketCap = price * float64(snap.FloatShares) / 10000
+	}
+	return snap, nil
 }
 
 // GetDailyKline 覆盖 DBStock，拼接缓存当日行情到日K线头部。

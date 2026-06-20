@@ -364,22 +364,24 @@ func resolveCronExpr(presetType model.PresetType, cronExpr string) []string {
 func presetTypeToCrons(preset model.PresetType) []string {
 	switch preset {
 	case model.PresetEvery15min:
-		return []string{"0 */15 * * * *"}
+		return []string{"10 */15 * * * *"}
 	case model.PresetEvery30min:
-		return []string{"0 */30 * * * *"}
+		return []string{"10 */30 * * * *"}
 	case model.PresetEveryHour:
-		return []string{"0 0 * * * *"}
+		return []string{"10 0 * * * *"}
 	case model.PresetDailyOpen:
-		return []string{"0 30 9 * * 1-5"}
+		return []string{"10 30 9 * * 1-5"}
 	case model.PresetDailyClose:
-		return []string{"0 0 15 * * 1-5"}
+		return []string{"10 0 15 * * 1-5"}
 	case model.PresetDailyTwice:
-		return []string{"0 30 9 * * 1-5", "0 0 15 * * 1-5"}
-	case model.PresetWeekly:
-		return []string{"0 0 9 * * 1"}
+		return []string{"10 0 10,14 * * 1-5"}
+	case model.PresetNoon:
+		return []string{"10 0 12 * * 1-5"}
+	case model.PresetCloseAlert:
+		return []string{"10 45 14 * * 1-5"}
 	case model.PresetCustom:
 		return nil
 	default:
-		return []string{"0 */30 * * * *"}
+		return []string{"10 */30 * * * *"}
 	}
 }

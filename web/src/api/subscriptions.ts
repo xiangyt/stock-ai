@@ -29,7 +29,7 @@ export type MonitorScope = 'all' | 'held' | 'custom'
 export type PresetType =
   | 'every_15min' | 'every_30min' | 'every_hour'
   | 'daily_open' | 'daily_close' | 'daily_twice'
-  | 'weekly' | 'custom'
+  | 'noon' | 'close_alert' | 'custom'
 
 /** 机器人信息（详情中的 bots 字段） */
 export interface BotInfo {
@@ -124,10 +124,11 @@ export const PresetTypeLabels: Record<PresetType, string> = {
   every_15min: '每15分钟',
   every_30min: '每30分钟',
   every_hour: '每小时',
-  daily_open: '每日开盘',
-  daily_close: '每日收盘',
-  daily_twice: '每日两次',
-  weekly: '每周',
+  daily_open: '每日开盘 (09:30)',
+  daily_close: '每日收盘 (15:00)',
+  daily_twice: '每日两次 (10:00, 14:00)',
+  noon: '中午12点 (12:00)',
+  close_alert: '收盘预警 (14:45)',
   custom: '自定义',
 }
 

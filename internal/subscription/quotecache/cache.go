@@ -37,11 +37,6 @@ type Config struct {
 	// Collector 分时数据采集器链（必须）。
 	Collector CollectorChain
 
-	// OnQuoteReady 行情就绪回调（可选）。
-	// 可用于上层注入 snapshot 计算、DB 写入等后处理逻辑。
-	// 在 fetch 成功后、通知订阅者前调用。
-	OnQuoteReady func(data *CachedQuoteData)
-
 	// IsActive 是否活跃（可选）。
 	// 返回 false 时暂停所有定时刷新。用于注入 utils.IsTradingHours 等判断。
 	// 为 nil 时始终活跃。
@@ -100,9 +95,8 @@ type subEntry struct {
 // ============================================================================
 
 type quoteCacheImpl struct {
-	collector    CollectorChain
-	onQuoteReady func(*CachedQuoteData)
-	isActive     func() bool
+	collector CollectorChain
+	isActive  func() bool
 
 	mu       sync.RWMutex
 	items    map[string]*cacheItem
@@ -129,10 +123,9 @@ func New(cfg Config) QuoteCache {
 		panic("quotecache: Collector is required")
 	}
 	return &quoteCacheImpl{
-		collector:    cfg.Collector,
-		onQuoteReady: cfg.OnQuoteReady,
-		isActive:     cfg.IsActive,
-		items:        make(map[string]*cacheItem),
+		collector: cfg.Collector,
+		isActive:  cfg.IsActive,
+		items:     make(map[string]*cacheItem),
 		priority:     make(map[string]Priority),
 		subByID:      make(map[int]*subEntry),
 		codeToSubs:   make(map[string]map[int]chan QuoteEvent),
@@ -301,9 +294,6 @@ func (q *quoteCacheImpl) fetch(ctx context.Context, code string) (*CachedQuoteDa
 	if intraday.Name != "" {
 		data.Name = intraday.Name
 	}
-	if q.onQuoteReady != nil {
-		q.onQuoteReady(data)
-	}
 
 	pri := q.getPriority(code)
 
@@ -453,9 +443,6 @@ func (q *quoteCacheImpl) refreshOne(code string) {
 		data := &CachedQuoteData{Code: code, Intraday: intraday}
 		if intraday.Name != "" {
 			data.Name = intraday.Name
-		}
-		if q.onQuoteReady != nil {
-			q.onQuoteReady(data)
 		}
 		q.items[code] = &cacheItem{
 			data:      data,

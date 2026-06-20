@@ -500,3 +500,19 @@ func GetVolumeSum4DayHistorical(code string, tradeDate int) (int64, error) {
 	}
 	return sum, nil
 }
+
+// GetLatestDailyClose 获取指定股票最新日K线的收盘价（单位：元）
+// 从 daily_kline 表按 trade_date 倒序取第一条记录的 close 字段
+// 返回值：收盘价（元，已除以100），若查不到则返回 0, nil
+func GetLatestDailyClose(code string) (float64, error) {
+	var k model.DailyKline
+	err := GetDB().
+		Where("stock_code = ?", code).
+		Order("trade_date DESC").
+		First(&k).Error
+	if err != nil {
+		return 0, nil // 查不到不算错误，返回 0
+	}
+	// Close 存储的是"分"，需要转为"元"
+	return float64(k.Close) / 100.0, nil
+}

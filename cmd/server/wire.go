@@ -19,6 +19,7 @@ import (
 	"stock-ai/internal/subscription/quotecache"
 	"stock-ai/internal/subscription/runner"
 	subsched "stock-ai/internal/subscription/scheduler"
+	"stock-ai/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/wire"
@@ -53,7 +54,10 @@ func provideQuoteCacheConfig(reg *adapter.Registry) quotecache.Config {
 	if ds, ok := reg.Get(tencentstock.AdapterName); ok {
 		chain = append(chain, &collectorAdapter{ds: ds})
 	}
-	return quotecache.Config{Collector: chain}
+	return quotecache.Config{
+		Collector: chain,
+		IsActive: utils.IsTradingHours,
+	}
 }
 
 // collectorAdapter 将 adapter.DataSource 适配为 quotecache.IntradayCollector。

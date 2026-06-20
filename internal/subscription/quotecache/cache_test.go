@@ -311,35 +311,6 @@ func TestStart_Stop(t *testing.T) {
 }
 
 // ============================================================================
-//  OnQuoteReady hook
-// ============================================================================
-
-func TestOnQuoteReady_HookCalled(t *testing.T) {
-	var called bool
-	collector := &mockCollector{data: map[string]*MinuteData{
-		"000001": makeMinuteData("2026-06-20", 1000, makeBar("09:30", 1010, 100, 101000)),
-	}}
-	cache := New(Config{
-		Collector: CollectorChain{collector},
-		OnQuoteReady: func(data *CachedQuoteData) {
-			called = true
-			data.Name = "测试股"
-		},
-	})
-
-	data, err := cache.Get(context.Background(), "000001")
-	if err != nil {
-		t.Fatalf("Get() err: %v", err)
-	}
-	if !called {
-		t.Error("OnQuoteReady not called")
-	}
-	if data.Name != "测试股" {
-		t.Errorf("Name = %s, want 测试股", data.Name)
-	}
-}
-
-// ============================================================================
 //  Stats
 // ============================================================================
 

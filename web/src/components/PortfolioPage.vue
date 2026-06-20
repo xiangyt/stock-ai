@@ -60,17 +60,32 @@
       <table class="portfolio-table">
         <thead>
           <tr>
-            <th>股票代码</th>
+            <th class="sortable" :class="{ active: sortField === 'stock_code', [sortOrder]: sortField === 'stock_code' }" @click="toggleSort('stock_code')">
+              股票代码
+              <span class="sort-icon">{{ sortField === 'stock_code' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</span>
+            </th>
             <th>股票名称</th>
-            <th class="num-col">数量(股)</th>
-            <th class="num-col">现价/成本价</th>
-            <th class="num-col">总成本</th>
-            <th class="num-col">持仓盈亏</th>
+            <th class="num-col sortable" :class="{ active: sortField === 'quantity', [sortOrder]: sortField === 'quantity' }" @click="toggleSort('quantity')">
+              数量(股)
+              <span class="sort-icon">{{ sortField === 'quantity' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</span>
+            </th>
+            <th class="num-col sortable" :class="{ active: sortField === 'current_price', [sortOrder]: sortField === 'current_price' }" @click="toggleSort('current_price')">
+              现价/成本价
+              <span class="sort-icon">{{ sortField === 'current_price' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</span>
+            </th>
+            <th class="num-col sortable" :class="{ active: sortField === 'total_cost', [sortOrder]: sortField === 'total_cost' }" @click="toggleSort('total_cost')">
+              总成本
+              <span class="sort-icon">{{ sortField === 'total_cost' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</span>
+            </th>
+            <th class="num-col sortable" :class="{ active: sortField === '_profitAmount', [sortOrder]: sortField === '_profitAmount' }" @click="toggleSort('_profitAmount')">
+              持仓盈亏
+              <span class="sort-icon">{{ sortField === '_profitAmount' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</span>
+            </th>
             <th class="col-actions">操作</th>
           </tr>
         </thead>
         <tbody>
-          <template v-for="pos in positions" :key="pos.id">
+          <template v-for="pos in sortedPositions" :key="pos.id">
           <tr
             :class="{ 'row-closed': pos.status === 'closed' }"
           >
@@ -361,6 +376,19 @@ const pageSize = ref(20)
 const listTotal = ref(0)
 const expandedId = ref<number | null>(null)
 
+// 排序状态
+const sortField = ref<string>('')
+const sortOrder = ref<'asc' | 'desc'>('asc')
+
+// 可排序字段定义
+const sortFields: Record<string, string> = {
+  stock_code: '股票代码',
+  quantity: '数量',
+  current_price: '现价',
+  total_cost: '总成本',
+  _profitAmount: '持仓盈亏',
+}
+
 // 弹窗控制
 const showOpenModal = ref(false)
 const showBuyModal = ref(false)
@@ -406,6 +434,48 @@ const configForm = reactive<Partial<TradeConfig>>({
 
 const totalPages = computed(() => Math.ceil(listTotal.value / pageSize.value))
 
+// 排序后的持仓列表
+const sortedPositions = computed(() => {
+  const list = [...positions.value]
+  if (!sortField.value) return list
+
+  return list.sort((a, b) => {
+    let va: any, vb: any
+    switch (sortField.value) {
+      case 'stock_code':
+        va = a.stock_code
+        vb = b.stock_code
+        break
+      case 'quantity':
+        va = a.quantity
+        vb = b.quantity
+        break
+      case 'current_price':
+        va = a.current_price || 0
+        vb = b.current_price || 0
+        break
+      case 'total_cost':
+        va = a.total_cost || 0
+        vb = b.total_cost || 0
+        break
+      case '_profitAmount':
+        va = a._profit?.amount ?? 0
+        vb = b._profit?.amount ?? 0
+        break
+      default:
+        return 0
+    }
+    if (va === vb) return 0
+    // 数字类型直接比较，字符串按自然排序
+    if (typeof va === 'number' && typeof vb === 'number') {
+      return sortOrder.value === 'asc' ? va - vb : vb - va
+    }
+    return sortOrder.value === 'asc'
+      ? String(va).localeCompare(String(vb), 'zh-CN', { numeric: true })
+      : String(vb).localeCompare(String(va), 'zh-CN', { numeric: true })
+  })
+})
+
 // ========== 工具函数 ==========
 
 function todayStr(): string {
@@ -424,6 +494,22 @@ function calcProfit(pos: any): { amount: number; pct: number } | null {
   const amount = Math.round(diff * pos.quantity * 100) / 100
   const pct = pos.avg_cost > 0 ? Math.round(diff / pos.avg_cost * 10000) / 100 : 0
   return { amount, pct }
+}
+
+// 切换排序
+function toggleSort(field: string) {
+  if (sortField.value === field) {
+    // 同一字段：切换升降序，再切回无排序
+    if (sortOrder.value === 'asc') {
+      sortOrder.value = 'desc'
+    } else {
+      sortField.value = ''
+      sortOrder.value = 'asc'
+    }
+  } else {
+    sortField.value = field
+    sortOrder.value = 'asc'
+  }
 }
 
 // ========== 加载数据 ==========
@@ -817,6 +903,31 @@ onMounted(() => {
 .row-closed td { opacity: 0.55; }
 .num-col { text-align: center; }
 .col-actions { text-align: center; white-space: nowrap; }
+
+/* ====== 排序样式 ====== */
+.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: background .15s;
+  position: relative;
+}
+.sortable:hover {
+  background: #f0f5ff;
+  color: #1677ff;
+}
+.sortable.active {
+  color: #1677ff;
+  font-weight: 700;
+}
+.sort-icon {
+  margin-left: 4px;
+  font-size: 11px;
+  opacity: 0.6;
+}
+.sortable:hover .sort-icon,
+.sortable.active .sort-icon {
+  opacity: 1;
+}
 
 .code-cell { font-family: 'SF Mono', Monaco, Consolas, monospace; font-weight: 600; letter-spacing: 0.5px; cursor: pointer; user-select: none; }
 .name-cell { font-weight: 500; cursor: pointer; }

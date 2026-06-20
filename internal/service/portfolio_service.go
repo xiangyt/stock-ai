@@ -10,6 +10,7 @@ import (
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
 	"stock-ai/internal/subscription/quotecache"
+	"stock-ai/utils"
 )
 
 // PortfolioService 持仓管理业务逻辑
@@ -438,14 +439,24 @@ func (svc *PortfolioService) enrichPositionDetail(d *model.PositionDetail, _ uin
 		d.StockName = d.StockCode // 查不到就用代码兜底
 	}
 
-	// 2. 通过 quotecache 获取现价
-	if svc.cache != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		qd, err := svc.cache.Get(ctx, d.StockCode)
-		cancel()
-		if err == nil && qd != nil && qd.Intraday != nil && qd.Intraday.Current > 0 {
-			price := float64(qd.Intraday.Current) / 100 // 分→元
-			d.CurrentPrice = math.Round(price*100) / 100
+	// 2. 获取现价：根据时间判断数据源
+	if utils.IsPriceUpdateTime() {
+		// 交易日 10:00~19:00 → 从 quotecache 获取实时价
+		if svc.cache != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			qd, err := svc.cache.Get(ctx, d.StockCode)
+			cancel()
+			if err == nil && qd != nil && qd.Intraday != nil && qd.Intraday.Current > 0 {
+				price := float64(qd.Intraday.Current) / 100 // 分→元
+				d.CurrentPrice = math.Round(price*100) / 100
+				return
+			}
 		}
+	}
+
+	// 非更新时段 或 行情接口失败 → 从日K线表取最新收盘价
+	closePrice, err := db.GetLatestDailyClose(d.StockCode)
+	if err == nil && closePrice > 0 {
+		d.CurrentPrice = math.Round(closePrice*100) / 100
 	}
 }

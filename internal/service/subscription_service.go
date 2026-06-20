@@ -652,7 +652,7 @@ func isValidPresetType(preset model.PresetType) bool {
 	switch preset {
 	case model.PresetEvery15min, model.PresetEvery30min, model.PresetEveryHour,
 		model.PresetDailyOpen, model.PresetDailyClose, model.PresetDailyTwice,
-		model.PresetWeekly, model.PresetCustom:
+		model.PresetNoon, model.PresetCloseAlert, model.PresetCustom:
 		return true
 	default:
 		return false
