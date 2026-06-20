@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS performance_reports (
     report_type           VARCHAR(20)     NOT NULL DEFAULT '' COMMENT '报告类型(年报/一季报/中报/三季报)',
     report_name           VARCHAR(50)     NOT NULL DEFAULT '' COMMENT '报告期名称(2025年报)',
     currency              CHAR(10)        NOT NULL DEFAULT 'CNY' COMMENT '货币单位',
-    notice_date           INT(8)          NOT NULL DEFAULT 0 COMMENT '公告日期 YYYYMMDD',
+    notice_date           BIGINT          NOT NULL DEFAULT 0 COMMENT '公告日期 YYYYMMDD',
 
     -- 每股指标
     basic_eps             DECIMAL(20,4)   NOT NULL DEFAULT 0 COMMENT '基本每股收益(元)',
@@ -108,3 +108,14 @@ CREATE TABLE IF NOT EXISTS dividend_history (
     INDEX idx_dividend_notice_date (notice_date),
     INDEX idx_dividend_ex_date (ex_dividend_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='分红历史数据';
+
+-- ---------- 名称变更 ----------
+CREATE TABLE IF NOT EXISTS name_changes (
+    stock_code      CHAR(10)     NOT NULL COMMENT '股票代码',
+    change_date     INT(8)       NOT NULL DEFAULT 0 COMMENT '变更日期 YYYYMMDD',
+    security_name   VARCHAR(100) NOT NULL DEFAULT '' COMMENT '变更后名称',
+    change_reason   VARCHAR(200) NOT NULL DEFAULT '' COMMENT '变更原因',
+
+    PRIMARY KEY (stock_code, change_date),
+    INDEX idx_change_date (change_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='名称变更历史';

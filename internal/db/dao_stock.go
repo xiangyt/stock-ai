@@ -2,6 +2,7 @@ package db
 
 import (
 	"log"
+	"time"
 
 	"stock-ai/internal/model"
 
@@ -32,10 +33,10 @@ func UpsertStock(stock model.Stock) int64 {
 	return result.RowsAffected
 }
 
-// LoadAllStockCodes 从数据库加载全量股票代码列表
+// LoadAllStockCodes 从数据库加载全量股票代码列表（排除已退市：delist_date 为空字符串）
 func LoadAllStockCodes() []model.Stock {
 	var stocks []model.Stock
-	GetDB().Find(&stocks)
+	GetDB().Where("delist_date = ?", "").Find(&stocks)
 	return stocks
 }
 
@@ -58,4 +59,18 @@ func ListStocks(offset, limit int) ([]model.Stock, error) {
 	var stocks []model.Stock
 	err := GetDB().Offset(offset).Limit(limit).Find(&stocks).Error
 	return stocks, err
+}
+
+// UpdateStockName 更新股票简称，同时根据名称变更更新退市日期
+func UpdateStockName(code, name, delistDate string) error {
+	updates := map[string]interface{}{
+		"name":    name,
+		"updated": time.Now(),
+	}
+	if delistDate != "" {
+		updates["delist_date"] = delistDate
+	}
+	return GetDB().Model(&model.Stock{}).
+		Where("code = ?", code).
+		Updates(updates).Error
 }

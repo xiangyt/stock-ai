@@ -119,3 +119,16 @@ type DividendHistory struct {
 }
 
 func (DividendHistory) TableName() string { return "dividend_history" }
+
+// ---------- 名称变更 ----------
+
+// NameChange 名称变更表（东财 RPT_ORG_COURSECHANGE）
+// 记录股票名称变更历史（如 ST、*ST、退市等）
+type NameChange struct {
+	StockCode    string `gorm:"primaryKey;size:10;not null;column:stock_code" json:"stock_code"`
+	ChangeDate   int    `gorm:"primaryKey;not null;column:change_date" json:"change_date"` // 变更日期 YYYYMMDD
+	SecurityName string `gorm:"size:100;column:security_name" json:"security_name"` // 变更后名称
+	ChangeReason string `gorm:"size:200;column:change_reason" json:"change_reason"` // 变更原因
+}
+
+func (NameChange) TableName() string { return "name_changes" }

@@ -3,6 +3,7 @@ package eastmoney
 import (
 	"context"
 	"encoding/json"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -871,4 +872,320 @@ func TestParseInstitutionalHoldResponse(t *testing.T) {
 			t.Errorf("IS_INCREASE = %q, want -1(减少)", item.IS_INCREASE)
 		}
 	})
+}
+
+// ========== 名称变更测试 ==========
+
+// TestGetNameChanges 测试获取名称变更（实际调用 API，需要网络）
+// 使用 300344（立方数科→*ST立方→立方退）作为测试标的
+func TestGetNameChanges(t *testing.T) {
+	a := newTestAdapter()
+	defer a.Close()
+
+	ctx := context.Background()
+	code := "300344"
+
+	changes, err := a.GetNameChanges(ctx, code, "2025-12-02")
+	if err != nil {
+		t.Fatalf("GetNameChanges(%s, since=empty) failed: %v", code, err)
+	}
+
+	if len(changes) == 0 {
+		t.Fatal("expected at least one name change record for 300344")
+	}
+
+	t.Logf("%s 名称变更记录数: %d", code, len(changes))
+
+	// 验证按日期降序排列
+	for i := 1; i < len(changes); i++ {
+		if changes[i].ChangeDate > changes[i-1].ChangeDate {
+			t.Errorf("records not sorted by date desc: [%d]=%s > [%d]=%s",
+				i-1, changes[i-1].ChangeDate, i, changes[i].ChangeDate)
+		}
+	}
+
+	// 验证第一条（最新）记录字段
+	latest := changes[0]
+	if latest.Code != code {
+		t.Errorf("Code = %q, want %q", latest.Code, code)
+	}
+	if latest.ChangeDate == "" {
+		t.Error("ChangeDate is empty")
+	}
+	if latest.SecurityName == "" {
+		t.Error("SecurityName is empty")
+	}
+	if latest.ChangeReason == "" {
+		t.Error("ChangeReason is empty")
+	}
+
+	t.Logf("  Latest: %s %s (%s)", latest.ChangeDate, latest.SecurityName, latest.ChangeReason)
+}
+
+// TestGetNameChanges_InvalidCode 测试无效股票代码
+func TestGetNameChanges_InvalidCode(t *testing.T) {
+	a := newTestAdapter()
+	defer a.Close()
+
+	ctx := context.Background()
+	// 999999 是无意义的代码，API 应返回空数据（code=9201）
+	changes, err := a.GetNameChanges(ctx, "999999", "")
+	if err != nil {
+		t.Logf("999999 returned error (acceptable): %v", err)
+		return
+	}
+	if len(changes) != 0 {
+		t.Logf("unexpected data for invalid code 999999: %d records", len(changes))
+	}
+}
+
+// TestGetNameChanges_WithSince 测试增量模式（since 参数）
+func TestGetNameChanges_WithSince(t *testing.T) {
+	a := newTestAdapter()
+	defer a.Close()
+
+	ctx := context.Background()
+	code := "300344"
+
+	// 先全量拉取，获取最新变更日期
+	allChanges, err := a.GetNameChanges(ctx, code, "")
+	if err != nil {
+		t.Fatalf("GetNameChanges(%s, since=empty) failed: %v", code, err)
+	}
+	if len(allChanges) == 0 {
+		t.Skip("no name change data for 300344, skip incremental test")
+	}
+
+	// 取最新记录的日期作为 since（模拟"已同步到该日期"）
+	latestDate := allChanges[0].ChangeDate
+	t.Logf("全量记录数: %d, 最新日期: %s", len(allChanges), latestDate)
+
+	// since = 最新日期 → 应该返回空（没有比最新日期更新的记录）
+	changes, err := a.GetNameChanges(ctx, code, latestDate)
+	if err != nil {
+		t.Fatalf("GetNameChanges(%s, since=%s) failed: %v", code, latestDate, err)
+	}
+	if len(changes) != 0 {
+		t.Errorf("since=%s should return empty, got %d records", latestDate, len(changes))
+	}
+	t.Logf("since=%s → 返回空（符合预期）", latestDate)
+
+	// since = 很早的日期（如 2000-01-01）→ 应该返回全量
+	changes, err = a.GetNameChanges(ctx, code, "2000-01-01")
+	if err != nil {
+		t.Fatalf("GetNameChanges(%s, since=2000-01-01) failed: %v", code, err)
+	}
+	if len(changes) != len(allChanges) {
+		t.Errorf("since=2000-01-01: got %d records, want %d (full amount)",
+			len(changes), len(allChanges))
+	}
+	t.Logf("since=2000-01-01 → 返回 %d 条（全量）", len(changes))
+}
+
+// TestParseNameChangeResponse 测试名称变更 JSON 解析（无需网络）
+func TestParseNameChangeResponse(t *testing.T) {
+	jsonBody := `{
+		"version": "e9ec6711f0a51b29350c86d84476feb4",
+		"result": {
+			"pages": 1,
+			"data": [
+				{
+					"SECURITY_CODE": "300344",
+					"SECUCODE": "300344.SZ",
+					"CHANGE_DATE": "2026-03-31 00:00:00",
+					"CHANGE_NAME": "*ST立方 → 立方退",
+					"CHANGE_REASON": "进入退市整理板"
+				},
+				{
+					"SECURITY_CODE": "300344",
+					"SECUCODE": "300344.SZ",
+					"CHANGE_DATE": "2025-12-02 00:00:00",
+					"CHANGE_NAME": "ST立方 → *ST立方",
+					"CHANGE_REASON": "实行退市风险警示"
+				},
+				{
+					"SECURITY_CODE": "300344",
+					"SECUCODE": "300344.SZ",
+					"CHANGE_DATE": "2025-04-30 00:00:00",
+					"CHANGE_NAME": "立方数科 → ST立方",
+					"CHANGE_REASON": "实行其他特别处理"
+				}
+			],
+			"count": 6
+		},
+		"success": true,
+		"message": "ok",
+		"code": 0
+	}`
+
+	var resp nameChangeResponse
+	if err := json.Unmarshal([]byte(jsonBody), &resp); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	if !resp.Success {
+		t.Fatal("expected success=true")
+	}
+	if resp.Result.Count != 6 {
+		t.Fatalf("count = %d, want 6", resp.Result.Count)
+	}
+	if resp.Code != 0 {
+		t.Fatalf("code = %d, want 0", resp.Code)
+	}
+
+	items := resp.Result.Data
+	if len(items) != 3 {
+		t.Fatalf("data length = %d, want 3", len(items))
+	}
+
+	// 验证第一条（最新）
+	t.Run("第一条(2026-03-31)", func(t *testing.T) {
+		item := items[0]
+		if item.SECURITY_CODE != "300344" {
+			t.Errorf("SECURITY_CODE = %q, want 300344", item.SECURITY_CODE)
+		}
+		dateStr := parseNameChangeDate(item.CHANGE_DATE)
+		if dateStr != "2026-03-31" {
+			t.Errorf("CHANGE_DATE = %q, want 2026-03-31", dateStr)
+		}
+		if item.CHANGE_NAME != "*ST立方 → 立方退" {
+			t.Errorf("CHANGE_NAME = %q, want *ST立方 → 立方退", item.CHANGE_NAME)
+		}
+		if item.CHANGE_REASON != "进入退市整理板" {
+			t.Errorf("CHANGE_REASON = %q, want 进入退市整理板", item.CHANGE_REASON)
+		}
+	})
+
+	// 验证 parseNameChangeDate 提取 YYYY-MM-DD
+	t.Run("parseNameChangeDate", func(t *testing.T) {
+		tests := []struct {
+			input    string
+			expected string
+		}{
+			{"2026-03-31 00:00:00", "2026-03-31"},
+			{"2025-12-02", "2025-12-02"},
+			{"", ""},
+			{"2024", "2024"},
+		}
+		for _, tt := range tests {
+			got := parseNameChangeDate(tt.input)
+			if got != tt.expected {
+				t.Errorf("parseNameChangeDate(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		}
+	})
+
+	// 验证增量过滤逻辑：只保留 > since 的记录
+	t.Run("增量过滤逻辑", func(t *testing.T) {
+		since := "2025-06-01"
+		var filtered []nameChangeItem
+		for _, item := range items {
+			dateStr := parseNameChangeDate(item.CHANGE_DATE)
+			if dateStr <= since {
+				continue
+			}
+			filtered = append(filtered, item)
+		}
+		// 只有 2026-03-31 和 2025-12-02 两条 > 2025-06-01
+		if len(filtered) != 2 {
+			t.Errorf("filtered count = %d, want 2", len(filtered))
+		}
+		t.Logf("since=%s: 过滤后 %d 条", since, len(filtered))
+	})
+}
+
+// TestCopyValues 测试 copyValues 辅助函数
+func TestCopyValues(t *testing.T) {
+	orig := url.Values{
+		"reportName":   {"RPT_ORG_COURSECHANGE"},
+		"columns":      {"SECURITY_CODE,SECUCODE"},
+		"quoteColumns": {""},
+		"filter":       {"(SECUCODE=\"300344.SZ\")"},
+	}
+
+	copied := copyValues(orig)
+
+	// 修改 copy 不影响 orig
+	copied.Set("pageNumber", "1")
+	copied.Set("pageSize", "1")
+	if orig.Get("pageNumber") != "" {
+		t.Error("copyValues: modifying copy should not affect original")
+	}
+
+	// 值正确
+	if copied.Get("reportName") != "RPT_ORG_COURSECHANGE" {
+		t.Errorf("reportName = %q, want RPT_ORG_COURSECHANGE", copied.Get("reportName"))
+	}
+	if copied.Get("filter") != "(SECUCODE=\"300344.SZ\")" {
+		t.Errorf("filter = %q, want (SECUCODE=\"300344.SZ\")", copied.Get("filter"))
+	}
+}
+
+// TestGetNameChanges_ProbeEarlyReturn 测试探路提前返回逻辑
+// 模拟 since 日期晚于最新记录的情况
+func TestGetNameChanges_ProbeEarlyReturn(t *testing.T) {
+	// 构造一个探路响应：最新记录日期是 2025-01-01
+	probeJSON := `{
+		"success": true,
+		"code": 0,
+		"result": {
+			"pages": 2,
+			"data": [{
+				"SECURITY_CODE": "300344",
+				"SECUCODE": "300344.SZ",
+				"CHANGE_DATE": "2025-01-01 00:00:00",
+				"CHANGE_NAME": "旧名称",
+				"CHANGE_REASON": "旧原因"
+			}],
+			"count": 2
+		}
+	}`
+
+	var probeResp nameChangeResponse
+	if err := json.Unmarshal([]byte(probeJSON), &probeResp); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	latestDate := parseNameChangeDate(probeResp.Result.Data[0].CHANGE_DATE)
+	since := "2026-01-01" // since 比最新记录新
+
+	if latestDate <= since {
+		t.Logf("latestDate=%s <= since=%s → 应提前返回空（符合预期）", latestDate, since)
+	} else {
+		t.Errorf("expected latestDate <= since, got latestDate=%s, since=%s", latestDate, since)
+	}
+}
+
+// TestGetNameChanges_SinceFilter 测试 Go 侧 since 过滤
+func TestGetNameChanges_SinceFilter(t *testing.T) {
+	// 模拟 API 返回的全量数据
+	allItems := []nameChangeItem{
+		{CHANGE_DATE: "2026-03-31 00:00:00", CHANGE_NAME: "A", CHANGE_REASON: "R1"},
+		{CHANGE_DATE: "2025-12-02 00:00:00", CHANGE_NAME: "B", CHANGE_REASON: "R2"},
+		{CHANGE_DATE: "2025-04-30 00:00:00", CHANGE_NAME: "C", CHANGE_REASON: "R3"},
+		{CHANGE_DATE: "2021-01-26 00:00:00", CHANGE_NAME: "D", CHANGE_REASON: "R4"},
+	}
+
+	since := "2025-06-01"
+
+	var filtered []nameChangeItem
+	for _, item := range allItems {
+		dateStr := parseNameChangeDate(item.CHANGE_DATE)
+		if dateStr <= since {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+
+	// 应该只有 2026-03-31 和 2025-12-02 两条
+	if len(filtered) != 2 {
+		t.Fatalf("filtered count = %d, want 2", len(filtered))
+	}
+	if filtered[0].CHANGE_NAME != "A" {
+		t.Errorf("filtered[0].CHANGE_NAME = %q, want A", filtered[0].CHANGE_NAME)
+	}
+	if filtered[1].CHANGE_NAME != "B" {
+		t.Errorf("filtered[1].CHANGE_NAME = %q, want B", filtered[1].CHANGE_NAME)
+	}
+	t.Logf("since=%s: 过滤后 %d 条（正确）", since, len(filtered))
 }

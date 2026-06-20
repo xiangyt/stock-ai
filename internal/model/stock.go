@@ -60,7 +60,7 @@ type Stock struct {
 }
 
 // TableName 表名
-func (Stock) TableName() string { return "stocks_detail" }
+func (Stock) TableName() string { return "stocks" }
 
 // BeforeCreate 创建前钩子：自动设置 Created/Updated 为当前时间
 func (s *Stock) BeforeCreate(tx *gorm.DB) error {

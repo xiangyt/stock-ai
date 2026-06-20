@@ -713,6 +713,167 @@ func (a *Adapter) GetDividendHistory(ctx context.Context, code string) ([]adapte
 	return allDividends, nil
 }
 
+// --- 名称变更 ---
+
+type nameChangeItem struct {
+	SECURITY_CODE string `json:"SECURITY_CODE"`
+	SECUCODE     string `json:"SECUCODE"`
+	CHANGE_DATE   string `json:"CHANGE_DATE"`
+	CHANGE_NAME   string `json:"CHANGE_NAME"`
+	CHANGE_REASON string `json:"CHANGE_REASON"`
+}
+
+type nameChangeResponse struct {
+	Version string             `json:"version"`
+	Result  nameChangeResult `json:"result"`
+	Success bool               `json:"success"`
+	Message string             `json:"message"`
+	Code    int                `json:"code"`
+}
+
+type nameChangeResult struct {
+	Pages int                `json:"pages"`
+	Data  []nameChangeItem `json:"data"`
+	Count int                `json:"count"`
+}
+
+// parseNameChangeDate 从 API 返回的日期字符串提取 YYYY-MM-DD 部分
+func parseNameChangeDate(s string) string {
+	if len(s) >= 10 {
+		return s[:10]
+	}
+	return s
+}
+
+// GetNameChanges 获取名称变更历史数据
+//
+// API: datacenter.eastmoney.com/securities/api/data/v1/get?reportName=RPT_ORG_COURSECHANGE
+//
+// since: 非空时启用增量模式
+//   - 先 pageSize=1 探路，若最新记录 change_date <= since，直接返回空（无需拉全量）
+//   - 若最新记录 > since，拉全量后在 Go 侧过滤掉 since 之前的记录
+//
+// 返回字段:
+//   - ChangeDate(变更日期)     → 时间轴
+//   - SecurityName(变更后名称) → 名称变化（如 "*ST立方 → 立方退"）
+//   - ChangeReason(变更原因)   → 原因（如 "进入退市整理板"）
+func (a *Adapter) GetNameChanges(ctx context.Context, code string, since string) ([]adapter.NameChange, error) {
+	secucode := buildSecucode(code)
+	columns := "SECURITY_CODE,SECUCODE,CHANGE_DATE,CHANGE_NAME,CHANGE_REASON"
+
+	baseParams := url.Values{
+		"reportName":  {"RPT_ORG_COURSECHANGE"},
+		"columns":     {columns},
+		"quoteColumns": {""},
+		"filter":      {fmt.Sprintf(`(SECUCODE="%s")`, secucode)},
+		"sortTypes":   {"-1"},
+		"sortColumns": {"CHANGE_DATE"},
+		"source":      {"HSF10"},
+		"client":      {"PC"},
+	}
+
+	// ---------- 增量模式：先探路 ----------
+	if since != "" {
+		probeParams := copyValues(baseParams)
+		probeParams.Set("pageNumber", "1")
+		probeParams.Set("pageSize", "1")
+
+		probeURL := "https://datacenter.eastmoney.com/securities/api/data/v1/get?" + probeParams.Encode()
+		body, err := a.makeGetRequestRaw(probeURL, "https://emweb.securities.eastmoney.com/")
+		if err != nil {
+			return nil, fmt.Errorf("名称变更探路请求失败 [%s]: %w", code, err)
+		}
+
+		var probeResp nameChangeResponse
+		if err := json.Unmarshal([]byte(body), &probeResp); err != nil {
+			return nil, fmt.Errorf("解析名称变更探路响应失败: %w", err)
+		}
+		if probeResp.Success && len(probeResp.Result.Data) > 0 {
+			latestDate := parseNameChangeDate(probeResp.Result.Data[0].CHANGE_DATE)
+			if latestDate <= since {
+				// 最新记录已在 since 之前，无需拉取
+				return nil, nil
+			}
+			// latestDate > since，需要拉全量再过滤
+		} else if !probeResp.Success {
+			if probeResp.Code == 9201 || probeResp.Result.Pages == 0 {
+				return nil, nil // 无数据
+			}
+			return nil, fmt.Errorf("名称变更探路API错误(code=%d): %s", probeResp.Code, probeResp.Message)
+		} else {
+			return nil, nil // 无数据
+		}
+	}
+
+	// ---------- 拉全量 ----------
+	var allChanges []adapter.NameChange
+	page := 1
+	pageSize := 50
+	totalPages := 0
+
+	for {
+		params := copyValues(baseParams)
+		params.Set("pageNumber", strconv.Itoa(page))
+		params.Set("pageSize", strconv.Itoa(pageSize))
+
+		urlStr := "https://datacenter.eastmoney.com/securities/api/data/v1/get?" + params.Encode()
+		body, err := a.makeGetRequestRaw(urlStr, "https://emweb.securities.eastmoney.com/")
+		if err != nil {
+			return nil, fmt.Errorf("请求名称变更第%d页失败: %w", page, err)
+		}
+
+		var resp nameChangeResponse
+		if err := json.Unmarshal([]byte(body), &resp); err != nil {
+			return nil, fmt.Errorf("解析名称变更JSON失败: %w", err)
+		}
+		if !resp.Success {
+			if resp.Code == 9201 || resp.Result.Pages == 0 {
+				break
+			}
+			return nil, fmt.Errorf("名称变更API错误(code=%d): %s", resp.Code, resp.Message)
+		}
+
+		if totalPages == 0 {
+			totalPages = resp.Result.Pages
+		}
+
+		for _, item := range resp.Result.Data {
+			dateStr := parseNameChangeDate(item.CHANGE_DATE)
+
+			// Go 侧过滤：since 非空时只保留 > since 的记录
+			if since != "" && dateStr <= since {
+				continue
+			}
+
+			allChanges = append(allChanges, adapter.NameChange{
+				Code:         code,
+				SecurityCode: item.SECUCODE,
+				ChangeDate:   dateStr,
+				SecurityName: item.CHANGE_NAME,
+				ChangeReason: item.CHANGE_REASON,
+			})
+		}
+
+		if page >= totalPages || len(resp.Result.Data) < pageSize {
+			break
+		}
+		page++
+		time.Sleep(80 * time.Millisecond)
+	}
+
+	log.Printf("[eastmoney] %s 名称变更: %d 条记录", code, len(allChanges))
+	return allChanges, nil
+}
+
+// copyValues 浅拷贝 url.Values（各路复用 baseParams 时不互相覆盖）
+func copyValues(v url.Values) url.Values {
+	c := make(url.Values, len(v))
+	for k, vs := range v {
+		c[k] = append([]string(nil), vs...)
+	}
+	return c
+}
+
 // ptrToStr 解引用 *string，nil 返回空字符串
 func ptrToStr(v *string) string {
 	if v == nil {

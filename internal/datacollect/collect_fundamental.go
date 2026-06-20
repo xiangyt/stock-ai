@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"stock-ai/internal/adapter"
 	"stock-ai/internal/db"
@@ -16,10 +17,11 @@ import (
 
 // CollectResult 批量采集结果汇总
 type CollectResult struct {
-	Total     int `json:"total"`      // 总股票数/总条数
-	NewCount  int `json:"new_count"`  // 新增记录数
-	UpdCount  int `json:"upd_count"`  // 更新记录数
-	FailCount int `json:"fail_count"` // 失败股票数
+	Total        int `json:"total"`          // 总股票数/总条数
+	NewCount     int `json:"new_count"`      // 新增记录数
+	UpdCount     int `json:"upd_count"`      // 更新记录数
+	NameUpdCount int `json:"name_upd_count"` // UpdateStockName 成功数（仅名称变更采集使用）
+	FailCount    int `json:"fail_count"`     // 失败股票数
 }
 
 // ============================================================================
@@ -198,6 +200,104 @@ func RunDividendHistoryBatch(ctx context.Context, adp adapter.DataSource) (*Coll
 	return result, nil
 }
 
+// RunNameChanges 采集单只股票的名称变更（增量：仅拉取 DB 最新记录之后的数据）
+func RunNameChanges(ctx context.Context, adp adapter.DataSource, code string) (*CollectResult, error) {
+	since := buildSince(code)
+	changes, err := adp.GetNameChanges(ctx, code, since)
+	if err != nil {
+		return nil, fmt.Errorf("获取名称变更失败 [%s]: %w", code, err)
+	}
+	if len(changes) == 0 {
+		return &CollectResult{Total: 0}, nil
+	}
+	result := upsertNameChanges(code, changes)
+	// 同步最新名称到 stocks 表，同时更新退市日期
+	// API 返回时间倒序（最新在前），取 changes[0]
+	latest := changes[0]
+	latestName := extractNewName(latest.SecurityName)
+	delistDate := ""
+	if strings.Contains(latestName, "退") && strings.Contains(latest.ChangeReason, "进入退市整理") {
+		delistDate = latest.ChangeDate // 已是 YYYY-MM-DD 格式
+	}
+	_ = db.UpdateStockName(code, latestName, delistDate)
+	log.Printf("[采集-名称变更] 完成 [%s]: total=%d, new=%d, upd=%d", code, result.Total, result.NewCount, result.UpdCount)
+	return result, nil
+}
+
+// RunNameChangesBatch 全量采集所有股票的名称变更（增量模式）
+func RunNameChangesBatch(ctx context.Context, adp adapter.DataSource) (*CollectResult, error) {
+	stocks := db.LoadAllStockCodes()
+	if len(stocks) == 0 {
+		return &CollectResult{}, nil
+	}
+
+	result := &CollectResult{Total: len(stocks)}
+	for i, stock := range stocks {
+		select {
+		case <-ctx.Done():
+			return result, ctx.Err()
+		default:
+		}
+		since := buildSince(stock.Code)
+		changes, fetchErr := adp.GetNameChanges(ctx, stock.Code, since)
+		if fetchErr != nil {
+			log.Printf("[采集-名称变更] 获取失败 [%s]: %v", stock.Code, fetchErr)
+			result.FailCount++
+			continue
+		}
+		if len(changes) == 0 {
+			continue // 无新数据，跳过
+		}
+		partial := upsertNameChanges(stock.Code, changes)
+		result.NewCount += partial.NewCount
+		result.UpdCount += partial.UpdCount
+		result.FailCount += partial.FailCount // 合并保存变更记录的失败数
+
+		// 同步最新名称到 stocks 表，同时更新退市日期
+		// API 返回时间倒序（最新在前），取 changes[0]
+		latest := changes[0]
+		latestName := extractNewName(latest.SecurityName)
+		delistDate := ""
+		if strings.Contains(latestName, "退") && strings.Contains(latest.ChangeReason, "进入退市整理") {
+			delistDate = latest.ChangeDate // 已是 YYYY-MM-DD 格式
+		}
+		if err := db.UpdateStockName(stock.Code, latestName, delistDate); err != nil {
+			log.Printf("[采集-名称变更] 更新股票名称失败 [%s]: %v", stock.Code, err)
+			result.FailCount++
+		} else {
+			result.NameUpdCount++
+		}
+
+		if (i+1)%100 == 0 || i == len(stocks)-1 {
+			log.Printf("[采集-名称变更] 全量进度: %d/%d (新增记录=%d, 名称更新=%d, 失败=%d)",
+				i+1, len(stocks), result.NewCount, result.NameUpdCount, result.FailCount)
+		}
+	}
+	log.Printf("[采集-名称变更] 全量完成: total=%d, 新增记录=%d, 名称更新=%d, 失败=%d",
+		result.Total, result.NewCount, result.NameUpdCount, result.FailCount)
+	return result, nil
+}
+
+// extractNewName 从名称变更字段中提取新名称
+// 例: "*ST立方 → 立方退" → "立方退"
+// 若无 "→" 分隔符，原样返回
+func extractNewName(raw string) string {
+	if idx := strings.Index(raw, "→"); idx >= 0 {
+		return strings.TrimSpace(raw[idx+len("→"):])
+	}
+	return strings.TrimSpace(raw)
+}
+
+// buildSince 查询 DB 中该股票最近一次名称变更日期，返回 "YYYY-MM-DD" 格式；无记录时返回空串（全量拉取）
+func buildSince(code string) string {
+	nc, err := db.FindLatestNameChange(code)
+	if err != nil || nc.ChangeDate == 0 {
+		return ""
+	}
+	d := nc.ChangeDate // int YYYYMMDD
+	return fmt.Sprintf("%d-%02d-%02d", d/10000, (d%10000)/100, d%100)
+}
+
 // ============================================================================
 //  批量写入辅助函数
 // ============================================================================
@@ -357,6 +457,30 @@ func upsertDividendHistory(code string, dividends []adapter.DividendHistory) *Co
 		}
 		rowsAffected := db.UpsertDividendHistory(m)
 		if rowsAffected == -1 {
+			continue
+		}
+		if rowsAffected == 1 {
+			result.NewCount++ // INSERT (新记录)
+		} else {
+			result.UpdCount++ // UPDATE (2=有变化, 0=无变化)
+		}
+	}
+	return result
+}
+
+// upsertNameChanges 批量写入名称变更数据
+func upsertNameChanges(code string, changes []adapter.NameChange) *CollectResult {
+	result := &CollectResult{Total: len(changes)}
+	for _, c := range changes {
+		m := model.NameChange{
+			StockCode:    code,
+			ChangeDate:   parseTradeDate(c.ChangeDate),
+			SecurityName: c.SecurityName,
+			ChangeReason: c.ChangeReason,
+		}
+		rowsAffected := db.UpsertNameChange(m)
+		if rowsAffected == -1 {
+			result.FailCount++ // 保存变更记录失败
 			continue
 		}
 		if rowsAffected == 1 {

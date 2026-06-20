@@ -61,6 +61,9 @@ type DataSource interface {
 	// 分红历史
 	GetDividendHistory(ctx context.Context, code string) ([]DividendHistory, error) // 分红历史列表
 
+	// 名称变更（since: 增量拉取起始日期 YYYY-MM-DD，空串=全量）
+	GetNameChanges(ctx context.Context, code string, since string) ([]NameChange, error) // 名称变更历史
+
 	// 配额与状态
 	GetQuotaInfo() QuotaInfo // 配额信息
 }
@@ -389,4 +392,13 @@ type DividendHistory struct {
 	TotalDividend          float64 `json:"total_dividend"`             // 总分红金额(元)
 	TotalDividendA         float64 `json:"total_dividend_a"`           // A股总分红金额(元)
 	ReportTime             string  `json:"report_time"`                // 报告截止时间
+}
+
+// NameChange 名称变更（东财 RPT_ORG_COURSECHANGE）
+type NameChange struct {
+	Code         string `json:"code"`          // 股票代码
+	SecurityCode string `json:"security_code"` // 证券代码
+	ChangeDate   string `json:"change_date"`  // 变更日期 YYYY-MM-DD
+	SecurityName string `json:"security_name"` // 变更后名称（如 "*ST立方 → 立方退"）
+	ChangeReason string `json:"change_reason"` // 变更原因（如 "进入退市整理板"）
 }

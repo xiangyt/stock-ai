@@ -23,11 +23,11 @@ import (
 type IndicatorCategory string
 
 const (
-	CategoryTechnical  IndicatorCategory = "technical"   // 技术面
-	CategoryMarket     IndicatorCategory = "market"      // 行情面
+	CategoryTechnical   IndicatorCategory = "technical"   // 技术面
+	CategoryMarket      IndicatorCategory = "market"      // 行情面
 	CategoryFundamental IndicatorCategory = "fundamental" // 基本面
-	CategoryFinancial  IndicatorCategory = "financial"    // 财务面
-	CategorySentiment  IndicatorCategory = "sentiment"    // 情绪面（预留）
+	CategoryFinancial   IndicatorCategory = "financial"   // 财务面
+	CategorySentiment   IndicatorCategory = "sentiment"   // 情绪面（预留）
 )
 
 // CategoryInfo 大类元信息（用于前端展示和注册表）
@@ -36,11 +36,11 @@ var CategoryMeta = map[IndicatorCategory]struct {
 	Description string // 说明
 	Order       int    // 排序
 }{
-	CategoryTechnical:  {"技术面", "基于价格、成交量计算的技术分析指标", 1},
-	CategoryMarket:     {"行情面", "基于当日行情数据的市场表现指标", 2},
+	CategoryTechnical:   {"技术面", "基于价格、成交量计算的技术分析指标", 1},
+	CategoryMarket:      {"行情面", "基于当日行情数据的市场表现指标", 2},
 	CategoryFundamental: {"基本面", "基于公司属性的基本面特征", 3},
-	CategoryFinancial:  {"财务面", "基于财报数据的财务健康度指标", 4},
-	CategorySentiment:  {"情绪面", "基于市场情绪的资金流向与热度指标", 5},
+	CategoryFinancial:   {"财务面", "基于财报数据的财务健康度指标", 4},
+	CategorySentiment:   {"情绪面", "基于市场情绪的资金流向与热度指标", 5},
 }
 
 func (c IndicatorCategory) DisplayName() string {
@@ -63,39 +63,39 @@ func (c IndicatorCategory) Description() string {
 type ValueType string
 
 const (
-	ValueTypeNumber  ValueType = "number"  // 数值型：PE, MA, RSI 等
-	ValueTypeBool    ValueType = "bool"    // 布尔型：金叉/死叉, 突破等形态信号
-	ValueTypeEnum    ValueType = "enum"    // 枚举型：板块, 行业, 交易所
-	ValueTypeSeries  ValueType = "series"  // 序列型：需要多日数据判断的趋势/背离
+	ValueTypeNumber ValueType = "number" // 数值型：PE, MA, RSI 等
+	ValueTypeBool   ValueType = "bool"   // 布尔型：金叉/死叉, 突破等形态信号
+	ValueTypeEnum   ValueType = "enum"   // 枚举型：板块, 行业, 交易所
+	ValueTypeSeries ValueType = "series" // 序列型：需要多日数据判断的趋势/背离
 )
 
 // DataSourceType 指标数据来源（决定从哪张表/哪个字段取数）
 type DataSourceType string
 
 const (
-	DataSourceKline      DataSourceType = "kline"         // K线数据 (daily_kline 等)
-	DataSourceStockPrice DataSourceType = "stock_price"   // stock_prices 预计算字段
-	DataSourceStockInfo  DataSourceType = "stock_info"    // stocks_detail 基本信息
-	DataSourceFinancial  DataSourceType = "financial"     // performance_reports 财报
-	DataSourceShareholder DataSourceType = "shareholder"  // shareholder_counts
-	DataSourceRealtime   DataSourceType = "realtime"      // 实时行情
+	DataSourceKline       DataSourceType = "kline"       // K线数据 (daily_kline 等)
+	DataSourceStockPrice  DataSourceType = "stock_price" // stock_prices 预计算字段
+	DataSourceStockInfo   DataSourceType = "stock_info"  // stocks 基本信息
+	DataSourceFinancial   DataSourceType = "financial"   // performance_reports 财报
+	DataSourceShareholder DataSourceType = "shareholder" // shareholder_counts
+	DataSourceRealtime    DataSourceType = "realtime"    // 实时行情
 )
 
 // Indicator 定义（注册到指标库中的元数据）
 // 注意：这是「指标类」的定义，不是某只股票的具体值
 type Indicator struct {
-	ID          string           `json:"id"`                     // 唯一标识: "macd", "pe_ttm"
-	Category    IndicatorCategory `json:"category"`               // 所属大类
-	Name        string           `json:"name"`                   // 中文名: "MACD"
-	NameEn      string           `json:"name_en"`                // 英文名: "MACD"
-	Description string          `json:"description"`            // 描述: "指数平滑异同移动平均线"
-	ValueType   ValueType        `json:"value_type"`              // 值类型
-	DataSource  DataSourceType   `json:"data_source"`             // 数据来源
-	Fields      []string         `json:"fields"`                  // 依赖的数据库字段: ["macd", "macd_signal", "macd_hist"]
-	Unit        string           `json:"unit"`                    // 单位: "%", "倍", "" (空=无单位)
-	Version     int              `json:"version"`                 // 版本号（支持指标定义迭代）
-	CreatedAt   time.Time        `json:"created_at"`
-	UpdatedAt   time.Time        `json:"updated_at"`
+	ID          string            `json:"id"`          // 唯一标识: "macd", "pe_ttm"
+	Category    IndicatorCategory `json:"category"`    // 所属大类
+	Name        string            `json:"name"`        // 中文名: "MACD"
+	NameEn      string            `json:"name_en"`     // 英文名: "MACD"
+	Description string            `json:"description"` // 描述: "指数平滑异同移动平均线"
+	ValueType   ValueType         `json:"value_type"`  // 值类型
+	DataSource  DataSourceType    `json:"data_source"` // 数据来源
+	Fields      []string          `json:"fields"`      // 依赖的数据库字段: ["macd", "macd_signal", "macd_hist"]
+	Unit        string            `json:"unit"`        // 单位: "%", "倍", "" (空=无单位)
+	Version     int               `json:"version"`     // 版本号（支持指标定义迭代）
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
 }
 
 // ---------- Layer 3: 信号 ----------
@@ -104,48 +104,48 @@ type Indicator struct {
 type CompareOperator string
 
 const (
-	OpGT       CompareOperator = "gt"        // 大于 >
-	OpGTE      CompareOperator = "gte"       // 大于等于 >=
-	OpLT       CompareOperator = "lt"        // 小于 <
-	OpLTE      CompareOperator = "lte"       // 小于等于 <=
-	OpEQ       CompareOperator = "eq"        // 等于 ==
-	OpNEQ      CompareOperator = "neq"       // 不等于 !=
-	OpBetween  CompareOperator = "between"   // 区间 [low, high]
-	OpNotBetween CompareOperator = "not_between" // 区间外
-	OpIn       CompareOperator = "in"        // 枚举集合内
-	OpNotIn    CompareOperator = "not_in"    // 枚举集合外
-	OpContains CompareOperator = "contains"  // 包含（字符串/列表）
-	OpCrossUp  CompareOperator = "cross_up"  // 上穿/金叉（序列信号）
-	OpCrossDown CompareOperator = "cross_down" // 下穿/死叉（序列信号）
+	OpGT            CompareOperator = "gt"             // 大于 >
+	OpGTE           CompareOperator = "gte"            // 大于等于 >=
+	OpLT            CompareOperator = "lt"             // 小于 <
+	OpLTE           CompareOperator = "lte"            // 小于等于 <=
+	OpEQ            CompareOperator = "eq"             // 等于 ==
+	OpNEQ           CompareOperator = "neq"            // 不等于 !=
+	OpBetween       CompareOperator = "between"        // 区间 [low, high]
+	OpNotBetween    CompareOperator = "not_between"    // 区间外
+	OpIn            CompareOperator = "in"             // 枚举集合内
+	OpNotIn         CompareOperator = "not_in"         // 枚举集合外
+	OpContains      CompareOperator = "contains"       // 包含（字符串/列表）
+	OpCrossUp       CompareOperator = "cross_up"       // 上穿/金叉（序列信号）
+	OpCrossDown     CompareOperator = "cross_down"     // 下穿/死叉（序列信号）
 	OpDivergencePos CompareOperator = "divergence_pos" // 底背离（正背离）
 	OpDivergenceNeg CompareOperator = "divergence_neg" // 顶背离（负背离）
-	OpBreakout  CompareOperator = "breakout"  // 突破
-	OpBreakdown CompareOperator = "breakdown" // 跌破
+	OpBreakout      CompareOperator = "breakout"       // 突破
+	OpBreakdown     CompareOperator = "breakdown"      // 跌破
 )
 
 // OperatorMeta 操作符元信息
 var OperatorMeta = map[CompareOperator]struct {
-	Symbol    string // 显示符号: ">", "<=", "金叉"
-	Label     string // 中文标签: "大于", "大于等于", "金叉"
+	Symbol    string      // 显示符号: ">", "<=", "金叉"
+	Label     string      // 中文标签: "大于", "大于等于", "金叉"
 	Supported []ValueType // 支持的值类型
 }{
-	OpGT:       {">",  "大于", []ValueType{ValueTypeNumber}},
-	OpGTE:      {">=", "大于等于", []ValueType{ValueTypeNumber}},
-	OpLT:       {"<",  "小于", []ValueType{ValueTypeNumber}},
-	OpLTE:      {"<=", "小于等于", []ValueType{ValueTypeNumber}},
-	OpEQ:       {"=",  "等于", []ValueType{ValueTypeNumber, ValueTypeEnum}},
-	OpNEQ:      {"!=", "不等于", []ValueType{ValueTypeNumber, ValueTypeEnum}},
-	OpBetween:  {"[]", "区间内", []ValueType{ValueTypeNumber}},
-	OpNotBetween: {")(", "区间外", []ValueType{ValueTypeNumber}},
-	OpIn:       {"∈", "属于", []ValueType{ValueTypeEnum}},
-	OpNotIn:    {"∉", "不属于", []ValueType{ValueTypeEnum}},
-	OpContains: {"∋", "包含", []ValueType{ValueTypeEnum, ValueTypeBool}},
-	OpCrossUp:   {"↑↑", "金叉/上穿", []ValueType{ValueTypeBool, ValueTypeSeries}},
-	OpCrossDown: {"↓↓", "死叉/下穿", []ValueType{ValueTypeBool, ValueTypeSeries}},
+	OpGT:            {">", "大于", []ValueType{ValueTypeNumber}},
+	OpGTE:           {">=", "大于等于", []ValueType{ValueTypeNumber}},
+	OpLT:            {"<", "小于", []ValueType{ValueTypeNumber}},
+	OpLTE:           {"<=", "小于等于", []ValueType{ValueTypeNumber}},
+	OpEQ:            {"=", "等于", []ValueType{ValueTypeNumber, ValueTypeEnum}},
+	OpNEQ:           {"!=", "不等于", []ValueType{ValueTypeNumber, ValueTypeEnum}},
+	OpBetween:       {"[]", "区间内", []ValueType{ValueTypeNumber}},
+	OpNotBetween:    {")(", "区间外", []ValueType{ValueTypeNumber}},
+	OpIn:            {"∈", "属于", []ValueType{ValueTypeEnum}},
+	OpNotIn:         {"∉", "不属于", []ValueType{ValueTypeEnum}},
+	OpContains:      {"∋", "包含", []ValueType{ValueTypeEnum, ValueTypeBool}},
+	OpCrossUp:       {"↑↑", "金叉/上穿", []ValueType{ValueTypeBool, ValueTypeSeries}},
+	OpCrossDown:     {"↓↓", "死叉/下穿", []ValueType{ValueTypeBool, ValueTypeSeries}},
 	OpDivergencePos: {"↗", "底背离", []ValueType{ValueTypeBool, ValueTypeSeries}},
 	OpDivergenceNeg: {"↘", "顶背离", []ValueType{ValueTypeBool, ValueTypeSeries}},
-	OpBreakout:  {"⤒", "向上突破", []ValueType{ValueTypeBool, ValueTypeSeries}},
-	OpBreakdown: {"⤓", "向下跌破", []ValueType{ValueTypeBool, ValueTypeSeries}},
+	OpBreakout:      {"⤒", "向上突破", []ValueType{ValueTypeBool, ValueTypeSeries}},
+	OpBreakdown:     {"⤓", "向下跌破", []ValueType{ValueTypeBool, ValueTypeSeries}},
 }
 
 // Signal 信号定义 — 一个具体的选股条件（支持参数化配置）
@@ -157,16 +157,16 @@ var OperatorMeta = map[CompareOperator]struct {
 //
 // 参数覆盖优先级：显式设置值 > DefaultCfg 工厂默认值
 type Signal struct {
-	ID          string           `json:"id"`                     // 信号唯一标识
-	IndicatorID string           `json:"indicator_id"`            // 关联的指标 ID
-	Name        string           `json:"name"`                   // 信号显示名（可被前端/LLM覆写）
-	Description string          `json:"description"`            // 信号描述
-	Category    IndicatorCategory `json:"category,omitempty"`     // 所属大类（冗余存储，方便前端分组展示）
-	Operator    CompareOperator  `json:"operator"`                // 操作符
+	ID          string            `json:"id"`                 // 信号唯一标识
+	IndicatorID string            `json:"indicator_id"`       // 关联的指标 ID
+	Name        string            `json:"name"`               // 信号显示名（可被前端/LLM覆写）
+	Description string            `json:"description"`        // 信号描述
+	Category    IndicatorCategory `json:"category,omitempty"` // 所属大类（冗余存储，方便前端分组展示）
+	Operator    CompareOperator   `json:"operator"`           // 操作符
 
 	// ---- 固定参数（单值比较） ----
-	ValueNumber float64 `json:"value_number,omitempty"`  // 单值: PE>20 中的 20
-	ValueList   []string `json:"value_list,omitempty"`    // 枚举列表: 板块 in ["chinext","star"]
+	ValueNumber float64  `json:"value_number,omitempty"` // 单值: PE>20 中的 20
+	ValueList   []string `json:"value_list,omitempty"`   // 枚举列表: 板块 in ["chinext","star"]
 
 	// ---- 区间参数（Between/NotBetween 使用） ----
 	// 优先使用 MinValue/MaxValue；向后兼容 ValueLow/ValueHigh
@@ -184,7 +184,7 @@ type Signal struct {
 	//   WithinDays=3, AgoFromDays=1  → 1~3天前之间是否发生
 	//   WithinDays=0                 → 任意历史时间（仅看 LookbackDays 范围内的形态判断）
 	//
-	WithinDays int `json:"within_days,omitempty"` // 在N天内发生（含起始日），0=不限制窗口/仅看形态
+	WithinDays  int `json:"within_days,omitempty"`   // 在N天内发生（含起始日），0=不限制窗口/仅看形态
 	AgoFromDays int `json:"ago_from_days,omitempty"` // 从N天前开始看，0=从今天开始
 
 	// ---- 回看深度（形态判断用的历史数据长度） ----
@@ -306,57 +306,57 @@ const (
 
 // SignalParamDef 单个参数的元信息定义
 type SignalParamDef struct {
-	Key         string        `json:"key"`                    // JSON 字段名: "within_days", "min_value", "value_number"
-	Label       string        `json:"label"`                  // 中文显示名: "时间窗口(天)", "区间下界"
-	Type        ParamType     `json:"type"`                   // 参数类型
+	Key   string    `json:"key"`   // JSON 字段名: "within_days", "min_value", "value_number"
+	Label string    `json:"label"` // 中文显示名: "时间窗口(天)", "区间下界"
+	Type  ParamType `json:"type"`  // 参数类型
 
 	// ---- 默认值与范围约束 ----
-	Default     interface{}   `json:"default"`                // 默认值 (float64 | int | string | bool)
-	Min         float64       `json:"min,omitempty"`          // 最小值 (number/range/threshold/days)
-	Max         float64       `json:"max,omitempty"`          // 最大值
-	Step        float64       `json:"step,omitempty"`         // 步长 (slider 的步进)
+	Default interface{} `json:"default"`        // 默认值 (float64 | int | string | bool)
+	Min     float64     `json:"min,omitempty"`  // 最小值 (number/range/threshold/days)
+	Max     float64     `json:"max,omitempty"`  // 最大值
+	Step    float64     `json:"step,omitempty"` // 步长 (slider 的步进)
 
 	// ---- 选项（select / multi_select 类型使用） ----
-	Options     []ParamOption `json:"options,omitempty"`      // 预设选项列表
+	Options []ParamOption `json:"options,omitempty"` // 预设选项列表
 
 	// ---- 校验与提示 ----
-	Required    bool          `json:"required"`               // 是否必填
-	Description string        `json:"description"`            // 参数说明：用户看到的功能描述
-	Placeholder string        `json:"placeholder,omitempty"`  // 输入框 placeholder
-	Example     string        `json:"example,omitempty"`      // 示例值和说明: "3 表示近3天内出现"
-	Unit        string        `json:"unit,omitempty"`         // 单位后缀: "天", "倍", "%", "元"
+	Required    bool   `json:"required"`              // 是否必填
+	Description string `json:"description"`           // 参数说明：用户看到的功能描述
+	Placeholder string `json:"placeholder,omitempty"` // 输入框 placeholder
+	Example     string `json:"example,omitempty"`     // 示例值和说明: "3 表示近3天内出现"
+	Unit        string `json:"unit,omitempty"`        // 单位后缀: "天", "倍", "%", "元"
 
 	// ---- 高级控制 ----
-	Hidden      bool          `json:"hidden,omitempty"`       // 是否隐藏（前端不展示，但 LLM 可设置）
-	Group       string        `json:"group,omitempty"`       // 分组名: "time_window", "value_range", "threshold"
-	DependsOn   string        `json:"depends_on,omitempty"`   // 联动字段: 仅当某操作符时才显示此参数
-	ConditionValue string     `json:"condition_value,omitempty"` // 联动条件的值
+	Hidden         bool   `json:"hidden,omitempty"`          // 是否隐藏（前端不展示，但 LLM 可设置）
+	Group          string `json:"group,omitempty"`           // 分组名: "time_window", "value_range", "threshold"
+	DependsOn      string `json:"depends_on,omitempty"`      // 联动字段: 仅当某操作符时才显示此参数
+	ConditionValue string `json:"condition_value,omitempty"` // 联动条件的值
 }
 
 // ParamOption 下拉选项
 type ParamOption struct {
-	Value string `json:"value"` // 选项值
-	Label string `json:"label"` // 显示文本
+	Value string `json:"value"`          // 选项值
+	Label string `json:"label"`          // 显示文本
 	Desc  string `json:"desc,omitempty"` // 选项补充说明
 }
 
 // EvaluateParam 信号评估时的运行时参数（从 DB 中查出的原始数据）
 type EvaluateParam struct {
-	StockCode                               string
-	Current                                 map[string]float64 // 当日/最新值 {字段名: 值}
-	Historical                              []map[string]float64 // 历史序列（按时间倒序，[0]=最新）
-	FundamentalLatest                       map[string]float64 // 最新财报值
-	StockInfo                               map[string]string  // 基本信息（行业、板块等）
+	StockCode         string
+	Current           map[string]float64   // 当日/最新值 {字段名: 值}
+	Historical        []map[string]float64 // 历史序列（按时间倒序，[0]=最新）
+	FundamentalLatest map[string]float64   // 最新财报值
+	StockInfo         map[string]string    // 基本信息（行业、板块等）
 }
 
 // EvaluateResult 单个信号的评估结果
 type EvaluateResult struct {
-	SignalID    string  `json:"signal_id"`
-	Pass        bool    `json:"pass"`                  // 是否通过
-	RawValue    float64 `json:"raw_value,omitempty"`    // 实际值（用于展示为何通过/未通过）
-	Detail      string  `json:"detail,omitempty"`       // 详情说明: "MACD=0.12 > 0 ✓"
-	CostNanos   int64   `json:"cost_nanos"`             // 评估耗时(ns)
-	Error       error   `json:"error,omitempty"`        // 错误（数据缺失等）
+	SignalID  string  `json:"signal_id"`
+	Pass      bool    `json:"pass"`                // 是否通过
+	RawValue  float64 `json:"raw_value,omitempty"` // 实际值（用于展示为何通过/未通过）
+	Detail    string  `json:"detail,omitempty"`    // 详情说明: "MACD=0.12 > 0 ✓"
+	CostNanos int64   `json:"cost_nanos"`          // 评估耗时(ns)
+	Error     error   `json:"error,omitempty"`     // 错误（数据缺失等）
 }
 
 // ---------- 策略（Strategy）— 固化后的选股策略 ----------
@@ -365,9 +365,9 @@ type EvaluateResult struct {
 type StrategyStatus string
 
 const (
-	StrategyDraft     StrategyStatus = "draft"     // 草稿
-	StrategyActive    StrategyStatus = "active"    // 启用
-	StrategyArchived  StrategyStatus = "archived"  // 归档
+	StrategyDraft    StrategyStatus = "draft"    // 草稿
+	StrategyActive   StrategyStatus = "active"   // 启用
+	StrategyArchived StrategyStatus = "archived" // 归档
 )
 
 // StrategyLogicalOp 多信号间的逻辑关系
@@ -380,33 +380,33 @@ const (
 
 // Strategy 选股策略 — 一组有序信号的组合
 type Strategy struct {
-	ID            uint       `gorm:"primarykey" json:"id"`
-	UID           uint       `gorm:"index;comment:用户ID(预留)" json:"uid"`         // 用户ID(预留)
-	Name          string     `gorm:"size:100;not null" json:"name"`                       // 策略名称
-	Description   string     `gorm:"size:500" json:"description"`                        // 描述
-	LogicalOp     LogicalOp  `gorm:"size:10;default:and" json:"logical_op"`              // 条件间逻辑关系
+	ID          uint      `gorm:"primarykey" json:"id"`
+	UID         uint      `gorm:"index;comment:用户ID(预留)" json:"uid"`     // 用户ID(预留)
+	Name        string    `gorm:"size:100;not null" json:"name"`         // 策略名称
+	Description string    `gorm:"size:500" json:"description"`           // 描述
+	LogicalOp   LogicalOp `gorm:"size:10;default:and" json:"logical_op"` // 条件间逻辑关系
 
 	// 信号条件（JSON 存储 Signal 数组）
-	Conditions    string     `gorm:"type:text;not null" json:"conditions_raw"`            // JSON: []Signal
+	Conditions string `gorm:"type:text;not null" json:"conditions_raw"` // JSON: []Signal
 
 	// 卖出规则与仓位管理（JSON 存储）
-	ExitRules     string     `gorm:"type:json" json:"exit_rules"`                         // ExitRules JSON
-	PositionRules string     `gorm:"type:json" json:"position_rules"`                     // PositionRules JSON
+	ExitRules     string `gorm:"type:json" json:"exit_rules"`     // ExitRules JSON
+	PositionRules string `gorm:"type:json" json:"position_rules"` // PositionRules JSON
 
 	// 回测相关
-	BacktestCount int        `gorm:"default:0" json:"backtest_count"`                    // 回测次数
-	LastRunAt     *time.Time `json:"last_run_at"`                                       // 最后运行时间
+	BacktestCount int        `gorm:"default:0" json:"backtest_count"` // 回测次数
+	LastRunAt     *time.Time `json:"last_run_at"`                     // 最后运行时间
 
 	// 元数据
-	IsPublic      bool       `gorm:"default:false" json:"is_public"`                     // 是否公开
-	StarCount     int        `gorm:"default:0" json:"star_count"`                        // 收藏数
+	IsPublic  bool `gorm:"default:false" json:"is_public"` // 是否公开
+	StarCount int  `gorm:"default:0" json:"star_count"`    // 收藏数
 
 	// 运行时填充（非持久化）
 	SubscriptionCount int64 `gorm:"->" json:"subscription_count,omitempty"` // 订阅数量（关联子查询填充）
 
-	CreatedAt     time.Time     `json:"created_at"`
-	UpdatedAt     time.Time     `json:"updated_at"`
-	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"` // GORM 软删除
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"` // GORM 软删除
 }
 
 func (Strategy) TableName() string { return "strategies" }
@@ -421,38 +421,38 @@ func (s *Strategy) ParseConditions() ([]Signal, error) {
 
 // ScreenContext 筛选执行上下文
 type ScreenContext struct {
-	TradeDate    string     // 筛选基准日期 YYYY-MM-DD
-	Market       string     // 市场: A股/港股/美股
-	Limit        int        // 最大返回数量, 0=不限制
-	Mode  string `json:"mode,omitempty"` // 策略模式（保留兼容，运行时不再使用）
-	Debug bool   `json:"debug,omitempty"` // 是否输出调试信息
+	TradeDate string // 筛选基准日期 YYYY-MM-DD
+	Market    string // 市场: A股/港股/美股
+	Limit     int    // 最大返回数量, 0=不限制
+	Mode      string `json:"mode,omitempty"`  // 策略模式（保留兼容，运行时不再使用）
+	Debug     bool   `json:"debug,omitempty"` // 是否输出调试信息
 }
 
 // ScreenResult 筛选最终结果
 type ScreenResult struct {
-	StrategyID    uint              `json:"strategy_id,omitempty"`
-	StrategyName  string            `json:"strategy_name,omitempty"`
-	TradeDate     string            `json:"trade_date"`
-	TotalScanned  int               `json:"total_scanned"`   // 全市场扫描数量
-	TotalPassed   int               `json:"total_passed"`    // 通过所有条件的数量
-	Candidates    []CandidateStock  `json:"candidates"`      // 候选股列表
-	DurationMs    int64             `json:"duration_ms"`     // 总耗时
-	SignalStats   map[string]int    `json:"signal_stats"`     // 各信号的通过/未通过统计
-	Error         error             `json:"error,omitempty"`
+	StrategyID   uint             `json:"strategy_id,omitempty"`
+	StrategyName string           `json:"strategy_name,omitempty"`
+	TradeDate    string           `json:"trade_date"`
+	TotalScanned int              `json:"total_scanned"` // 全市场扫描数量
+	TotalPassed  int              `json:"total_passed"`  // 通过所有条件的数量
+	Candidates   []CandidateStock `json:"candidates"`    // 候选股列表
+	DurationMs   int64            `json:"duration_ms"`   // 总耗时
+	SignalStats  map[string]int   `json:"signal_stats"`  // 各信号的通过/未通过统计
+	Error        error            `json:"error,omitempty"`
 }
 
 // CandidateStock 候选股（旧版，保留兼容）
 type CandidateStock struct {
-	Code            string            `json:"code"`
-	Name            string            `json:"name"`
-	Exchange        string            `json:"exchange"`
-	Industry        string            `json:"industry"`
-	Price           float64           `json:"price"`
-	ChangePct       float64           `json:"change_pct"`
-	MatchedSignals  []string          `json:"matched_signals"`         // 匹配到的信号ID列表
-	FailedSignals   []string          `json:"failed_signals,omitempty"` // 未通过的 required 信号
-	SignalDetails   map[string]string `json:"signal_details"`          // 各信号的详情 {signal_id: "MACD=0.12>0 ✓"}
-	Extra           map[string]any    `json:"extra,omitempty"`          // 扩展信息
+	Code           string            `json:"code"`
+	Name           string            `json:"name"`
+	Exchange       string            `json:"exchange"`
+	Industry       string            `json:"industry"`
+	Price          float64           `json:"price"`
+	ChangePct      float64           `json:"change_pct"`
+	MatchedSignals []string          `json:"matched_signals"`          // 匹配到的信号ID列表
+	FailedSignals  []string          `json:"failed_signals,omitempty"` // 未通过的 required 信号
+	SignalDetails  map[string]string `json:"signal_details"`           // 各信号的详情 {signal_id: "MACD=0.12>0 ✓"}
+	Extra          map[string]any    `json:"extra,omitempty"`          // 扩展信息
 }
 
 // ============================================================================
@@ -463,10 +463,10 @@ type CandidateStock struct {
 // ============================================================================
 
 type StockData struct {
-	Code       string                   `json:"code"`                  // 股票代码 (000001.SZ)
-	Name       string                   `json:"name"`                  // 名称
-	Exchange   string                   `json:"exchange,omitempty"`    // 交易所
-	Industry   string                   `json:"industry,omitempty"`    // 行业
+	Code     string `json:"code"`               // 股票代码 (000001.SZ)
+	Name     string `json:"name"`               // 名称
+	Exchange string `json:"exchange,omitempty"` // 交易所
+	Industry string `json:"industry,omitempty"` // 行业
 
 	// 当日/最新行情快照
 	Current map[string]float64 `json:"current"` // {close, ma5, macd, pe_ttm, volume...}

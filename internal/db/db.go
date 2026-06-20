@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"stock-ai/internal/config"
-	"stock-ai/internal/model"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -50,38 +49,37 @@ func Init(cfg *config.DatabaseConfig) error {
 	return nil
 }
 
-// AutoMigrate 自动迁移数据库表结构
+// AutoMigrate 自动迁移数据库表结构（已禁用，所有建表由 sql/ 目录手动管理）
 func AutoMigrate() error {
 	if DB == nil {
 		return fmt.Errorf("数据库未初始化")
 	}
 
-	return DB.AutoMigrate(
-		&model.User{},
-		&model.Stock{},
-		&model.DailyKline{},
-		&model.Strategy{},
-		&model.PushBot{},
-		// 持仓管理
-		&model.Position{},
-		&model.PositionTrade{},
-		// 策略订阅
-		&model.Subscription{},
-		&model.SubscriptionBot{},
-		&model.SubscriptionLog{},
-		// 盯盘监控
-		&model.MonitorConfig{},
-		&model.MonitorConfigBot{},
-		// 数据采集
-		&model.DataCollectTask{},
-		&model.DataCollectBot{},
-		// 法定节假日
-		&model.TradingHoliday{},
-		// 基本面/财务数据表
-		// &model.PerformanceReport{},
-		// &model.ShareholderCount{},
-		// &model.ShareChange{},
-	)
+	// 暂时全部关闭自动建表，统一用 SQL 文件管理
+	return nil
+
+	// return DB.AutoMigrate(
+	// 	&model.User{},
+	// 	&model.Stock{},
+	// 	&model.DailyKline{},
+	// 	&model.Strategy{},
+	// 	&model.PushBot{},
+	// 	// 持仓管理
+	// 	&model.Position{},
+	// 	&model.PositionTrade{},
+	// 	// 策略订阅
+	// 	&model.Subscription{},
+	// 	&model.SubscriptionBot{},
+	// 	&model.SubscriptionLog{},
+	// 	// 盯盘监控
+	// 	&model.MonitorConfig{},
+	// 	&model.MonitorConfigBot{},
+	// 	// 数据采集
+	// 	&model.DataCollectTask{},
+	// 	&model.DataCollectBot{},
+	// 	// 法定节假日
+	// 	&model.TradingHoliday{},
+	// )
 }
 
 // GetDB 获取数据库实例

@@ -131,6 +131,9 @@ func NewDataCollectRunner() *DataCollectRunner {
 	// Task 11: 除权K线同步（日/周/月）→ 检查除权日后 dividend 模式刷新
 	r.handlers[model.TaskDividendKlineSync] = r.handleDividendKlineSync
 
+	// Task 12: 名称变更同步 → RunNameChangesBatch
+	r.handlers[model.TaskNameChangeSync] = r.handleNameChangeSync
+
 	return r
 }
 
@@ -369,6 +372,21 @@ func (r *DataCollectRunner) handleDividendKlineSync(ctx context.Context, task *m
 	}
 
 	return fmt.Sprintf("除权命中=%d, 成功=%d, 失败=%d", len(hits), success, fail), nil
+}
+
+// handleNameChangeSync 处理【名称变更同步】(Task 12)
+// 参数 JSON: {"source":"eastmoney"} — 可选，默认按优先级自动选源
+func (r *DataCollectRunner) handleNameChangeSync(ctx context.Context, task *model.DataCollectTask) (string, error) {
+	sourceName := parseSourceFromParams(task.Params)
+	adp, err := ResolveAdapter(adapter.GetRegistry(), sourceName)
+	if err != nil {
+		return "", fmt.Errorf("获取数据源失败: %w", err)
+	}
+	res, err := RunNameChangesBatch(ctx, adp)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("total=%d, 新增=%d, 更新=%d, 失败=%d", res.Total, res.NewCount, res.UpdCount, res.FailCount), nil
 }
 
 // parseDividendPeriods 从 params JSON 中解析除权同步的周期列表。
@@ -695,9 +713,10 @@ func ToStockModel(code string, detail *adapter.StockBasic) model.Stock {
 	if detail == nil {
 		return model.Stock{Code: code}
 	}
+	name := detail.Name
 	return model.Stock{
 		Code:         code,
-		Name:         detail.Name,
+		Name:         name,
 		FullName:     detail.FullName,
 		EnglishName:  detail.FullNameEn,
 		Exchange:     detail.Exchange,
@@ -709,7 +728,7 @@ func ToStockModel(code string, detail *adapter.StockBasic) model.Stock {
 		IssuePE:      detail.IssuePE,
 		IssueShares:  detail.TotalIssueNum,
 		Industry:     detail.Industry,
-		Sector:       detail.Sector,
+		Sector:  detail.Sector,
 	}
 }
 

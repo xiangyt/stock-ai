@@ -162,6 +162,6 @@ func (a *Adapter) GetDividendHistory(_ context.Context, _ string) ([]adapter.Div
 }
 
 // GetNameChanges 获取名称变更历史（同花顺2数据源暂未实现，返回 ErrNotImplemented）
-func (a *Adapter) GetNameChanges(_ context.Context, _ string) ([]adapter.NameChange, error) {
+func (a *Adapter) GetNameChanges(_ context.Context, _ string, _ string) ([]adapter.NameChange, error) {
 	return nil, adapter.ErrNotImplemented
 }

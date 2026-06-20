@@ -79,7 +79,7 @@ type PositionSummary struct {
 // TradeConfigUpdateReq 更新交易配置请求
 type TradeConfigUpdateReq struct {
 	CommissionRate float64 `json:"commission_rate" binding:"required,gt=0,lte=10"` // 手续费率(单位:万分之x，如2.5表示万分之2.5)
-	MinCommission  bool    `json:"min_commission"`                                    // 是否免五
+	MinCommission  bool    `json:"min_commission"`                                 // 是否免五
 }
 
 // ============================================================================
@@ -429,7 +429,7 @@ func (svc *PortfolioService) calculateCommission(uid uint, amount float64) float
 
 // enrichPositionDetail 补充持仓详情中的关联数据（股票名称、现价）
 func (svc *PortfolioService) enrichPositionDetail(d *model.PositionDetail, _ uint) {
-	// 1. 通过 stock_code 从 stocks_detail 表查询股票名称
+	// 1. 通过 stock_code 从 stocks 表查询股票名称
 	var stock model.Stock
 	err := db.GetDB().Where("code = ?", d.StockCode).First(&stock).Error
 	if err == nil {

@@ -116,6 +116,6 @@ func (a *Adapter) GetDividendHistory(_ context.Context, _ string) ([]adapter.Div
 	return nil, adapter.ErrNotImplemented
 }
 
-func (a *Adapter) GetNameChanges(_ context.Context, _ string) ([]adapter.NameChange, error) {
+func (a *Adapter) GetNameChanges(_ context.Context, _ string, _ string) ([]adapter.NameChange, error) {
 	return nil, adapter.ErrNotImplemented
 }

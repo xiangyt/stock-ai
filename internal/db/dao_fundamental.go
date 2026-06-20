@@ -146,3 +146,42 @@ func FindLatestDividend(code string) (model.DividendHistory, error) {
 		First(&dividend).Error
 	return dividend, err
 }
+
+// ========== 名称变更 DAO ==========
+
+// UpsertNameChange 单条名称变更 upsert (INSERT ON DUPLICATE KEY UPDATE)
+func UpsertNameChange(m model.NameChange) int64 {
+	result := GetDB().Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "stock_code"}, {Name: "change_date"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"security_name", "change_reason",
+		}),
+	}).Create(&m)
+	if result.Error != nil {
+		log.Printf("[dao-fundamental] 名称变更upsert失败 [%s/%d]: %v", m.StockCode, m.ChangeDate, result.Error)
+		return -1
+	}
+	return result.RowsAffected
+}
+
+// FindNameChanges 查询名称变更记录
+func FindNameChanges(code string, limit int) ([]model.NameChange, error) {
+	var changes []model.NameChange
+	q := GetDB().Where("stock_code = ?", code).Order("change_date DESC")
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	err := q.Find(&changes).Error
+	return changes, err
+}
+
+// FindLatestNameChange 查询指定股票最近一次名称变更记录（按 change_date DESC）
+// 若数据库中无记录，返回 gorm.ErrRecordNotFound
+func FindLatestNameChange(code string) (model.NameChange, error) {
+	var nc model.NameChange
+	err := GetDB().
+		Where("stock_code = ?", code).
+		Order("change_date DESC").
+		First(&nc).Error
+	return nc, err
+}
