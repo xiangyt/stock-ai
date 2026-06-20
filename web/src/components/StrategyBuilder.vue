@@ -395,7 +395,7 @@
           </div>
         </div>
         <div class="results-right">
-          <input type="date" v-model="runDate" class="date-picker" />
+          <input type="date" v-model="runDate" class="date-picker" :max="today" />
           <button class="btn-res-action backtest" @click="onGoBacktest">📊 历史回测</button>
           <button class="btn-res-action run" @click="runFilter" :disabled="isScreening || signals.length === 0">
             {{ isScreening ? '⏳ 筛选中...' : '🔍 运行筛选' }}

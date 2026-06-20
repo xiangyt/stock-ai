@@ -15,8 +15,8 @@ type PortfolioHandler struct {
 }
 
 // NewPortfolioHandler 创建持仓管理 Handler
-func NewPortfolioHandler() *PortfolioHandler {
-	return &PortfolioHandler{svc: service.NewPortfolioService()}
+func NewPortfolioHandler(svc *service.PortfolioService) *PortfolioHandler {
+	return &PortfolioHandler{svc: svc}
 }
 
 // getPortfolioUID 从上下文获取用户 ID

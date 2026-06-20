@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -8,14 +9,22 @@ import (
 
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
+	"stock-ai/internal/subscription/quotecache"
 )
 
 // PortfolioService 持仓管理业务逻辑
-type PortfolioService struct{}
+type PortfolioService struct {
+	cache quotecache.QuoteCache // 可选：为 nil 时不填充现价/盈亏
+}
 
 // NewPortfolioService 创建持仓服务实例
 func NewPortfolioService() *PortfolioService {
 	return &PortfolioService{}
+}
+
+// SetQuoteCache 设置行情缓存（可选，main.go 启动后注入）
+func (svc *PortfolioService) SetQuoteCache(cache quotecache.QuoteCache) {
+	svc.cache = cache
 }
 
 // ============================================================================
@@ -418,14 +427,25 @@ func (svc *PortfolioService) calculateCommission(uid uint, amount float64) float
 	return fee
 }
 
-// enrichPositionDetail 补充持仓详情中的关联数据（股票名称、交易笔数）
+// enrichPositionDetail 补充持仓详情中的关联数据（股票名称、现价）
 func (svc *PortfolioService) enrichPositionDetail(d *model.PositionDetail, _ uint) {
-	// 通过 stock_code 从 stocks_detail 表查询股票名称
+	// 1. 通过 stock_code 从 stocks_detail 表查询股票名称
 	var stock model.Stock
 	err := db.GetDB().Where("code = ?", d.StockCode).First(&stock).Error
 	if err == nil {
 		d.StockName = stock.Name
 	} else {
 		d.StockName = d.StockCode // 查不到就用代码兜底
+	}
+
+	// 2. 通过 quotecache 获取现价
+	if svc.cache != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		qd, err := svc.cache.Get(ctx, d.StockCode)
+		cancel()
+		if err == nil && qd != nil && qd.Intraday != nil && qd.Intraday.Current > 0 {
+			price := float64(qd.Intraday.Current) / 100 // 分→元
+			d.CurrentPrice = math.Round(price*100) / 100
+		}
 	}
 }

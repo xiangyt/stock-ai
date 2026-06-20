@@ -63,9 +63,9 @@
             <th>股票代码</th>
             <th>股票名称</th>
             <th class="num-col">数量(股)</th>
-            <th class="num-col">成本价</th>
+            <th class="num-col">现价/成本价</th>
             <th class="num-col">总成本</th>
-            <th>状态</th>
+            <th class="num-col">持仓盈亏</th>
             <th class="col-actions">操作</th>
           </tr>
         </thead>
@@ -81,12 +81,20 @@
             </td>
             <td class="name-cell" @click="toggleExpand(pos.id)">{{ pos.stock_name || '-' }}</td>
             <td class="num-col" @click="toggleExpand(pos.id)">{{ pos.quantity.toLocaleString() }}</td>
-            <td class="num-col" @click="toggleExpand(pos.id)">¥{{ pos.avg_cost.toFixed(2) }}</td>
+            <td class="num-col" @click="toggleExpand(pos.id)">
+              <span v-if="pos.current_price > 0" class="price-current">¥{{ pos.current_price.toFixed(2) }}</span>
+              <span v-else class="price-na">--</span>
+              <span class="price-sep">/</span>
+              <span class="price-cost">¥{{ pos.avg_cost.toFixed(2) }}</span>
+            </td>
             <td class="num-col" @click="toggleExpand(pos.id)">¥{{ formatMoney(pos.total_cost) }}</td>
-            <td @click="toggleExpand(pos.id)">
-              <span :class="['status-badge', pos.status === 'holding' ? 'badge-holding' : 'badge-closed']">
-                {{ pos.status === 'holding' ? '持有中' : '已清仓' }}
+            <td class="num-col" @click="toggleExpand(pos.id)">
+              <span v-if="pos._profit"
+                    :class="pos._profit.amount > 0 ? 'profit-pos' : pos._profit.amount < 0 ? 'profit-neg' : 'profit-zero'">
+                {{ pos._profit.amount >= 0 ? '+' : '' }}{{ pos._profit.amount.toFixed(2) }}
+                <span class="pct">({{ pos._profit.pct >= 0 ? '+' : '' }}{{ pos._profit.pct.toFixed(2) }}%)</span>
               </span>
+              <span v-else class="profit-na">--</span>
             </td>
             <td class="col-actions" @click.stop>
               <template v-if="pos.status === 'holding'">
@@ -179,7 +187,7 @@
           </label>
           <label class="form-group">
             <span class="form-label">交易日期 *</span>
-            <input v-model="formOpen.trade_date" type="date" class="form-input" required />
+            <input v-model="formOpen.trade_date" type="date" class="form-input" :max="todayStr()" required />
           </label>
           <label class="form-group">
             <span class="form-label">备注</span>
@@ -217,7 +225,7 @@
           </div>
           <label class="form-group">
             <span class="form-label">交易日期 *</span>
-            <input v-model="formTrade.trade_date" type="date" class="form-input" required />
+            <input v-model="formTrade.trade_date" type="date" class="form-input" :max="todayStr()" required />
           </label>
           <label class="form-group">
             <span class="form-label">备注</span>
@@ -255,7 +263,7 @@
           </div>
           <label class="form-group">
             <span class="form-label">交易日期 *</span>
-            <input v-model="formTrade.trade_date" type="date" class="form-input" required />
+            <input v-model="formTrade.trade_date" type="date" class="form-input" :max="todayStr()" required />
           </label>
           <label class="form-group">
             <span class="form-label">备注</span>
@@ -289,7 +297,7 @@
           </label>
           <label class="form-group">
             <span class="form-label">交易日期 *</span>
-            <input v-model.number="formClose.trade_date" type="date" class="form-input" required />
+            <input v-model.number="formClose.trade_date" type="date" class="form-input" :max="todayStr()" required />
           </label>
           <label class="form-group">
             <span class="form-label">备注</span>
@@ -409,13 +417,25 @@ function formatMoney(v: number): string {
   return v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 }
 
+// 计算持仓盈亏（前端自行计算）
+function calcProfit(pos: any): { amount: number; pct: number } | null {
+  if (!pos.current_price || pos.current_price <= 0) return null
+  const diff = pos.current_price - pos.avg_cost
+  const amount = Math.round(diff * pos.quantity * 100) / 100
+  const pct = pos.avg_cost > 0 ? Math.round(diff / pos.avg_cost * 10000) / 100 : 0
+  return { amount, pct }
+}
+
 // ========== 加载数据 ==========
 
 async function loadPositions() {
   loading.value = true
   try {
     const resp = await portfolioApi.fetchPositions(statusFilter.value, currentPage.value, pageSize.value)
-    positions.value = resp.list ?? []
+    positions.value = (resp.list ?? []).map(p => {
+      (p as any)._profit = calcProfit(p)
+      return p
+    })
     listTotal.value = resp.total ?? 0
     if (resp.summary) {
       summary.value = resp.summary as PositionListResp['summary']
@@ -812,6 +832,20 @@ onMounted(() => {
 }
 .badge-holding { background: #e6f4ff; color: #1677ff; }
 .badge-closed { background: #f5f5f5; color: #999; }
+
+/* 现价 / 成本价 */
+.price-current { font-weight: 600; }
+.price-cost { color: #888; font-size: 0.9em; }
+.price-sep { color: #ccc; margin: 0 2px; }
+.price-na { color: #ccc; }
+
+/* 持仓盈亏 */
+/* 持仓盈亏：盈利红、亏损绿、平盘黑 */
+.profit-pos   { color: #e74c3c; font-weight: 600; } /* 盈利 红 */
+.profit-neg   { color: #27ae60; font-weight: 600; } /* 亏损 绿 */
+.profit-zero  { color: #333;    font-weight: 600; } /* 平盘 黑 */
+.profit-pct   { font-weight: 400; font-size: 0.9em; margin-left: 2px; }
+.profit-na    { color: #ccc; }
 
 /* ====== 展开行（交易记录）====== */
 .expand-row td {

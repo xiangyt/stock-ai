@@ -21,7 +21,7 @@ import (
 	"stock-ai/internal/datacollect"
 	"stock-ai/internal/db"
 	"stock-ai/internal/holiday"
-"stock-ai/internal/subscription/monitor"
+	"stock-ai/internal/subscription/monitor"
 subsched "stock-ai/internal/subscription/scheduler"
 )
 
@@ -196,6 +196,11 @@ func main() {
 		router.DataCollectServiceRef.SetNotifyChange(func(ct datacollect.ChangeType, id uint) {
 			app.DCScheduler.NotifyChange(datacollect.TaskChange{Type: ct, TaskID: id})
 		})
+	}
+
+	// 持仓管理: 注入 QuoteCache 用于获取现价
+	if router.PortfolioServiceRef != nil && app.QuoteCache != nil {
+		router.PortfolioServiceRef.SetQuoteCache(app.QuoteCache)
 	}
 
 	// ====================================================================

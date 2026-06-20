@@ -50,9 +50,9 @@
 
         <span class="toolbar-sep">|</span>
         <label>日期：</label>
-        <input type="date" v-model="startDate" class="date-picker" />
+        <input type="date" v-model="startDate" class="date-picker" :max="endDate || undefined" />
         <span>至</span>
-        <input type="date" v-model="endDate" class="date-picker" />
+        <input type="date" v-model="endDate" class="date-picker" :max="formatDate(new Date())" />
 
         <span class="toolbar-sep">|</span>
         <label>本金：</label>

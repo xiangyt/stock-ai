@@ -17,12 +17,14 @@ export interface PositionDetail {
   stock_name?: string
   quantity: number
   avg_cost: number
+  current_price: number     // 现价（0=未获取到）
   status: string          // 'holding' | 'closed'
   total_cost: number
   trade_count: number
   note: string
   created_at: string
   updated_at: string
+  _profit?: { amount: number; pct: number } | null  // 前端计算盈亏（非后端返回）
   trades?: PositionTrade[]
 }
 

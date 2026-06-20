@@ -9,8 +9,8 @@ import (
 )
 
 // RegisterPortfolioRoutes 注册持仓管理相关路由
-func RegisterPortfolioRoutes(apiV1 *gin.RouterGroup, authSvc *service.AuthService) {
-	portfolioHandler := handler.NewPortfolioHandler()
+func RegisterPortfolioRoutes(apiV1 *gin.RouterGroup, authSvc *service.AuthService, portfolioSvc *service.PortfolioService) {
+	portfolioHandler := handler.NewPortfolioHandler(portfolioSvc)
 	authMid := middleware.AuthRequired(authSvc)
 
 	// /api/v1/positions — 持仓管理（需登录）

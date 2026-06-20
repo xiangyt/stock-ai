@@ -44,19 +44,20 @@ func (Position) TableName() string { return "positions" }
 
 // PositionDetail 持仓详情响应（关联股票名称等）
 type PositionDetail struct {
-	ID            uint              `json:"id"`
-	UID           uint              `json:"uid"`
-	StockCode     string            `json:"stock_code"`
-	StockName     string            `json:"stock_name,omitempty"` // 关联查询出的股票名称
-	Quantity      int               `json:"quantity"`
-	AvgCost       float64           `json:"avg_cost"`
-	Status        string            `json:"status"`
-	TotalCost     float64           `json:"total_cost"`     // 总成本 = avg_cost * quantity
-	TradeCount    int               `json:"trade_count"`    // 交易笔数
-	Note          string            `json:"note"`
-	CreatedAt     string            `json:"created_at"`
-	UpdatedAt     string            `json:"updated_at"`
-	Trades        []PositionTradeDetail `json:"trades,omitempty"` // 详情时携带交易记录
+	ID           uint                   `json:"id"`
+	UID          uint                   `json:"uid"`
+	StockCode    string                 `json:"stock_code"`
+	StockName    string                 `json:"stock_name,omitempty"` // 关联查询出的股票名称
+	Quantity     int                    `json:"quantity"`
+	AvgCost      float64                `json:"avg_cost"`          // 成本价
+	CurrentPrice float64                `json:"current_price"`     // 现价（实时行情，0 表示未获取到）
+	Status       string                 `json:"status"`
+	TotalCost    float64                `json:"total_cost"`        // 总成本 = avg_cost * quantity
+	TradeCount   int                    `json:"trade_count"`      // 交易笔数
+	Note         string                 `json:"note"`
+	CreatedAt    string                 `json:"created_at"`
+	UpdatedAt    string                 `json:"updated_at"`
+	Trades       []PositionTradeDetail  `json:"trades,omitempty"` // 详情时携带交易记录
 }
 
 // ToPositionDetail 将 Position 转为 Detail 响应

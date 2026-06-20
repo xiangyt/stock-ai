@@ -209,3 +209,8 @@ func (a *Adapter) GetInstitutionalHoldings(ctx context.Context, code string) ([]
 func (a *Adapter) GetDividendHistory(_ context.Context, _ string) ([]adapter.DividendHistory, error) {
 	return nil, adapter.ErrNotImplemented
 }
+
+// GetNameChanges 获取名称变更历史（腾讯数据源暂未实现，返回 ErrNotImplemented）
+func (a *Adapter) GetNameChanges(_ context.Context, _ string) ([]adapter.NameChange, error) {
+	return nil, adapter.ErrNotImplemented
+}

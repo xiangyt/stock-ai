@@ -115,3 +115,7 @@ func (a *Adapter) GetInstitutionalHoldings(_ context.Context, _ string) ([]adapt
 func (a *Adapter) GetDividendHistory(_ context.Context, _ string) ([]adapter.DividendHistory, error) {
 	return nil, adapter.ErrNotImplemented
 }
+
+func (a *Adapter) GetNameChanges(_ context.Context, _ string) ([]adapter.NameChange, error) {
+	return nil, adapter.ErrNotImplemented
+}
