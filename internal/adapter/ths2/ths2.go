@@ -129,6 +129,10 @@ func (a *Adapter) GetThisYearData(_ context.Context, _ string) (*adapter.StockPr
 	return nil, adapter.ErrNotImplemented
 }
 
+func (a *Adapter) GetIntraday(_ context.Context, _ string) (*adapter.IntradayData, error) {
+	return nil, adapter.ErrNotImplemented
+}
+
 func (a *Adapter) GetPerformanceReports(_ context.Context, _ string) ([]adapter.PerformanceReport, error) {
 	return nil, adapter.ErrNotImplemented
 }

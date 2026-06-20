@@ -43,6 +43,9 @@ type DataSource interface {
 	GetThisQuarterData(ctx context.Context, code string) (*StockPriceDaily, error) // 本季数据
 	GetThisYearData(ctx context.Context, code string) (*StockPriceDaily, error)    // 本年数据
 
+	// Intraday 分时数据
+	GetIntraday(ctx context.Context, code string) (*IntradayData, error)
+
 	// 财务数据
 	GetPerformanceReports(ctx context.Context, code string) ([]PerformanceReport, error)     // 业绩报表列表
 	GetLatestPerformanceReport(ctx context.Context, code string) (*PerformanceReport, error) // 最新业绩报表
@@ -113,7 +116,7 @@ type StockPriceDaily struct {
 	High      int64   `json:"high"`       // 最高价(分)
 	Low       int64   `json:"low"`        // 最低价(分)
 	Close     int64   `json:"close"`      // 收盘价(分)
-	Volume    int64   `json:"volume"`     // 成交量
+	Volume    int64   `json:"volume"`     // 成交量(股)
 	Amount    int64   `json:"amount"`     // 成交额(分)
 	Change    int64   `json:"change"`     // 涨跌额(分)
 	ChangePct float64 `json:"change_pct"` // 涨跌幅%
@@ -121,6 +124,63 @@ type StockPriceDaily struct {
 	Pe        float64 `json:"pe"`         // 市盈率
 	Pb        float64 `json:"pb"`         // 市净率
 	MarketCap float64 `json:"market_cap"` // 总市值(亿)
+}
+
+// IntradayBar 分时 bar
+type IntradayBar struct {
+	Time   string `json:"time"`   // 时间 "09:30"
+	Price  int64  `json:"price"`  // 成交价(分)
+	Volume int64  `json:"volume"` // 成交量(股)
+	Amount int64  `json:"amount"` // 成交额(分)
+}
+
+// MarketDepth 五档买卖盘口
+// 价格单位: 分, 数量单位: 股
+type MarketDepth struct {
+	Ask1Price  int64 `json:"ask1_price"`  // 卖一价(分)
+	Ask1Volume int64 `json:"ask1_volume"` // 卖一量(股)
+	Ask2Price  int64 `json:"ask2_price"`
+	Ask2Volume int64 `json:"ask2_volume"`
+	Ask3Price  int64 `json:"ask3_price"`
+	Ask3Volume int64 `json:"ask3_volume"`
+	Ask4Price  int64 `json:"ask4_price"`
+	Ask4Volume int64 `json:"ask4_volume"`
+	Ask5Price  int64 `json:"ask5_price"`
+	Ask5Volume int64 `json:"ask5_volume"`
+	Bid1Price  int64 `json:"bid1_price"`  // 买一价(分)
+	Bid1Volume int64 `json:"bid1_volume"` // 买一量(股)
+	Bid2Price  int64 `json:"bid2_price"`
+	Bid2Volume int64 `json:"bid2_volume"`
+	Bid3Price  int64 `json:"bid3_price"`
+	Bid3Volume int64 `json:"bid3_volume"`
+	Bid4Price  int64 `json:"bid4_price"`
+	Bid4Volume int64 `json:"bid4_volume"`
+	Bid5Price  int64 `json:"bid5_price"`
+	Bid5Volume int64 `json:"bid5_volume"`
+}
+
+// IntradayData 当日分时行情
+type IntradayData struct {
+	Code     string        `json:"code"`      // 股票代码（6位数字）
+	Name     string        `json:"name"`      // 股票名称
+	Date     string        `json:"date"`      // 交易日期 "2026-06-20"
+	PreClose int64         `json:"pre_close"` // 昨日收盘价(分)
+	Current  int64         `json:"current"`   // 当前价(分)
+	Open     int64         `json:"open"`      // 今开(分)
+	High     int64         `json:"high"`      // 最高(分)
+	Low      int64         `json:"low"`       // 最低(分)
+	Volume   int64         `json:"volume"`    // 成交量(股)
+	Amount   int64         `json:"amount"`    // 成交额(分)
+	Change   int64         `json:"change"`    // 涨跌额(分)
+	ChangePct float64      `json:"change_pct"` // 涨跌幅%
+	Turnover float64       `json:"turnover"`  // 换手率%
+	Pe       float64       `json:"pe"`        // 市盈率(TTM)
+	Pb       float64       `json:"pb"`        // 市净率
+	MarketCap      float64 `json:"market_cap"`       // 总市值(亿)
+	FloatMarketCap float64 `json:"float_market_cap"` // 流通市值(亿)
+	Amplitude      float64 `json:"amplitude"`        // 振幅%
+	Depth   *MarketDepth  `json:"depth"`          // 五档买卖盘口
+	Bars     []IntradayBar `json:"bars"`      // 分时 bar，按时间升序
 }
 
 // PerformanceReport 业绩报表（东财 RPT_F10_FINANCE_MAINFINADATA）

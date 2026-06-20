@@ -68,3 +68,8 @@ func (a *Adapter) GetThisYearData(ctx context.Context, code string) (*adapter.St
 	}
 	return &klines[len(klines)-1], nil
 }
+
+// GetIntraday 分时数据（东方财富暂未实现）
+func (a *Adapter) GetIntraday(ctx context.Context, code string) (*adapter.IntradayData, error) {
+	return nil, adapter.ErrNotImplemented
+}

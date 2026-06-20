@@ -9,7 +9,7 @@ import (
 
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
-	"stock-ai/internal/monitor"
+	"stock-ai/internal/subscription/monitor"
 )
 
 // ============================================================================

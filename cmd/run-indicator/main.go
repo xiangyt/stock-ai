@@ -195,7 +195,7 @@ func registerAdapters() {
 			if err := ds.Init(initConfig); err != nil {
 				continue
 			}
-		case "ths":
+		case ths.AdapterName:
 			ds = ths.New()
 			if err := ds.Init(nil); err != nil {
 				continue

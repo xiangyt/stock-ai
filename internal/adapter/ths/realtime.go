@@ -37,6 +37,11 @@ func (a *Adapter) GetThisYearData(ctx context.Context, code string) (*adapter.St
 	return a.getDataByType(ctx, code, KLineTypeYearly)
 }
 
+// GetIntraday 分时数据（同花顺暂未实现）
+func (a *Adapter) GetIntraday(ctx context.Context, code string) (*adapter.IntradayData, error) {
+	return nil, adapter.ErrNotImplemented
+}
+
 func (a *Adapter) getDataByType(ctx context.Context, code, klineType string) (*adapter.StockPriceDaily, error) {
 	symbol, _, err := a.parseCode(code)
 	if err != nil {

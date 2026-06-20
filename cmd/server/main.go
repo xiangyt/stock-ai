@@ -21,8 +21,8 @@ import (
 	"stock-ai/internal/datacollect"
 	"stock-ai/internal/db"
 	"stock-ai/internal/holiday"
-	"stock-ai/internal/monitor"
-	subsched "stock-ai/internal/subscription/scheduler"
+"stock-ai/internal/subscription/monitor"
+subsched "stock-ai/internal/subscription/scheduler"
 )
 
 func main() {

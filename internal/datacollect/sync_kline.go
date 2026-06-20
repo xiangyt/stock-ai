@@ -282,7 +282,7 @@ func (s *SyncKLineService) syncSingleInit(ctx context.Context, code string, peri
 	// Upsert（同花顺全量数据 amount=0，这是正常的）
 	success, failed := s.upsertByPeriod(code, period, data)
 	result.UpsertCount = success
-	result.SourceUsed = "ths"
+	result.SourceUsed = ths.AdapterName
 
 	if failed > 0 {
 		log.Printf("  [%s][%s] ✅ upsert: 成功%d 失败%d (ths)", code, db.KLineLabel(period), success, failed)
@@ -374,7 +374,7 @@ func (s *SyncKLineService) syncSingleDaily(ctx context.Context, code string, per
 	log.Printf("  [%s][%s] Step ② 完成, date=%s", code, db.KLineLabel(period), currentItem.Date)
 	if len(dbDates) > 0 && parseTradeDate(currentItem.Date) == dbDates[0] {
 		log.Printf("  [%s][%s] 无需更新 (DB最新=%d, 当期=%s)", code, db.KLineLabel(period), dbDates[0], currentItem.Date)
-		result.SourceUsed = "ths"
+		result.SourceUsed = ths.AdapterName
 		return *result
 	}
 
@@ -420,7 +420,7 @@ func (s *SyncKLineService) syncSingleDaily(ctx context.Context, code string, per
 	incrementalData := filterAfter(fullData, anchorDateStr)
 	success, failed := s.upsertByPeriod(code, period, incrementalData)
 	result.UpsertCount = success
-	result.SourceUsed = "ths"
+	result.SourceUsed = ths.AdapterName
 	if failed > 0 {
 		log.Printf("  [%s][%s] 增量upsert: 成功%d 失败%d", code, db.KLineLabel(period), success, failed)
 	}
@@ -510,7 +510,7 @@ func (s *SyncKLineService) syncSingleDividend(ctx context.Context, code string, 
 	// Step ③: 全量 upsert（已存在仅更新 OHLCV，不存在则插入）
 	success, failed := s.upsertByPeriodOHLCV(code, period, fullData)
 	result.UpsertCount = success
-	result.SourceUsed = "ths"
+	result.SourceUsed = ths.AdapterName
 	result.Mode = SyncModeDividend
 
 	if failed > 0 {

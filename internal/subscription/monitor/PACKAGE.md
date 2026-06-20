@@ -1,4 +1,4 @@
-# internal/monitor — 盯盘监控包
+# internal/subscription/monitor — 盯盘监控包
 
 > **事件驱动的实时盯盘监控系统**。监听行情数据流，按用户配置的规则检查异动，冷却过滤后通过多平台（钉钉/飞书/企微）推送告警。
 

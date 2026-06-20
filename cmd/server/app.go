@@ -7,7 +7,7 @@ import (
 	"stock-ai/internal/datacollect"
 	"stock-ai/internal/indicator"
 	"stock-ai/internal/model"
-	"stock-ai/internal/monitor"
+	"stock-ai/internal/subscription/monitor"
 	"stock-ai/internal/notifier"
 	"stock-ai/internal/subscription/quotecache"
 	"stock-ai/internal/subscription/runner"

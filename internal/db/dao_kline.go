@@ -463,3 +463,40 @@ func GetAvgVolume5Day(code string) (float64, error) {
 	}
 	return float64(sum) / float64(len(volumes)), nil
 }
+
+// GetAvgVolume4DayHistorical 获取近4个已完结交易日的日均成交量（不含当日）
+// tradeDate: 当日日期(YYYYMMDD)，用于排除当日可能已入库的K线
+func GetAvgVolume4DayHistorical(code string, tradeDate int) (float64, error) {
+	var volumes []int64
+	err := GetDB().Model(&model.DailyKline{}).
+		Where("stock_code = ? AND trade_date < ?", code, tradeDate).
+		Order("trade_date DESC").
+		Limit(4).
+		Pluck("volume", &volumes).Error
+	if err != nil || len(volumes) == 0 {
+		return 0, err
+	}
+	var sum int64
+	for _, v := range volumes {
+		sum += v
+	}
+	return float64(sum) / float64(len(volumes)), nil
+}
+
+// GetVolumeSum4DayHistorical 获取近4个已完结交易日的成交量总和
+func GetVolumeSum4DayHistorical(code string, tradeDate int) (int64, error) {
+	var volumes []int64
+	err := GetDB().Model(&model.DailyKline{}).
+		Where("stock_code = ? AND trade_date < ?", code, tradeDate).
+		Order("trade_date DESC").
+		Limit(4).
+		Pluck("volume", &volumes).Error
+	if err != nil || len(volumes) == 0 {
+		return 0, err
+	}
+	var sum int64
+	for _, v := range volumes {
+		sum += v
+	}
+	return sum, nil
+}

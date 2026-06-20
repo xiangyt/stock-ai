@@ -1,3 +1,22 @@
+// Package quotecache provides a memory-based quote cache for A-share intraday data.
+//
+// It serves as the single source of truth for real-time market data within the system,
+// analogous to an in-memory Redis. Two access patterns are supported:
+//
+//   - Active pull:  Get(ctx, code) → *CachedQuoteData
+//   - Subscription: Subscribe(codes) → (<-chan QuoteEvent, func())
+//
+// The package has zero dependencies on other stock-ai packages. Its only external
+// interface is IntradayCollector, which provides raw minute-bar data from data sources.
+//
+// Daily OHLCV is computed lazily from intraday bars. Weekly/Monthly/Yearly aggregation
+// is not handled (TODO).
+//
+// Refresh strategy by priority:
+//
+//	High:   every 1 minute, full concurrency (held & monitored stocks)
+//	Normal: every 5 minutes, semaphore(50) (searched & watched stocks)
+//	Low:    10:30 / 12:00 / 14:00, semaphore(100) (indices & temp queries)
 package quotecache
 
 import (
@@ -7,359 +26,145 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"stock-ai/internal/adapter"
-	"stock-ai/internal/datacollect"
-	"stock-ai/internal/db"
-	"stock-ai/internal/model"
-	"stock-ai/utils"
 )
 
 // ============================================================================
-//  QuoteCache 实时行情缓存接口
-//
-//  管理多周期行情数据的缓存生命周期，统一存储 adapter.StockPriceDaily。
-//  外部通过 CachedStock 读取缓存数据并转换为指标引擎所需的格式。
+//  Config
 // ============================================================================
 
-// QuoteCache 实时行情缓存接口
+// Config 创建配置（零依赖，全部可选）。
+type Config struct {
+	// Collector 分时数据采集器链（必须）。
+	Collector CollectorChain
+
+	// OnQuoteReady 行情就绪回调（可选）。
+	// 可用于上层注入 snapshot 计算、DB 写入等后处理逻辑。
+	// 在 fetch 成功后、通知订阅者前调用。
+	OnQuoteReady func(data *CachedQuoteData)
+
+	// IsActive 是否活跃（可选）。
+	// 返回 false 时暂停所有定时刷新。用于注入 utils.IsTradingHours 等判断。
+	// 为 nil 时始终活跃。
+	IsActive func() bool
+}
+
+// ============================================================================
+//  QuoteCache 接口
+// ============================================================================
+
+// QuoteCache 行情缓存接口。
 type QuoteCache interface {
-	// Get 获取指定股票的缓存数据（缓存未命中时调用 adapter 获取）
+	// Get 获取指定股票的缓存数据。缓存未命中时通过 Collector 获取。
 	Get(ctx context.Context, code string) (*CachedQuoteData, error)
 
-	// Promote 将股票提升为高优先级（持仓股调用）
-	Promote(code string)
+	// Subscribe 订阅行情推送。
+	// 返回事件 channel 和取消函数。调用取消函数后 channel 被关闭，内部清理。
+	Subscribe(codes []string) (<-chan QuoteEvent, func())
 
-	// SetLoadHoldingCodes 注入加载持仓股 codes 的函数
-	SetLoadHoldingCodes(fn func() ([]string, error))
+	// Subscriber 返回 QuoteSubscriber 函数（依赖注入用）。
+	Subscriber() QuoteSubscriber
 
-	// ReloadHighPriority 手动触发高优先级行情重载（外部调用）
-	ReloadHighPriority()
+	// SetPriority 批量设置优先级。
+	SetPriority(codes []string, p Priority)
 
-	// Start 启动后台刷新协程
+	// Start 启动后台刷新。
 	Start()
 
-	// Stop 停止后台刷新协程
+	// Stop 停止后台刷新。
 	Stop()
 
-	// Stats 返回缓存统计信息（命中/未命中/大小等）
-	Stats() CacheStats
-
-	// QuoteEventBus 行情事件推送
-	QuoteEventBus
-
-	// Subscriber 返回 model.QuoteSubscriber（Monitor 依赖注入用）
-	Subscriber() model.QuoteSubscriber
-}
-
-// CachedQuoteData 缓存的行情数据（日/周/月/年四周期 + 快照 + 分时）
-type CachedQuoteData struct {
-	Code     string                    // 股票代码
-	Name     string                    // 股票名称（TODO: 从 adapter 获取）
-	Daily    *adapter.StockPriceDaily  // 当日行情
-	Weekly   *adapter.StockPriceDaily  // 本周行情
-	Monthly  *adapter.StockPriceDaily  // 本月行情
-	Yearly   *adapter.StockPriceDaily  // 本年行情
-	Minute   *MinuteData               // 分时行情（TODO: adapter 扩展后填充）
-	Snapshot *model.StockDailySnapshot // 完整快照（市值/PE/PB/ROE 等 20+ 字段）
+	// Stats 返回缓存统计。
+	Stats() Stats
 }
 
 // ============================================================================
-//  QuoteEventBus — 行情事件推送
-//
-//  内部使用 model.QuoteEvent（而非自定义 QuoteEvent），
-//  在 notifySubscribers 中直接完成 CachedQuoteData → QuoteData 转换，
-//  消费者无需再做二次转换。
+//  内部类型
 // ============================================================================
 
-// QuoteEventBus 行情事件总线接口
-//
-// 消费方通过此接口订阅感兴趣的股票代码，
-// 当 quotecache 刷新行情数据后通过 channel 推送更新。
-//
-// 当前实现：quotecache 内存版
-// 未来可替换：Redis Pub/Sub 等分布式实现
-type QuoteEventBus interface {
-	// Subscribe 订阅指定股票代码的行情更新
-	// 返回带缓冲的 channel（cap=64）和订阅 ID
-	Subscribe(codes []string) (<-chan model.QuoteEvent, int)
-
-	// Unsubscribe 取消订阅
-	Unsubscribe(subID int)
-}
-
-// CacheStats 缓存统计
-type CacheStats struct {
-	Size        int   `json:"size"`
-	HighCount   int   `json:"high_count"`
-	NormalCount int   `json:"normal_count"`
-	HitCount    int64 `json:"hit_count"`
-	MissCount   int64 `json:"miss_count"`
-}
-
-// ============================================================================
-//  默认配置常量
-// ============================================================================
-
-// defaultAdapterPriority 数据源优先级列表（从高到低）
-var defaultAdapterPriority = []string{
-	"tencentstock", // 腾讯源（最高优先）
-	"ths2",         // 同花顺v2（quota-h 新接口）
-	"ths",          // 同花顺
-	"eastmoney",    // 东方财富
-}
-
-// lowPrioritySchedule 低优先级定时执行时间（交易日 10:30、12:00、14:00）
-var lowPrioritySchedule = []struct {
-	hour   int
-	minute int
-}{
-	{10, 30},
-	{12, 0},
-	{14, 0},
-}
-
-// lowPriorityConcurrency 低优先级并发度（semaphore 容量）
-const lowPriorityConcurrency = 100
-
-// highTTL / normalTTL 缓存有效期
-const (
-	highTTL   = 5 * time.Minute
-	normalTTL = 15 * time.Minute
-)
-
-// ============================================================================
-//  quoteCacheImpl 实现层（双协程刷新策略）
-// ============================================================================
-
-// cacheItem 单个缓存项
+// cacheItem 缓存项
 type cacheItem struct {
 	data      *CachedQuoteData
 	fetchedAt time.Time
-	priority  string // "high" 或 "normal"
+	priority  Priority
 }
 
-// subEntry 单个订阅者
+// subEntry 订阅者
 type subEntry struct {
 	id    int
-	codes map[string]struct{} // 关注的股票代码集合
-	ch    chan model.QuoteEvent // 推送 channel（缓冲 64）
+	codes []string
+	ch    chan QuoteEvent
 }
 
-// quoteCacheImpl QuoteCache 实现
+// ============================================================================
+//  quoteCacheImpl
+// ============================================================================
+
 type quoteCacheImpl struct {
-	mu      sync.RWMutex
-	items   map[string]*cacheItem // code → 缓存项
-	highSet map[string]struct{}   // 高优先级集合
+	collector    CollectorChain
+	onQuoteReady func(*CachedQuoteData)
+	isActive     func() bool
 
-	// 订阅推送
-	subMu       sync.RWMutex
-	subscribers []*subEntry
-	nextSubID   int
+	mu       sync.RWMutex
+	items    map[string]*cacheItem
+	priority map[string]Priority
 
-	registry        *adapter.Registry // 数据源注册中心
-	adapterPriority []string          // 数据源优先级列表
+	// Subscription
+	subMu      sync.RWMutex
+	subByID    map[int]*subEntry
+	codeToSubs map[string]map[int]chan QuoteEvent
+	nextSubID  int
 
+	// Lifecycle
 	stopCh chan struct{}
 	wg     sync.WaitGroup
 
-	hitCount  int64 // 原子统计
-	missCount int64 // 原子统计
-
-	// 加载所有用户持仓股 codes 的函数（由外部注入，解耦 DB 依赖）
-	loadHoldingCodes func() ([]string, error)
+	// Stats
+	hitCount  int64
+	missCount int64
 }
 
-// NewQuoteCache 创建行情缓存实例
-func NewQuoteCache(reg *adapter.Registry) QuoteCache {
-	priority := make([]string, len(defaultAdapterPriority))
-	copy(priority, defaultAdapterPriority)
-
+// New creates a QuoteCache instance.
+func New(cfg Config) QuoteCache {
+	if cfg.Collector == nil {
+		panic("quotecache: Collector is required")
+	}
 	return &quoteCacheImpl{
-		items:           make(map[string]*cacheItem),
-		highSet:         make(map[string]struct{}),
-		registry:        reg,
-		adapterPriority: priority,
-		stopCh:          make(chan struct{}),
+		collector:    cfg.Collector,
+		onQuoteReady: cfg.OnQuoteReady,
+		isActive:     cfg.IsActive,
+		items:        make(map[string]*cacheItem),
+		priority:     make(map[string]Priority),
+		subByID:      make(map[int]*subEntry),
+		codeToSubs:   make(map[string]map[int]chan QuoteEvent),
+		stopCh:       make(chan struct{}),
 	}
 }
 
-// SetLoadHoldingCodes 注入加载持仓股 codes 的函数
-func (q *quoteCacheImpl) SetLoadHoldingCodes(fn func() ([]string, error)) {
-	q.loadHoldingCodes = fn
-}
+// ============================================================================
+//  Lifecycle
+// ============================================================================
 
-// Start 启动双协程后台刷新 + 初始加载持仓股
+// Start 启动定时刷新 + 每日清理。
 func (q *quoteCacheImpl) Start() {
-	// 初始加载持仓股并清理昨日缓存
-	q.reloadHoldingCodes()
-
-	// 启动高优先级刷新协程（每分钟 tick，交易时段 + 5的倍数分钟触发）
 	q.wg.Add(1)
-	go q.highPriorityWorker()
-
-	// 启动低优先级刷新协程（定时 3 次，100 并发）
-	q.wg.Add(1)
-	go q.lowPriorityWorker()
-
-	// 启动定时清理协程：9:00 整 + 19:00 整清理缓存
-	q.wg.Add(1)
-	go q.scheduleCleanupWorker()
+	go q.scheduler()
 }
 
-// Stop 停止后台刷新协程
+// Stop 停止后台 goroutine。
 func (q *quoteCacheImpl) Stop() {
 	close(q.stopCh)
 	q.wg.Wait()
 }
 
 // ============================================================================
-//  高优先级 Worker：每 5 分钟全并发刷新持仓股
+//  Core: Get
 // ============================================================================
 
-func (q *quoteCacheImpl) highPriorityWorker() {
-	defer q.wg.Done()
-
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case now := <-ticker.C:
-			if !utils.IsTradingHours() {
-				continue
-			}
-			if now.Minute()%5 != 0 {
-				continue
-			}
-			q.refreshHighPriority()
-		case <-q.stopCh:
-			return
-		}
-	}
-}
-
-// refreshHighPriority 全并发刷新所有高优先级股票
-func (q *quoteCacheImpl) refreshHighPriority() {
-	codes := q.getHighPriorityCodes()
-	if len(codes) == 0 {
-		return
-	}
-
-	var wg sync.WaitGroup
-	for _, code := range codes {
-		wg.Add(1)
-		go func(c string) {
-			defer wg.Done()
-			q.refreshCode(c)
-		}(code)
-	}
-	wg.Wait()
-}
-
-// ============================================================================
-//  低优先级 Worker：交易时段定时执行，100 并发度
-// ============================================================================
-
-func (q *quoteCacheImpl) lowPriorityWorker() {
-	defer q.wg.Done()
-
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	// 记录当天已执行的调度点，避免重复执行
-	executed := make(map[int]bool)
-
-	for {
-		select {
-		case <-ticker.C:
-			if !utils.IsTradingDay() || !utils.IsTradingHours() {
-				continue
-			}
-
-			now := time.Now()
-			key := now.Hour()*60 + now.Minute()
-
-			// 检查当前时间是否匹配某个调度点且未执行过
-			for _, sched := range lowPrioritySchedule {
-				schedKey := sched.hour*60 + sched.minute
-				if key == schedKey && !executed[schedKey] {
-					executed[schedKey] = true
-					go q.refreshLowPriority()
-				}
-			}
-
-			// 每天 9:00 重置已执行标记（配合 reloadHoldingCodes 清理缓存）
-			if now.Hour() == 9 && now.Minute() == 0 {
-				executed = make(map[int]bool) // 新 map，旧 GC 回收
-			}
-
-		case <-q.stopCh:
-			return
-		}
-	}
-}
-
-// refreshLowPriority 以 100 并发度分批刷新普通优先级股票
-func (q *quoteCacheImpl) refreshLowPriority() {
-	codes := q.getNormalPriorityCodes()
-	if len(codes) == 0 {
-		return
-	}
-
-	utils.ConcurrentExec(codes, lowPriorityConcurrency, func(_ int, code string) error {
-		q.refreshCode(code)
-		return nil
-	})
-}
-
-// scheduleCleanupWorker 定时协程：每天 9:00 清理缓存 + 19:00 从 DB 刷新日K 并计算快照
-func (q *quoteCacheImpl) scheduleCleanupWorker() {
-	defer q.wg.Done()
-
-	for {
-		now := time.Now()
-
-		// 找下一个最近的 9:00 或 19:00
-		nineAM := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, now.Location())
-		sevenPM := time.Date(now.Year(), now.Month(), now.Day(), 19, 0, 0, 0, now.Location())
-
-		var next time.Time
-		switch {
-		case now.Before(nineAM):
-			next = nineAM
-		case now.Before(sevenPM):
-			next = sevenPM
-		default:
-			next = nineAM.Add(24 * time.Hour)
-		}
-
-		select {
-		case <-time.After(time.Until(next)):
-			h := next.Hour()
-			switch h {
-			case 9:
-				log.Printf("[QuoteCache] 定时清理缓存 (09:00)")
-				q.cleanStaleCache()
-			case 19:
-				log.Printf("[QuoteCache] 定时 DB 日K 刷新 (19:00)")
-				q.refreshAllFromDB()
-			}
-		case <-q.stopCh:
-			return
-		}
-	}
-}
-
-// ============================================================================
-//  核心方法：Get / Promote / ReloadHighPriority / Stats
-// ============================================================================
-
-// Get 获取指定股票的缓存行情数据（日/周/月/年四周期）
+// Get 获取缓存数据。
 func (q *quoteCacheImpl) Get(ctx context.Context, code string) (*CachedQuoteData, error) {
 	q.mu.RLock()
 	item, ok := q.items[code]
-	if ok && time.Since(item.fetchedAt) < q.getTTL(item.priority) {
+	if ok && time.Since(item.fetchedAt) < time.Duration(item.priority.TTL())*time.Second {
 		q.mu.RUnlock()
 		atomic.AddInt64(&q.hitCount, 1)
 		return item.data, nil
@@ -367,387 +172,420 @@ func (q *quoteCacheImpl) Get(ctx context.Context, code string) (*CachedQuoteData
 	q.mu.RUnlock()
 
 	atomic.AddInt64(&q.missCount, 1)
-	return q.fetchAndCache(ctx, code)
+	return q.fetch(ctx, code)
 }
 
-// Promote 将股票提升为高优先级
-func (q *quoteCacheImpl) Promote(code string) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	q.highSet[code] = struct{}{}
-	if item, ok := q.items[code]; ok {
-		item.priority = "high"
+// ============================================================================
+//  Subscribe / Unsubscribe
+// ============================================================================
+
+// Subscribe 订阅行情推送。
+func (q *quoteCacheImpl) Subscribe(codes []string) (<-chan QuoteEvent, func()) {
+	q.subMu.Lock()
+	defer q.subMu.Unlock()
+
+	ch := make(chan QuoteEvent, 64)
+	subID := q.nextSubID
+	q.nextSubID++
+
+	// 正向索引（管理用）
+	q.subByID[subID] = &subEntry{
+		id:    subID,
+		codes: append([]string{}, codes...), // copy
+		ch:    ch,
+	}
+
+	// 反向索引（推送用）
+	for _, code := range codes {
+		if q.codeToSubs[code] == nil {
+			q.codeToSubs[code] = make(map[int]chan QuoteEvent)
+		}
+		q.codeToSubs[code][subID] = ch
+	}
+
+	// 返回取消函数（闭包捕获 subID 和 codes，接口不暴露 subID）
+	return ch, func() {
+		q.unsubscribe(subID, codes)
 	}
 }
 
-// ReloadHighPriority 手动触发高优先级行情重载
-func (q *quoteCacheImpl) ReloadHighPriority() {
-	log.Printf("[QuoteCache] 收到手动重载请求，开始刷新 %d 只高优先级股票", len(q.highSet))
-	go q.refreshHighPriority()
+// Subscriber 返回 QuoteSubscriber 函数（依赖注入用）。
+func (q *quoteCacheImpl) Subscriber() QuoteSubscriber {
+	return func(codes []string) (<-chan QuoteEvent, func()) {
+		return q.Subscribe(codes)
+	}
 }
 
-// Stats 返回缓存统计信息
-func (q *quoteCacheImpl) Stats() CacheStats {
+// unsubscribe 取消订阅（内部实现）。
+func (q *quoteCacheImpl) unsubscribe(subID int, codes []string) {
+	q.subMu.Lock()
+	defer q.subMu.Unlock()
+
+	// 清理反向索引
+	for _, code := range codes {
+		if subs, ok := q.codeToSubs[code]; ok {
+			delete(subs, subID)
+			if len(subs) == 0 {
+				delete(q.codeToSubs, code)
+			}
+		}
+	}
+
+	// 关闭 channel + 删除正向索引
+	if sub, ok := q.subByID[subID]; ok {
+		close(sub.ch)
+		delete(q.subByID, subID)
+	}
+}
+
+// ============================================================================
+//  Priority
+// ============================================================================
+
+// SetPriority 批量设置优先级。
+func (q *quoteCacheImpl) SetPriority(codes []string, p Priority) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for _, code := range codes {
+		q.priority[code] = p
+		// 同步更新已有缓存项的优先级
+		if item, ok := q.items[code]; ok {
+			item.priority = p
+		}
+	}
+}
+
+// ============================================================================
+//  Stats
+// ============================================================================
+
+// Stats 返回缓存统计。
+func (q *quoteCacheImpl) Stats() Stats {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
 
-	highCount := len(q.highSet)
-	normalCount := len(q.items) - highCount
-	return CacheStats{
+	var high, normal, low int
+	for _, v := range q.priority {
+		switch v {
+		case PriorityHigh:
+			high++
+		case PriorityNormal:
+			normal++
+		case PriorityLow:
+			low++
+		}
+	}
+
+	return Stats{
 		Size:        len(q.items),
-		HighCount:   highCount,
-		NormalCount: normalCount,
+		HighCount:   high,
+		NormalCount: normal,
+		LowCount:    low,
 		HitCount:    atomic.LoadInt64(&q.hitCount),
 		MissCount:   atomic.LoadInt64(&q.missCount),
 	}
 }
 
 // ============================================================================
-//  QuoteEventBus 实现：Subscribe / Unsubscribe
+//  Internal: Fetch
 // ============================================================================
 
-// Subscribe 订阅指定股票代码的行情更新
-func (q *quoteCacheImpl) Subscribe(codes []string) (<-chan model.QuoteEvent, int) {
-	q.subMu.Lock()
-	defer q.subMu.Unlock()
-
-	ch := make(chan model.QuoteEvent, 64)
-	codeSet := make(map[string]struct{}, len(codes))
-	for _, c := range codes {
-		codeSet[c] = struct{}{}
+// fetch 从 collector 获取数据并写入缓存。
+func (q *quoteCacheImpl) fetch(ctx context.Context, code string) (*CachedQuoteData, error) {
+	intraday, err := q.collector.Collect(ctx, code)
+	if err != nil {
+		return nil, fmt.Errorf("quote fetch %s: %w", code, err)
 	}
 
-	subID := q.nextSubID
-	q.nextSubID++
-	q.subscribers = append(q.subscribers, &subEntry{
-		id:    subID,
-		codes: codeSet,
-		ch:    ch,
-	})
+	data := &CachedQuoteData{Code: code, Intraday: intraday}
+	if intraday.Name != "" {
+		data.Name = intraday.Name
+	}
+	if q.onQuoteReady != nil {
+		q.onQuoteReady(data)
+	}
 
-	return ch, subID
+	pri := q.getPriority(code)
+
+	q.mu.Lock()
+	q.items[code] = &cacheItem{
+		data:      data,
+		fetchedAt: time.Now(),
+		priority:  pri,
+	}
+	item := q.items[code]
+	q.mu.Unlock()
+
+	q.notifySubscribers(code, item.data)
+	return item.data, nil
 }
 
-// Unsubscribe 取消订阅
-func (q *quoteCacheImpl) Unsubscribe(subID int) {
-	q.subMu.Lock()
-	defer q.subMu.Unlock()
+// ============================================================================
+//  Internal: Refresh
+// ============================================================================
 
-	for i, sub := range q.subscribers {
-		if sub.id == subID {
-			close(sub.ch)
-			q.subscribers = append(q.subscribers[:i], q.subscribers[i+1:]...)
+// nextMinuteAlignment 计算到下一分钟第5秒的等待时间。
+func nextMinuteAlignment(now time.Time) time.Duration {
+	// 对齐到下一分钟的 :05 秒（如 10:00:05, 10:01:05）
+	next := now.Truncate(time.Minute).Add(time.Minute + 5*time.Second)
+	return next.Sub(now)
+}
+
+// scheduler 统一调度协程。每分钟第5秒触发，避免 ticker 零散偏移。
+func (q *quoteCacheImpl) scheduler() {
+	defer q.wg.Done()
+
+	lowExecuted := make(map[int]bool)
+
+	var timer *time.Timer
+	for {
+		now := time.Now()
+		delay := nextMinuteAlignment(now)
+		if timer == nil {
+			timer = time.NewTimer(delay)
+		} else {
+			timer.Reset(delay)
+		}
+
+		select {
+		case now = <-timer.C:
+			if q.isActive != nil && !q.isActive() {
+				// 非活跃时段：仅 9:00 重置标记 + 清理过期缓存
+				if now.Hour() == 9 && now.Minute() == 0 {
+					lowExecuted = make(map[int]bool)
+					q.cleanStale()
+				}
+				continue
+			}
+
+			// 高优先级：每分钟全并发
+			q.refreshPriority(PriorityHigh, 0)
+
+			// 普通优先级：每 5 分钟 semaphore(50)
+			if now.Minute()%5 == 0 {
+				q.refreshPriority(PriorityNormal, 50)
+			}
+
+			// 低优先级：10:30 / 12:00 / 14:00 semaphore(100)
+			minOfDay := now.Hour()*60 + now.Minute()
+			for _, sched := range []int{10*60 + 30, 12 * 60, 14 * 60} {
+				if minOfDay == sched && !lowExecuted[sched] {
+					lowExecuted[sched] = true
+					go q.refreshPriority(PriorityLow, 100)
+				}
+			}
+
+			// 每日 9:00 重置低优先级标记
+			if now.Hour() == 9 && now.Minute() == 0 {
+				lowExecuted = make(map[int]bool)
+			}
+		case <-q.stopCh:
+			if timer != nil {
+				timer.Stop()
+			}
 			return
 		}
 	}
 }
 
-// notifySubscribers 行情刷新后通知所有匹配的订阅者
-// 在此直接完成 CachedQuoteData → model.QuoteData 转换，消费者无需二次转换
-func (q *quoteCacheImpl) notifySubscribers(code string, data *CachedQuoteData) {
-	q.subMu.RLock()
-	defer q.subMu.RUnlock()
-
-	qd := toQuoteData(data)
-	if qd == nil {
-		return
-	}
-	event := model.QuoteEvent{Code: code, Data: qd}
-	for _, sub := range q.subscribers {
-		if _, ok := sub.codes[code]; ok {
-			select {
-			case sub.ch <- event:
-			default:
-				// channel 满（消费方慢），丢弃事件，不阻塞刷新 loop
-			}
-		}
-	}
-}
-
-// reloadHoldingCodes 从 DB 加载所有用户持仓股 codes 并设为高优先级
-// 同时清理昨日的所有行情缓存和优先级缓存
-func (q *quoteCacheImpl) reloadHoldingCodes() {
-	// 清理所有昨日缓存和优先级
-	q.cleanStaleCache()
-
-	if q.loadHoldingCodes == nil {
-		return
-	}
-	codes, err := q.loadHoldingCodes()
-	if err != nil {
-		log.Printf("[QuoteCache] 加载持仓股 codes 失败: %v", err)
-		return
-	}
+// refreshPriority 刷新指定优先级的所有股票。
+// concurrency=0 表示全并发，>0 表示 semaphore 容量。
+func (q *quoteCacheImpl) refreshPriority(p Priority, concurrency int) {
+	codes := q.getCodesByPriority(p)
 	if len(codes) == 0 {
 		return
 	}
-	q.mu.Lock()
-	for _, code := range codes {
-		q.highSet[code] = struct{}{}
-	}
-	q.mu.Unlock()
-	log.Printf("[QuoteCache] 已加载 %d 只持仓股为高优先级", len(codes))
-}
 
-// cleanStaleCache 清理昨日的所有行情缓存和高优先级集合
-// 在每个交易日 9:00 整 和启动时调用
-func (q *quoteCacheImpl) cleanStaleCache() {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	prevSize := len(q.items)
-	q.items = make(map[string]*cacheItem)
-	q.highSet = make(map[string]struct{})
-	if prevSize > 0 {
-		log.Printf("[QuoteCache] 已清理 %d 条昨日缓存", prevSize)
-	}
-}
-
-// ============================================================================
-//  数据获取与缓存
-// ============================================================================
-
-// fetchAndCache 调用数据源获取日/周/月/年四周期行情并写入缓存
-func (q *quoteCacheImpl) fetchAndCache(ctx context.Context, code string) (*CachedQuoteData, error) {
-	ds, err := q.getAdapter()
-	if err != nil {
-		return nil, err
-	}
-
-	daily, err := ds.GetTodayData(ctx, code)
-	if err != nil {
-		return nil, fmt.Errorf("获取 %s 当日行情失败: %w", code, err)
-	}
-
-	data := &CachedQuoteData{Code: code, Daily: daily}
-
-	// 获取行情成功后立即构建完整快照（DB 财报 + 股本 → 市值/PE/PB/ROE 等 20+ 字段）
-	if snap, snapErr := datacollect.BuildDailySnapshot(code, daily); snapErr == nil {
-		data.Snapshot = snap
-	}
-
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	priority := "normal"
-	if _, isHigh := q.highSet[code]; isHigh {
-		priority = "high"
-	}
-
-	q.items[code] = &cacheItem{
-		data:      data,
-		fetchedAt: time.Now(),
-		priority:  priority,
-	}
-
-	// 通知订阅者（异步写入 channel，消费方慢时不阻塞）
-	q.notifySubscribers(code, data)
-
-	return data, nil
-}
-
-// getAdapter 按优先级列表顺序查找可用数据源
-func (q *quoteCacheImpl) getAdapter() (adapter.DataSource, error) {
-	for _, name := range q.adapterPriority {
-		if ds, ok := q.registry.Get(name); ok {
-			return ds, nil
+	if concurrency == 0 {
+		var wg sync.WaitGroup
+		for _, code := range codes {
+			wg.Add(1)
+			go func(c string) {
+				defer wg.Done()
+				q.refreshOne(c)
+			}(code)
 		}
-	}
-	// 兜底：遍历注册中心全部数据源
-	for _, name := range q.registry.Names() {
-		if ds, ok := q.registry.Get(name); ok {
-			return ds, nil
+		wg.Wait()
+	} else {
+		sem := make(chan struct{}, concurrency)
+		var wg sync.WaitGroup
+		for _, code := range codes {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(c string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				q.refreshOne(c)
+			}(code)
 		}
+		wg.Wait()
 	}
-	return nil, fmt.Errorf("无可用数据源")
 }
 
-// refreshCode 刷新单个股票代码的缓存
-func (q *quoteCacheImpl) refreshCode(code string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+// refreshOne 刷新单只股票。
+func (q *quoteCacheImpl) refreshOne(code string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// 检查 TTL
 	q.mu.RLock()
 	item, ok := q.items[code]
-	ttl := normalTTL
-	if ok {
-		ttl = q.getTTL(item.priority)
-	}
 	q.mu.RUnlock()
 
-	// 未过期则跳过
-	if ok && time.Since(item.fetchedAt) < ttl {
+	if ok && time.Since(item.fetchedAt) < time.Duration(item.priority.TTL())*time.Second {
 		return
 	}
 
-	_, err := q.fetchAndCache(ctx, code)
+	// 采集
+	intraday, err := q.collector.Collect(ctx, code)
 	if err != nil {
-		// 刷新失败不阻塞，等待下次触发
-	}
-}
-
-// ============================================================================
-//  辅助方法
-// ============================================================================
-
-// getHighPriorityCodes 返回当前所有高优先级股票代码的快照
-func (q *quoteCacheImpl) getHighPriorityCodes() []string {
-	q.mu.RLock()
-	defer q.mu.RUnlock()
-	codes := make([]string, 0, len(q.highSet))
-	for code := range q.highSet {
-		codes = append(codes, code)
-	}
-	return codes
-}
-
-// getNormalPriorityCodes 返回当前所有普通优先级股票代码的快照
-func (q *quoteCacheImpl) getNormalPriorityCodes() []string {
-	q.mu.RLock()
-	defer q.mu.RUnlock()
-	codes := make([]string, 0, len(q.items)-len(q.highSet))
-	for code := range q.items {
-		if _, isHigh := q.highSet[code]; !isHigh {
-			codes = append(codes, code)
-		}
-	}
-	return codes
-}
-
-// getTTL 根据优先级返回 TTL
-func (q *quoteCacheImpl) getTTL(priority string) time.Duration {
-	if priority == "high" {
-		return highTTL
-	}
-	return normalTTL
-}
-
-// ============================================================================
-//  19:00 盘后 DB 刷新：从数据库取最新日K 计算快照（不走 adapter）
-// ============================================================================
-
-// refreshAllFromDB 对所有已缓存股票（高+低优先级）执行盘后 DB 刷新
-func (q *quoteCacheImpl) refreshAllFromDB() {
-	codes := q.getAllCachedCodes()
-	if len(codes) == 0 {
 		return
 	}
 
-	var wg sync.WaitGroup
-	for _, code := range codes {
-		wg.Add(1)
-		go func(c string) {
-			defer wg.Done()
-			q.refreshCodeFromDB(c)
-		}(code)
-	}
-	wg.Wait()
-	log.Printf("[QuoteCache] 19:00 DB 日K 刷新完成，共 %d 只", len(codes))
-}
-
-// refreshCodeFromDB 从数据库读取最新一条日K线，构建快照并更新缓存
-//
-// 与 fetchAndCache 的区别：
-//   - 不调用 adapter 数据源，直接读 DB 最新日K
-//   - 仅更新 Daily 和 Snapshot（周/月/年不更新）
-//   - 用于 19:00 盘后数据确认，确保快照基于收盘价计算
-func (q *quoteCacheImpl) refreshCodeFromDB(code string) {
-	klines, err := db.FindDailyKlines(code, 0, 1)
-	if err != nil || len(klines) == 0 {
-		return // 无日K数据，跳过
-	}
-
-	k := klines[0]
-	price := &adapter.StockPriceDaily{
-		Code:      k.StockCode,
-		Date:      db.FormatTradeDate(k.TradeDate),
-		Open:      int64(k.Open),
-		High:      int64(k.High),
-		Low:       int64(k.Low),
-		Close:     int64(k.Close),
-		Volume:    k.Volume,
-		Amount:    k.Amount,
-		Turnover:  k.TurnoverRate,
-	}
-
-	var snap *model.StockDailySnapshot
-	if s, snapErr := datacollect.BuildDailySnapshot(code, price); snapErr == nil {
-		snap = s
-	}
-
+	// 更新缓存
 	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	// 更新已有缓存项，或新建
-	if item, ok := q.items[code]; ok {
-		item.data.Daily = price
-		item.data.Snapshot = snap
-		item.fetchedAt = time.Now()
+	if existing, ok := q.items[code]; ok {
+		existing.data.Intraday = intraday
+		existing.data.Invalidate()
+		existing.fetchedAt = time.Now()
 	} else {
-		priority := "normal"
-		if _, isHigh := q.highSet[code]; isHigh {
-			priority = "high"
+		pri := q.getPriority(code)
+		data := &CachedQuoteData{Code: code, Intraday: intraday}
+		if intraday.Name != "" {
+			data.Name = intraday.Name
+		}
+		if q.onQuoteReady != nil {
+			q.onQuoteReady(data)
 		}
 		q.items[code] = &cacheItem{
-			data: &CachedQuoteData{
-				Code:     code,
-				Daily:    price,
-				Snapshot: snap,
-			},
+			data:      data,
 			fetchedAt: time.Now(),
-			priority:  priority,
+			priority:  pri,
+		}
+	}
+	// Re-read under lock for notify
+	item, ok = q.items[code]
+	q.mu.Unlock()
+
+	if ok {
+		q.notifySubscribers(code, item.data)
+	}
+}
+
+// ============================================================================
+//  Internal: Notification
+// ============================================================================
+
+// notifySubscribers 行情刷新后通知关注该 code 的订阅者。
+//
+// 通过反向索引 codeToSubs O(1) 定位，A/B 股票互不影响。
+func (q *quoteCacheImpl) notifySubscribers(code string, data *CachedQuoteData) {
+	q.subMu.RLock()
+	subs, ok := q.codeToSubs[code]
+	if !ok {
+		q.subMu.RUnlock()
+		return
+	}
+	q.subMu.RUnlock()
+
+	evt := q.buildEvent(data)
+	if evt == nil {
+		return
+	}
+
+	q.subMu.RLock()
+	defer q.subMu.RUnlock()
+	subs, ok = q.codeToSubs[code]
+	if !ok {
+		return
+	}
+	for _, ch := range subs {
+		select {
+		case ch <- *evt:
+		default:
 		}
 	}
 }
 
-// getAllCachedCodes 返回当前所有已缓存股票代码（高+低优先级）
-func (q *quoteCacheImpl) getAllCachedCodes() []string {
-	q.mu.RLock()
-	defer q.mu.RUnlock()
-	codes := make([]string, 0, len(q.items))
-	for code := range q.items {
-		codes = append(codes, code)
-	}
-	return codes
-}
-
-// ============================================================================
-//  Subscriber — 为 Monitor 提供 model.QuoteSubscriber
-//
-//	将 quotecache 内部的 QuoteEventBus 适配为 model.QuoteSubscriber 函数签名。
-//	Subscribe 已直接返回 model.QuoteEvent，转换在 notifySubscribers 中完成。
-// ============================================================================
-
-// Subscriber 返回 model.QuoteSubscriber
-func (q *quoteCacheImpl) Subscriber() model.QuoteSubscriber {
-	return func(codes []string) (<-chan model.QuoteEvent, func()) {
-		ch, subID := q.Subscribe(codes)
-		return ch, func() { q.Unsubscribe(subID) }
-	}
-}
-
-// toQuoteData 将内部 CachedQuoteData 转为 model.QuoteData
-func toQuoteData(d *CachedQuoteData) *model.QuoteData {
-	if d == nil || d.Daily == nil {
+// buildEvent 构建推送事件。
+func (q *quoteCacheImpl) buildEvent(data *CachedQuoteData) *QuoteEvent {
+	if data == nil {
 		return nil
 	}
-	qd := &model.QuoteData{
-		Code:      d.Code,
-		Name:      d.Name,
-		Price:     float64(d.Daily.Close) / 100,
-		ChangePct: d.Daily.ChangePct,
-		Volume:    d.Daily.Volume,
-		Turnover:  d.Daily.Turnover,
-		Snapshot:  d.Snapshot,
+	daily := data.Daily()
+	if daily == nil {
+		return nil
 	}
-	if d.Minute != nil {
-		for _, b := range d.Minute.Bars {
-			qd.Minutes = append(qd.Minutes, model.MinuteBar{
+	qd := &QuoteData{
+		Code:      data.Code,
+		Name:      data.Name,
+		Price:     float64(daily.Close) / 100,
+		ChangePct: daily.ChangePct,
+		Volume:    daily.Volume,
+		Turnover:  daily.Turnover,
+	}
+	if data.Intraday != nil {
+		qd.Date = data.Intraday.Date
+		qd.PreClose = float64(data.Intraday.PreClose) / 100
+		for _, b := range data.Intraday.Bars {
+			qd.Minutes = append(qd.Minutes, MinuteBarInfo{
 				Time:  b.Time,
 				Price: float64(b.Price) / 100,
 			})
 		}
+		qd.Turnover = data.Intraday.Turnover
+		qd.MarketCap = data.Intraday.MarketCap
+		qd.FloatMarketCap = data.Intraday.FloatMarketCap
+		qd.Pe = data.Intraday.Pe
+		qd.Pb = data.Intraday.Pb
+		qd.Amplitude = data.Intraday.Amplitude
+		qd.Depth = data.Intraday.Depth
 	}
-	return qd
+	return &QuoteEvent{Code: data.Code, Data: qd}
 }
 
+// ============================================================================
+//  Internal: Helpers
+// ============================================================================
+
+// getPriority 读取某股票的优先级（无锁版本）。
+func (q *quoteCacheImpl) getPriority(code string) Priority {
+	if p, ok := q.priority[code]; ok {
+		return p
+	}
+	return PriorityNormal
+}
+
+// getCodesByPriority 返回指定优先级的所有股票代码。
+func (q *quoteCacheImpl) getCodesByPriority(p Priority) []string {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+
+	codes := make([]string, 0)
+	for code, pri := range q.priority {
+		if pri == p {
+			codes = append(codes, code)
+		}
+	}
+	// Also include items with this priority even if not in priority map
+	for code, item := range q.items {
+		if item.priority == p {
+			if _, inMap := q.priority[code]; !inMap {
+				codes = append(codes, code)
+			}
+		}
+	}
+	return codes
+}
+
+// cleanStale 清理过期缓存（每日 9:00 调用）。
+func (q *quoteCacheImpl) cleanStale() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	count := len(q.items)
+	q.items = make(map[string]*cacheItem)
+	if count > 0 {
+		log.Printf("[quotecache] cleaned %d stale entries", count)
+	}
+}

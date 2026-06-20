@@ -164,7 +164,7 @@ func registerAdapters(dataSources []config.DataSourceItem) {
 				log.Printf("初始化 %s 失败: %v", dsCfg.Name, err)
 				continue
 			}
-		case "ths":
+		case ths.AdapterName:
 			ds = ths.New()
 			if err := ds.Init(nil); err != nil {
 				log.Printf("初始化 %s 失败: %v", dsCfg.Name, err)

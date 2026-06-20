@@ -3,6 +3,8 @@ package monitor
 import (
 	"encoding/json"
 	"log"
+	"strconv"
+	"strings"
 
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
@@ -140,31 +142,31 @@ func (c *AlertChecker) checkRapidMove(rule model.MonitorRule, data *model.QuoteD
 		return nil
 	}
 
-	pct := data.ChangePct
-	// 若有分时数据，计算指定窗口内的涨跌幅
-	if len(data.Minutes) > 0 {
-		pct = calcWindowPct(data.Minutes, params.Minutes, data.Price)
+	// 计算窗口首尾相对昨收的涨跌幅差值
+	amplitude, _ := calcWindowAmplitude(data.Minutes, params.Minutes, data.PreClose)
+	if amplitude == 0 {
+		return nil
 	}
-	var alerts []Alert
 
-	if params.UpEnabled && pct >= params.AmplitudePct {
+	var alerts []Alert
+	if params.UpEnabled && amplitude >= params.AmplitudePct {
 		alerts = append(alerts, Alert{
 			RuleType:  string(model.RuleTypeRapidMove),
 			SubType:   "rapid_up",
 			Label:     "急拉",
-			ChangePct: pct,
+			ChangePct: amplitude,
 			Minutes:   params.Minutes,
-			Amplitude: params.AmplitudePct,
+			Amplitude: amplitude,
 		})
 	}
-	if params.DownEnabled && pct <= -params.AmplitudePct {
+	if params.DownEnabled && amplitude <= -params.AmplitudePct {
 		alerts = append(alerts, Alert{
 			RuleType:  string(model.RuleTypeRapidMove),
 			SubType:   "rapid_down",
 			Label:     "急跌",
-			ChangePct: pct,
+			ChangePct: amplitude,
 			Minutes:   params.Minutes,
-			Amplitude: params.AmplitudePct,
+			Amplitude: amplitude,
 		})
 	}
 	return alerts
@@ -186,12 +188,15 @@ func (c *AlertChecker) checkVolumeRatio(rule model.MonitorRule, data *model.Quot
 		return nil
 	}
 
-	// 查询近5日日均成交量（从 DB K线表）
-	avgVol, err := db.GetAvgVolume5Day(data.Code)
-	if err != nil || avgVol <= 0 {
-		return nil // 数据不足，跳过
+	// 量比 = 当日实时成交量 / 近5日均量
+	// 均量 = (近4个已完结交易日成交量 + 当日实时成交量) / 5
+	todayDate, _ := strconv.Atoi(strings.ReplaceAll(data.Date, "-", ""))
+	histSum, err := db.GetVolumeSum4DayHistorical(data.Code, todayDate)
+	if err != nil || histSum <= 0 {
+		return nil
 	}
-
+	totalSum := float64(histSum) + todayVol
+	avgVol := totalSum / 5
 	ratio := todayVol / avgVol
 	if ratio >= params.MinRatio {
 		return []Alert{{
@@ -217,62 +222,101 @@ func (c *AlertChecker) checkSealBoard(rule model.MonitorRule, data *model.QuoteD
 		return nil
 	}
 
-	pct := data.ChangePct
+	if data.Depth == nil {
+		return nil
+	}
 
-	// TODO: quotecache / adapter 当前不提供封单数据（Level 2 行情）
-	// 封单数据接入后实现：
-	//
-	// 涨停时看买一: if pct >= 9.8 && sealData.BidLots < params.MinLots {
-	//     return []Alert{{RuleType: "seal_board", SubType: "bid_low", Label: "涨停买一薄弱"}}
-	// }
-	// 跌停时看卖一: if pct <= -9.8 && sealData.AskLots < params.MinLots {
-	//     return []Alert{{RuleType: "seal_board", SubType: "ask_low", Label: "跌停卖一薄弱"}}
-	// }
-	_ = params
-	_ = pct
+	pct := data.ChangePct
+	d := data.Depth
+
+	// 涨停：涨幅 ≥ 9.8% 且买一有量卖一无量（确认封涨停）
+	if params.UpEnabled && pct >= 9.8 && d.Bid1Volume > 0 && d.Ask1Volume == 0 {
+		sealLots := int(d.Bid1Volume / 100) // 股 → 手
+		if sealLots < params.MinLots {
+			return []Alert{{
+				RuleType:  string(model.RuleTypeSealBoard),
+				SubType:   "bid_low",
+				Label:     "涨停买一薄弱",
+				ChangePct: pct,
+				MinLots:   params.MinLots,
+			}}
+		}
+	}
+
+	// 跌停：跌幅 ≤ -9.8% 且卖一有量买一无量（确认封跌停）
+	if params.DownEnabled && pct <= -9.8 && d.Ask1Volume > 0 && d.Bid1Volume == 0 {
+		sealLots := int(d.Ask1Volume / 100) // 股 → 手
+		if sealLots < params.MinLots {
+			return []Alert{{
+				RuleType:  string(model.RuleTypeSealBoard),
+				SubType:   "ask_low",
+				Label:     "跌停卖一薄弱",
+				ChangePct: pct,
+				MinLots:   params.MinLots,
+			}}
+		}
+	}
 
 	return nil
 }
 
-// calcWindowPct 根据分时数据计算指定窗口内的涨跌幅
-// bars 按时间升序，windowMinutes 为窗口大小，currentPrice 为当前价
-// 从最新 bar 向前查找，找到 >= windowMinutes 之前的 bar，计算涨幅
-// 若无分时数据，调用方应降级使用全天涨跌幅
-func calcWindowPct(bars []model.MinuteBar, windowMinutes int, currentPrice float64) float64 {
-	if len(bars) == 0 || currentPrice <= 0 {
-		return 0
+// calcWindowAmplitude 根据窗口首尾 bar 计算急拉急跌振幅。
+//
+// 取窗口起始 bar（N 交易分钟前）和最新 bar 的价格，
+// 分别计算相对昨收的涨跌幅，差值即为窗口振幅。
+//
+//	headPct = (起始价 - preClose) / preClose * 100
+//	tailPct = (最新价 - preClose) / preClose * 100
+//	amplitude = tailPct - headPct
+//	dir: >0 急拉, <0 急跌
+//
+// 若窗口内无有效分时数据，返回 0。
+func calcWindowAmplitude(bars []model.MinuteBar, windowMinutes int, preClose float64) (amplitude float64, dir int) {
+	if len(bars) == 0 || preClose <= 0 {
+		return 0, 0
 	}
-	// 取最新 bar 作为基准时间
-	latest := bars[len(bars)-1]
-	if latest.Time == "" {
-		return 0
+
+	tail := bars[len(bars)-1]
+	if tail.Time == "" {
+		return 0, 0
 	}
-	// 解析最新时间，计算窗口起始时间
-	latestMin := parseMinute(latest.Time)
-	startMin := latestMin - windowMinutes
-	if startMin < 0 {
-		startMin = 0
+
+	tailTradeMin := tradingMinute(tail.Time)
+	headTradeMin := tailTradeMin - windowMinutes
+	if headTradeMin < 0 {
+		headTradeMin = 0
 	}
-	// 向前扫描找到最早 >= startMin 的 bar
-	var basePrice float64
+
+	// 向前扫描找窗口起始 bar
+	var headPrice float64
 	for i := len(bars) - 1; i >= 0; i-- {
-		m := parseMinute(bars[i].Time)
-		if m <= startMin {
-			basePrice = bars[i].Price
+		tm := tradingMinute(bars[i].Time)
+		if tm <= headTradeMin {
+			headPrice = bars[i].Price
 			break
 		}
 	}
-	if basePrice <= 0 {
-		// 窗口内无足够数据，取最早 bar
-		basePrice = bars[0].Price
+	if headPrice <= 0 {
+		headPrice = bars[0].Price
 	}
-	if basePrice <= 0 {
-		return 0
+	if headPrice <= 0 {
+		return 0, 0
 	}
-	return (currentPrice - basePrice) / basePrice * 100
+
+	headPct := (headPrice - preClose) / preClose * 100
+	tailPct := (tail.Price - preClose) / preClose * 100
+	amplitude = tailPct - headPct
+
+	switch {
+	case amplitude > 0:
+		dir = 1
+	case amplitude < 0:
+		dir = -1
+	}
+	return
 }
 
-// parseMinute 将 "HH:MM" 转为分钟数（9:00 开始）
+// parseMinute 将 "HH:MM" 转为绝对分钟数（0:00 开始）。
 func parseMinute(t string) int {
 	if len(t) < 5 {
 		return 0
@@ -280,4 +324,20 @@ func parseMinute(t string) int {
 	h := int(t[0]-'0')*10 + int(t[1]-'0')
 	m := int(t[3]-'0')*10 + int(t[4]-'0')
 	return h*60 + m
+}
+
+// tradingMinute 将 "HH:MM" 转为交易分钟数（9:30 开盘 = 0，午休 11:30-13:00 跳过）。
+//
+//	9:30 → 0,  11:30 → 120,  13:00 → 120,  15:00 → 240
+func tradingMinute(t string) int {
+	m := parseMinute(t)
+	if m <= 0 {
+		return 0
+	}
+	// 上午: 9:30(570) ~ 11:30(690)，从 570 起算
+	if m <= 11*60+30 {
+		return m - 9*60 - 30
+	}
+	// 下午: 13:00(780) ~ 15:00(900)，扣除 90 分钟午休
+	return m - 9*60 - 30 - 90
 }

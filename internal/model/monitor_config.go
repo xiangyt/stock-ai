@@ -138,12 +138,14 @@ func DefaultVolumeRatioParams() VolumeRatioParams {
 //
 // 涨停时监控买一(bid)，跌停时监控卖一(ask)，共用同一阈值
 type SealBoardParams struct {
-	MinLots int `json:"min_lots"` // 封单小于此手数时告警（涨停看买一，跌停看卖一）
+	MinLots     int  `json:"min_lots"`      // 封单小于此手数时告警（涨停看买一，跌停看卖一）
+	UpEnabled   bool `json:"up_enabled"`    // 涨停方向启用
+	DownEnabled bool `json:"down_enabled"`  // 跌停方向启用
 }
 
 // DefaultSealBoardParams 默认封单参数
 func DefaultSealBoardParams() SealBoardParams {
-	return SealBoardParams{MinLots: 1000}
+	return SealBoardParams{MinLots: 1000, UpEnabled: true, DownEnabled: true}
 }
 
 // ============================================================================
