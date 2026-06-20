@@ -59,15 +59,15 @@ type Monitor struct {
 // NewMonitor 创建 Monitor 实例
 func NewMonitor(subscribe model.QuoteSubscriber, ntf notifier.Notifier) *Monitor {
 	return &Monitor{
-		subscribe:    subscribe,
-		ntf:          ntf,
-		workers:      make(map[string]*codeWorker),
-		codeConfigs:  make(map[string][]*model.MonitorConfig),
-		configs:      make(map[uint]*model.MonitorConfig),
-		changeCh:     make(chan ConfigChange, 64),
-		checker:      NewAlertChecker(),
-		cooldown:     NewCooldownController(),
-		push:         NewPushBuilder(),
+		subscribe:   subscribe,
+		ntf:         ntf,
+		workers:     make(map[string]*codeWorker),
+		codeConfigs: make(map[string][]*model.MonitorConfig),
+		configs:     make(map[uint]*model.MonitorConfig),
+		changeCh:    make(chan ConfigChange, 64),
+		checker:     NewAlertChecker(),
+		cooldown:    NewCooldownController(),
+		push:        NewPushBuilder(),
 	}
 }
 
@@ -275,7 +275,7 @@ func (m *Monitor) resolveCodes(cfg *model.MonitorConfig) []string {
 // ============================================================================
 
 // processCode 处理单个股票的所有行情事件
-func (m *Monitor) processCode(code string, ch <-chan model.QuoteEvent) {
+func (m *Monitor) processCode(_ string, ch <-chan model.QuoteEvent) {
 	for {
 		select {
 		case event, ok := <-ch:

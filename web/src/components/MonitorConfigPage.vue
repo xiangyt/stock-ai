@@ -237,8 +237,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import {
-  listMonitorConfigs, createMonitorConfig, updateMonitorConfig, deleteMonitorConfig,
-  setMonitorConfigActive, DefaultCooldown, DefaultRuleTemplates, AllTemplateVars,
+  listMonitorConfigs, createMonitorConfig, updateMonitorConfig, updateMonitorConfigBots,
+  deleteMonitorConfig, setMonitorConfigActive, DefaultCooldown, DefaultRuleTemplates, AllTemplateVars,
   RuleTypeLabels, DailyChangeSubKeys,
   type MonitorConfigDetail, type MonitorRule, type MonitorCooldown, type RuleType,
 } from '../api/monitor-config'

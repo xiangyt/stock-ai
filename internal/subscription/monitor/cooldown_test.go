@@ -1,7 +1,6 @@
 package monitor
 
 import (
-	"fmt"
 	"testing"
 	"time"
 )
@@ -32,7 +31,7 @@ func TestCooldown(t *testing.T) {
 	// 每日上限：同 subType 多次触发
 	cc.ResetDaily()
 	for i := 0; i < 10; i++ {
-		key := fmt.Sprintf("1:000001:limit_test")
+		key := "1:000001:limit_test"
 		cc.mu.Lock()
 		cc.lastAlert[key] = time.Time{} // 零时绕过时间冷却
 		cc.mu.Unlock()
