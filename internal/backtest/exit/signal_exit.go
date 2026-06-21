@@ -41,7 +41,7 @@ func NewSignalExitChecker(params json.RawMessage) (*SignalExitChecker, error) {
 		signalID: p.SignalID,
 		operator: p.Operator,
 		params:   p.Params,
-		priority: 5, // 默认最低优先级，信号退出排在最后
+		priority: 3, // 信号退出，优先级高于 time_exit
 	}, nil
 }
 

@@ -15,7 +15,7 @@ func NewTimeExitChecker(params json.RawMessage) (*TimeExitChecker, error) {
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
 	}
-	return &TimeExitChecker{holdDays: p.HoldDays, priority: 3}, nil
+	return &TimeExitChecker{holdDays: p.HoldDays, priority: 4}, nil
 }
 
 func (t *TimeExitChecker) Name() string     { return "time_exit" }

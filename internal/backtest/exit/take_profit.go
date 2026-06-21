@@ -18,7 +18,7 @@ func NewTakeProfitChecker(params json.RawMessage) (*TakeProfitChecker, error) {
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
 	}
-	return &TakeProfitChecker{thresholdPct: p.ThresholdPct, priority: 2}, nil
+	return &TakeProfitChecker{thresholdPct: p.ThresholdPct, priority: 3}, nil
 }
 
 func (t *TakeProfitChecker) Name() string     { return "take_profit" }
