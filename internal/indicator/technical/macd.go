@@ -62,14 +62,19 @@ func NewMacd() *Macd {
 	}
 
 	i.SetBuiltInSignals([]indicator.Signal{
-		NewSignalMacdGoldenAboveWater(), // 01 水上金叉
-		NewSignalMacdGoldenBelowWater(), // 02 水下金叉
-		NewSignalMacdTopDivergence(),    // 03 顶背离
-		NewSignalMacdBottomDivergence(), // 04 底背离
-		NewSignalMacdDeathCross(),       // 05 死叉
+		newSignalMacdCross("01", "水上金叉", "DIF在零轴上方上穿DEA（DIF>0且金叉）", true, true, indicator.OpCustom, "参数设置"),
+		newSignalMacdCross("02", "水下金叉", "DIF在零轴下方上穿DEA（DIF≤0且金叉）", true, false, indicator.OpCustom, "参数设置"),
+		newSignalMacdCross("03", "水上死叉", "DIF在零轴上方下穿DEA（DIF>0且死叉）", false, true, indicator.OpCrossBelow, "死叉"),
+		newSignalMacdCross("04", "水下死叉", "DIF在零轴下方下穿DEA（DIF≤0且死叉）", false, false, indicator.OpCrossBelow, "死叉"),
+		NewSignalMacdTopDivergence(),    // 05 顶背离
+		NewSignalMacdBottomDivergence(), // 06 底背离
 	})
 
-	i.SetCustomSignals(nil)
+	i.SetCustomSignals([]indicator.Signal{
+		newSigMacdVal(macdValDIF, "01", "DIF值", "DIF快线数值比较", indicator.OpGTE),
+		newSigMacdVal(macdValDEA, "02", "DEA值", "DEA慢线数值比较", indicator.OpGTE),
+		newSigMacdVal(macdValHist, "03", "MACD柱", "MACD柱线数值比较", indicator.OpGT),
+	})
 	return i
 }
 
@@ -102,16 +107,14 @@ func (i *Macd) Evaluate(stock indicator.StockSource, configs []*indicator.Signal
 		if s, ok := i.Signal[cfg.SignalID]; ok {
 			var res *indicator.EvaluatedStock
 			switch v := s.(type) {
-			case *SignalMacdGoldenAboveWater:
-				res = v.Evaluate(result, klines, cfg)
-			case *SignalMacdGoldenBelowWater:
+			case *SignalMacdCross:
 				res = v.Evaluate(result, klines, cfg)
 			case *SignalMacdTopDivergence:
 				res = v.Evaluate(result, klines, cfg)
 			case *SignalMacdBottomDivergence:
 				res = v.Evaluate(result, klines, cfg)
-			case *SignalMacdDeathCross:
-				res = v.Evaluate(result, klines, cfg)
+			case *sigMacdVal:
+				res = v.Evaluate(result, cfg)
 			default:
 				return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: cfg.SignalID,
 					Message: indicator.ErrUnsupportedSignal.Error()}
@@ -196,47 +199,67 @@ func buildMACD(klines []*model.DailyKline) MACDResult {
 }
 
 // ============================================================================
-//  SignalMacdGoldenAboveWater — 01 水上金叉
+//  SignalMacdCross — 金叉/死叉（水上/水下共用）
 //
-//  判定规则:
-//    DIF 在零轴上方 (DIF > 0) 且 DIF 上穿 DEA
-//    即: 前一日 DIF <= DEA, 当日 DIF > DEA, 且当日 DIF > 0
+//  金叉: 前一日 DIF <= DEA, 当日 DIF > DEA
+//  死叉: 前一日 DIF >= DEA, 当日 DIF < DEA
+//  水上: 当日 DIF > 0
+//  水下: 当日 DIF <= 0
 // ============================================================================
 
-type SignalMacdGoldenAboveWater struct {
-	indicator.BaseSignal
+// signalCrossName 返回信号的展示名称
+func signalCrossName(isGolden, aboveWater bool) string {
+	if isGolden {
+		if aboveWater {
+			return "水上金叉"
+		}
+		return "水下金叉"
+	}
+	if aboveWater {
+		return "水上死叉"
+	}
+	return "水下死叉"
 }
 
-func NewSignalMacdGoldenAboveWater() *SignalMacdGoldenAboveWater {
-	return &SignalMacdGoldenAboveWater{
+type SignalMacdCross struct {
+	indicator.BaseSignal
+	IsGolden   bool // true=金叉, false=死叉
+	AboveWater bool // true=水上(DIF>0), false=水下(DIF<=0)
+}
+
+// newSignalMacdCross 创建金叉/死叉信号的工厂函数
+func newSignalMacdCross(id, name, desc string, isGolden, aboveWater bool, op indicator.CompareOperator, label string) *SignalMacdCross {
+	return &SignalMacdCross{
 		BaseSignal: indicator.NewBaseSignal(
-			"01",
-			"水上金叉",
-			"DIF在零轴上方上穿DEA（DIF>0且金叉）",
+			id,
+			name,
+			desc,
 			indicator.ValSeries,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpCustom,
-					Label:    "参数设置",
+					Operator: op,
+					Label:    label,
 					Params: []indicator.ParamDef{
-						signalutil.ParamLookbackStart(5, "天前"),
+						signalutil.ParamLookbackStart(0, "天前"),
 						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpCustom,
+				Operator: op,
 				Params: map[string]any{
-					indicator.ParamKeyLookbackStart: float64(5),
+					indicator.ParamKeyLookbackStart: float64(0),
 					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
 		),
+		IsGolden:   isGolden,
+		AboveWater: aboveWater,
 	}
 }
 
-func (s *SignalMacdGoldenAboveWater) Evaluate(result MACDResult, klines []*model.DailyKline, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 5))
+func (s *SignalMacdCross) Evaluate(result MACDResult, _ []*model.DailyKline, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 0))
 	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
 
 	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(result.DIF))
@@ -244,153 +267,29 @@ func (s *SignalMacdGoldenAboveWater) Evaluate(result MACDResult, klines []*model
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: err.Error()}
 	}
 
-	// 在窗口 [idxStart, idxEnd) 内查找水上金叉
-	for i := idxEnd - 1; i >= idxStart; i-- {
-		if i <= 0 {
-			continue // 无前一日数据
-		}
-		// 金叉条件: 前一日 DIF <= DEA, 当日 DIF > DEA
-		if result.DIF[i] > result.DEA[i] && result.DIF[i-1] <= result.DEA[i-1] {
-			// 水上条件: 当日 DIF > 0
-			if result.DIF[i] > 0 {
-				return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
-			}
-		}
-	}
+	name := signalCrossName(s.IsGolden, s.AboveWater)
 
-	return &indicator.EvaluatedStock{
-		Result:   indicator.ResultRejected,
-		SignalID: config.SignalID,
-		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未检测到水上金叉", start, end),
-	}
-}
-
-// ============================================================================
-//  SignalMacdGoldenBelowWater — 02 水下金叉
-//
-//  判定规则:
-//    DIF 在零轴下方或触及零轴 (DIF <= 0) 且 DIF 上穿 DEA
-//    即: 前一日 DIF <= DEA, 当日 DIF > DEA, 且当日 DIF <= 0
-// ============================================================================
-
-type SignalMacdGoldenBelowWater struct {
-	indicator.BaseSignal
-}
-
-func NewSignalMacdGoldenBelowWater() *SignalMacdGoldenBelowWater {
-	return &SignalMacdGoldenBelowWater{
-		BaseSignal: indicator.NewBaseSignal(
-			"02",
-			"水下金叉",
-			"DIF在零轴下方上穿DEA（DIF≤0且金叉）",
-			indicator.ValSeries,
-			[]indicator.OperatorOption{
-				{
-					Operator: indicator.OpCustom,
-					Label:    "参数设置",
-					Params: []indicator.ParamDef{
-						signalutil.ParamLookbackStart(5, "天前"),
-						signalutil.ParamLookbackEnd(0, "天前"),
-					},
-				},
-			},
-			&indicator.SignalConfig{
-				Operator: indicator.OpCustom,
-				Params: map[string]any{
-					indicator.ParamKeyLookbackStart: float64(5),
-					indicator.ParamKeyLookbackEnd:   float64(0),
-				},
-			},
-		),
-	}
-}
-
-func (s *SignalMacdGoldenBelowWater) Evaluate(result MACDResult, klines []*model.DailyKline, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 5))
-	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
-
-	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(result.DIF))
-	if err != nil {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: err.Error()}
-	}
-
-	// 在窗口内查找水下金叉
 	for i := idxEnd - 1; i >= idxStart; i-- {
 		if i <= 0 {
 			continue
 		}
-		// 金叉条件: 前一日 DIF <= DEA, 当日 DIF > DEA
-		if result.DIF[i] > result.DEA[i] && result.DIF[i-1] <= result.DEA[i-1] {
-			// 水下条件: 当日 DIF <= 0
-			if result.DIF[i] <= 0 {
-				return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
-			}
+
+		crossed := false
+		if s.IsGolden {
+			crossed = result.DIF[i] > result.DEA[i] && result.DIF[i-1] <= result.DEA[i-1]
+		} else {
+			crossed = result.DIF[i] < result.DEA[i] && result.DIF[i-1] >= result.DEA[i-1]
 		}
-	}
 
-	return &indicator.EvaluatedStock{
-		Result:   indicator.ResultRejected,
-		SignalID: config.SignalID,
-		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未检测到水下金叉", start, end),
-	}
-}
-
-// ============================================================================
-//  SignalMacdDeathCross — 05 死叉
-//
-//  判定规则:
-//    DIF 从上方下穿 DEA
-//    即: 前一日 DIF >= DEA, 当日 DIF < DEA
-// ============================================================================
-
-type SignalMacdDeathCross struct {
-	indicator.BaseSignal
-}
-
-func NewSignalMacdDeathCross() *SignalMacdDeathCross {
-	return &SignalMacdDeathCross{
-		BaseSignal: indicator.NewBaseSignal(
-			"05",
-			"死叉",
-			"DIF从上方下穿DEA",
-			indicator.ValSeries,
-			[]indicator.OperatorOption{
-				{
-					Operator: indicator.OpCrossBelow,
-					Label:    "死叉",
-					Params: []indicator.ParamDef{
-						signalutil.ParamLookbackStart(5, "天前"),
-						signalutil.ParamLookbackEnd(0, "天前"),
-					},
-				},
-			},
-			&indicator.SignalConfig{
-				Operator: indicator.OpCrossBelow,
-				Params: map[string]any{
-					indicator.ParamKeyLookbackStart: float64(5),
-					indicator.ParamKeyLookbackEnd:   float64(0),
-				},
-			},
-		),
-	}
-}
-
-func (s *SignalMacdDeathCross) Evaluate(result MACDResult, klines []*model.DailyKline, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 5))
-	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
-
-	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(result.DIF))
-	if err != nil {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: err.Error()}
-	}
-
-	// 在窗口内查找死叉
-	for i := idxEnd - 1; i >= idxStart; i-- {
-		if i <= 0 {
+		if !crossed {
 			continue
 		}
-		// 死叉条件: 前一日 DIF >= DEA, 当日 DIF < DEA
-		if result.DIF[i] < result.DEA[i] && result.DIF[i-1] >= result.DEA[i-1] {
+
+		// 水上/水下校验
+		if s.AboveWater && result.DIF[i] > 0 {
+			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
+		}
+		if !s.AboveWater && result.DIF[i] <= 0 {
 			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
 		}
 	}
@@ -398,8 +297,100 @@ func (s *SignalMacdDeathCross) Evaluate(result MACDResult, klines []*model.Daily
 	return &indicator.EvaluatedStock{
 		Result:   indicator.ResultRejected,
 		SignalID: config.SignalID,
-		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未检测到MACD死叉", start, end),
+		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未检测到%s", start, end, name),
 	}
+}
+
+// ============================================================================
+//  sigMacdVal — MACD 数值比较自定义信号
+//
+//  对 MACD 的 DIF、DEA、MACD柱 进行数值比较（>、<、≥、≤、区间等）。
+//  通过 series 字段区分取值来源，支持 "days" 参数指定往前第几天（0=最新）。
+// ============================================================================
+
+type macdValSeries int
+
+const (
+	macdValDIF  macdValSeries = iota // DIF 快线
+	macdValDEA                       // DEA 慢线
+	macdValHist                      // MACD 柱线
+)
+
+func (s macdValSeries) label() string {
+	switch s {
+	case macdValDIF:
+		return "DIF"
+	case macdValDEA:
+		return "DEA"
+	default:
+		return "MACD柱"
+	}
+}
+
+// macdValOps 返回 MACD 数值信号的可用操作符列表，每个操作符首参为"取值天数"。
+func macdValOps() []indicator.OperatorOption {
+	daysP := indicator.ParamDef{Key: indicator.ParamKeyDays, Label: "取值天数", Type: "number", Default: 0, Min: 0, Step: 1, Unit: "天前", Required: false}
+	thresh := indicator.ParamDef{Key: indicator.ParamKeyThreshold, Label: "阈值", Type: "number"}
+	minP := indicator.ParamDef{Key: indicator.ParamKeyMin, Label: "下限", Type: "number"}
+	maxP := indicator.ParamDef{Key: indicator.ParamKeyMax, Label: "上限", Type: "number"}
+	return []indicator.OperatorOption{
+		{Operator: indicator.OpLT, Label: "小于", Params: []indicator.ParamDef{daysP, thresh}},
+		{Operator: indicator.OpLTE, Label: "小于等于", Params: []indicator.ParamDef{daysP, thresh}},
+		{Operator: indicator.OpGT, Label: "大于", Params: []indicator.ParamDef{daysP, thresh}},
+		{Operator: indicator.OpGTE, Label: "大于等于", Params: []indicator.ParamDef{daysP, thresh}},
+		{Operator: indicator.OpBetween, Label: "区间内", Params: []indicator.ParamDef{daysP, minP, maxP}},
+		{Operator: indicator.OpNotBetween, Label: "区间外", Params: []indicator.ParamDef{daysP, minP, maxP}},
+	}
+}
+
+// macdValIdx 根据 days 参数计算取值索引，返回索引和可能的错误。
+func macdValIdx(dataLen, daysAgo int) (int, error) {
+	idx := dataLen - 1 - daysAgo
+	if idx < 0 {
+		return 0, fmt.Errorf("往前第 %d 天超出数据范围（共 %d 天）", daysAgo, dataLen)
+	}
+	return idx, nil
+}
+
+type sigMacdVal struct {
+	indicator.BaseSignal
+	series macdValSeries
+}
+
+// newSigMacdVal 创建 MACD 数值比较自定义信号
+func newSigMacdVal(series macdValSeries, id, name, desc string, defaultOp indicator.CompareOperator) *sigMacdVal {
+	return &sigMacdVal{
+		BaseSignal: indicator.NewBaseSignal(id, name, desc, indicator.ValNumber, macdValOps(),
+			&indicator.SignalConfig{Operator: defaultOp, Params: map[string]any{
+				indicator.ParamKeyThreshold: float64(0),
+				indicator.ParamKeyDays:      float64(0),
+			}},
+		),
+		series: series,
+	}
+}
+
+func (s *sigMacdVal) Evaluate(result MACDResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	sId := config.SignalID
+	if !config.IsCustom() {
+		config = s.DefaultConfig()
+	}
+
+	var data []float64
+	switch s.series {
+	case macdValDIF:
+		data = result.DIF
+	case macdValDEA:
+		data = result.DEA
+	default:
+		data = result.MACD
+	}
+
+	idx, err := macdValIdx(len(data), config.GetInt(indicator.ParamKeyDays, 0))
+	if err != nil {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId, Message: err.Error()}
+	}
+	return signalutil.EvalNumberOp(data[idx], s.series.label(), "%.4f", "%.4f", sId, config)
 }
 
 // ============================================================================
@@ -567,7 +558,7 @@ type SignalMacdTopDivergence struct {
 func NewSignalMacdTopDivergence() *SignalMacdTopDivergence {
 	return &SignalMacdTopDivergence{
 		BaseSignal: indicator.NewBaseSignal(
-			"03",
+			"05",
 			"顶背离",
 			"价格创新高但MACD红柱未创新高（股价高位反转信号）",
 			indicator.ValSeries,
@@ -629,7 +620,7 @@ type SignalMacdBottomDivergence struct {
 func NewSignalMacdBottomDivergence() *SignalMacdBottomDivergence {
 	return &SignalMacdBottomDivergence{
 		BaseSignal: indicator.NewBaseSignal(
-			"04",
+			"06",
 			"底背离",
 			"价格创新低但MACD绿柱未创新低（股价低位反弹信号）",
 			indicator.ValSeries,

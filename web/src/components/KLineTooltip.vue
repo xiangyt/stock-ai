@@ -645,6 +645,13 @@ watch(() => props.visible, (v) => {
   }
 })
 
+// 股票切换时重新加载 K 线和指标数据
+watch(() => props.stockCode, (code) => {
+  if (code && props.visible) {
+    loadData()
+  }
+})
+
 onBeforeUnmount(() => {
   disposeCharts()
 })

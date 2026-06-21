@@ -67,7 +67,11 @@ func NewKdj() *Kdj {
 		NewSignalKdjTopDivergence(),    // 04 顶背离
 	})
 
-	i.SetCustomSignals(nil)
+	i.SetCustomSignals([]indicator.Signal{
+		newSigKdjVal(kdjValK, "01", "K值", "K线是快速确认线——数值在90以上为超买，数值在10以下为超卖", indicator.OpGTE, 50),
+		newSigKdjVal(kdjValD, "02", "D值", "D线是慢速主干线——数值在80以上为超买，数值在20以下为超卖", indicator.OpGTE, 50),
+		newSigKdjVal(kdjValJ, "03", "J值", "J线为方向敏感线，当J值大于90，特别是连续5天以上，股价至少会形成短期头部，反之J值小于10时，特别是连续数天以上，股价至少会形成短期底部", indicator.OpGTE, 50),
+	})
 	return i
 }
 
@@ -107,6 +111,8 @@ func (i *Kdj) Evaluate(stock indicator.StockSource, configs []*indicator.SignalC
 			case *SignalKdjBottomDivergence:
 				res = v.Evaluate(result, cfg)
 			case *SignalKdjTopDivergence:
+				res = v.Evaluate(result, cfg)
+			case *sigKdjVal:
 				res = v.Evaluate(result, cfg)
 			default:
 				return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: cfg.SignalID,
@@ -194,7 +200,7 @@ func NewSignalKdjGoldenCross() *SignalKdjGoldenCross {
 					Operator: indicator.OpCrossAbove,
 					Label:    "金叉",
 					Params: []indicator.ParamDef{
-						signalutil.ParamLookbackStart(5, "天前"),
+						signalutil.ParamLookbackStart(0, "天前"),
 						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
@@ -202,7 +208,7 @@ func NewSignalKdjGoldenCross() *SignalKdjGoldenCross {
 			&indicator.SignalConfig{
 				Operator: indicator.OpCrossAbove,
 				Params: map[string]any{
-					indicator.ParamKeyLookbackStart: float64(5),
+					indicator.ParamKeyLookbackStart: float64(0),
 					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
@@ -211,7 +217,7 @@ func NewSignalKdjGoldenCross() *SignalKdjGoldenCross {
 }
 
 func (s *SignalKdjGoldenCross) Evaluate(result KDJResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 5))
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 0))
 	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
 
 	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(result.K))
@@ -261,7 +267,7 @@ func NewSignalKdjDeathCross() *SignalKdjDeathCross {
 					Operator: indicator.OpCrossBelow,
 					Label:    "死叉",
 					Params: []indicator.ParamDef{
-						signalutil.ParamLookbackStart(5, "天前"),
+						signalutil.ParamLookbackStart(0, "天前"),
 						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
@@ -269,7 +275,7 @@ func NewSignalKdjDeathCross() *SignalKdjDeathCross {
 			&indicator.SignalConfig{
 				Operator: indicator.OpCrossBelow,
 				Params: map[string]any{
-					indicator.ParamKeyLookbackStart: float64(5),
+					indicator.ParamKeyLookbackStart: float64(0),
 					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
@@ -278,7 +284,7 @@ func NewSignalKdjDeathCross() *SignalKdjDeathCross {
 }
 
 func (s *SignalKdjDeathCross) Evaluate(result KDJResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 5))
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 0))
 	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
 
 	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(result.K))
@@ -427,4 +433,71 @@ func (s *SignalKdjTopDivergence) Evaluate(result KDJResult, config *indicator.Si
 	} else {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: msg}
 	}
+}
+
+// ============================================================================
+//  sigKdjVal — KDJ 数值比较自定义信号
+//
+//  对 KDJ 的 K、D、J 值进行数值比较（>、<、≥、≤、区间等）。
+//  通过 series 字段区分取值来源，支持 "days" 参数指定往前第几天（0=最新）。
+// ============================================================================
+
+type kdjValSeries int
+
+const (
+	kdjValK kdjValSeries = iota // K 线
+	kdjValD                     // D 线
+	kdjValJ                     // J 线
+)
+
+func (s kdjValSeries) label() string {
+	switch s {
+	case kdjValK:
+		return "KDJ-K"
+	case kdjValD:
+		return "KDJ-D"
+	default:
+		return "KDJ-J"
+	}
+}
+
+type sigKdjVal struct {
+	indicator.BaseSignal
+	series kdjValSeries
+}
+
+// newSigKdjVal 创建 KDJ 数值比较自定义信号
+func newSigKdjVal(series kdjValSeries, id, name, desc string, defaultOp indicator.CompareOperator, defaultThreshold float64) *sigKdjVal {
+	return &sigKdjVal{
+		BaseSignal: indicator.NewBaseSignal(id, name, desc, indicator.ValNumber, macdValOps(),
+			&indicator.SignalConfig{Operator: defaultOp, Params: map[string]any{
+				indicator.ParamKeyThreshold: defaultThreshold,
+				indicator.ParamKeyDays:      float64(0),
+			}},
+		),
+		series: series,
+	}
+}
+
+func (s *sigKdjVal) Evaluate(result KDJResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	sId := config.SignalID
+	if !config.IsCustom() {
+		config = s.DefaultConfig()
+	}
+
+	var data []float64
+	switch s.series {
+	case kdjValK:
+		data = result.K
+	case kdjValD:
+		data = result.D
+	default:
+		data = result.J
+	}
+
+	idx, err := macdValIdx(len(data), config.GetInt(indicator.ParamKeyDays, 0))
+	if err != nil {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId, Message: err.Error()}
+	}
+	return signalutil.EvalNumberOp(data[idx], s.series.label(), "%.2f", "%.2f", sId, config)
 }

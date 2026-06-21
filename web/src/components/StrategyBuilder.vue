@@ -13,8 +13,8 @@
           <input
             v-model="strategyName"
             class="inline-name-input"
-            @keyup.enter="isEditingName = false"
-            @blur="isEditingName = false"
+            @keyup.enter="handleNameConfirm"
+            @blur="handleNameConfirm"
             placeholder="输入策略名称"
             ref="nameInputRef"
           />
@@ -537,6 +537,13 @@
       @mouseleave="hideKLine"
     />
   </div>
+
+  <!-- 保存成功 toast -->
+  <Teleport to="body">
+    <transition name="toast-slide">
+      <div v-if="saveSuccessMsg" class="save-toast">{{ saveSuccessMsg }}</div>
+    </transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -793,6 +800,8 @@ const editParams = reactive<Record<string, any>>({})
 const expandedJSON = reactive(new Set<number>())
 const addSuccessMsg = ref('')
 let successTimer: ReturnType<typeof setTimeout> | null = null
+const saveSuccessMsg = ref('')
+let saveSuccessTimer: ReturnType<typeof setTimeout> | null = null
 
 /** 筛选日期（YYYY-MM-DD），默认为今天 */
 const today = new Date().toISOString().split('T')[0]
@@ -916,12 +925,34 @@ function markDirty() { isDirty.value = true }
 function clearDirty() { isDirty.value = false }
 
 // 策略名称内联编辑
+const editingNameBefore = ref('')   // 编辑前的原始名称，用于判断是否变更
+
 function startEditName() {
+  editingNameBefore.value = strategyName.value
   isEditingName.value = true
   nextTick(() => {
     nameInputRef.value?.focus()
     nameInputRef.value?.select()
   })
+}
+
+/** Enter 或 失焦时立即重命名（仅当有编辑 ID 且名称变更时） */
+async function handleNameConfirm() {
+  isEditingName.value = false
+  const newName = strategyName.value.trim()
+  if (!newName || newName === editingNameBefore.value) return
+  if (!editingId.value) {
+    // 新建模式还未保存，只更新内存
+    return
+  }
+  try {
+    await strategyApi.renameStrategy(editingId.value, newName)
+    editingNameBefore.value = newName
+  } catch (e) {
+    console.error('重命名失败:', e)
+    strategyName.value = editingNameBefore.value  // 回滚
+    alert('重命名失败: ' + (e as Error).message)
+  }
 }
 
 /** 滚动到条件选股区域 */
@@ -983,6 +1014,9 @@ async function saveStrategy() {
     emit('saved', { id: result.id, name: result.name })
     clearDirty()
     rulesDirty.value = false
+    saveSuccessMsg.value = '保存成功'
+    if (saveSuccessTimer) clearTimeout(saveSuccessTimer)
+    saveSuccessTimer = setTimeout(() => { saveSuccessMsg.value = '' }, 2500)
   } catch (e) {
     console.error('保存策略失败:', e)
     alert('保存失败: ' + (e as Error).message)
@@ -1224,12 +1258,12 @@ function formatSignalParamText(cfg: SignalConfig, ind: IndicatorMeta): string {
   }
 
   switch (cfg.operator) {
-    case 'gt':   return `${params.threshold ?? ''}${ind.unit}`
-    case 'gte':  return `${params.threshold ?? ''}${ind.unit}`
-    case 'lt':   return `${params.threshold ?? ''}${ind.unit}`
-    case 'lte':  return `${params.threshold ?? ''}${ind.unit}`
+    case 'gt':   return `${params.threshold ?? ''}${ind.unit}${formatDaysSuffix(cfg, ind)}`
+    case 'gte':  return `${params.threshold ?? ''}${ind.unit}${formatDaysSuffix(cfg, ind)}`
+    case 'lt':   return `${params.threshold ?? ''}${ind.unit}${formatDaysSuffix(cfg, ind)}`
+    case 'lte':  return `${params.threshold ?? ''}${ind.unit}${formatDaysSuffix(cfg, ind)}`
     case 'between': case 'not_between':
-      return `${params.min ?? ''}~${params.max ?? ''}${ind.unit}`
+      return `${params.min ?? ''}~${params.max ?? ''}${ind.unit}${formatDaysSuffix(cfg, ind)}`
     case 'eq': {
       const labelMap = findEnumLabels(cfg.signal_id!, 'threshold')
       if (labelMap && params.threshold !== undefined) {
@@ -1275,6 +1309,24 @@ function formatSignalParamText(cfg: SignalConfig, ind: IndicatorMeta): string {
     default:
       return Object.entries(params).map(([k, v]) => `${k}=${v}`).join(', ')
   }
+}
+/** 当 params.days > 0 时返回取值天数后缀，如 " (2天前)" */
+function formatDaysSuffix(cfg: SignalConfig, ind: IndicatorMeta): string {
+  const days = (cfg.params as Record<string, any>)?.days
+  if (!days || Number(days) <= 0) return ''
+  // 从信号定义的 days 参数中读取 unit
+  let unit = '天前'
+  for (const sig of ind.signals) {
+    if (sig.signal_id === cfg.signal_id) {
+      for (const op of sig.operators) {
+        if (!op.params) continue
+        for (const p of op.params) {
+          if (p.key === 'days' && p.unit) { unit = p.unit; break }
+        }
+      }
+    }
+  }
+  return ` (${days}${unit})`
 }
 function onClearClick() {
   const tabLabel = activeTab.value === 'buy_signals' ? '买入信号' : '卖出信号'
@@ -1978,6 +2030,24 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .add-success-msg-inline {
   display: block; text-align: center; font-size: 12.5px; color: #389e0d; font-weight: 600;
   margin-top: 6px;
+}
+.save-toast {
+  position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+  z-index: 9999; padding: 10px 24px;
+  background: #fff; color: #333; font-size: 14px; font-weight: 600;
+  border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.12), 0 2px 8px rgba(0,0,0,.06);
+  display: flex; align-items: center; gap: 8px;
+  white-space: nowrap; user-select: none;
+}
+.toast-slide-enter-active { animation: toastIn .3s ease-out; }
+.toast-slide-leave-active { animation: toastOut .25s ease-in; }
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+@keyframes toastOut {
+  from { opacity: 1; transform: translateX(-50%) translateY(0); }
+  to   { opacity: 0; transform: translateX(-50%) translateY(-12px); }
 }
 
 /* 空状态 */

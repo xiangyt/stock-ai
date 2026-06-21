@@ -8,7 +8,6 @@
     <!-- ====== 工具栏 ====== -->
     <section class="toolbar-card">
       <div class="toolbar-row">
-        <button v-if="props.defaultStrategyId" class="back-btn" @click="onGoBack">‹ 返回编辑</button>
         <!-- 策略选择 -->
         <div class="strategy-select-wrap" ref="strategySelectRef">
           <div
@@ -68,8 +67,8 @@
       </div>
 
       <div class="toolbar-actions">
-        <button class="btn-outline" @click="showRulesPanel = !showRulesPanel">
-          {{ showRulesPanel ? '🔽 隐藏规则' : '📐 规则配置' }}
+        <button class="btn-outline" :disabled="!selectedStrategy" @click="onGoToEdit">
+          ✏️ 编辑策略
         </button>
         <button class="btn-primary" :disabled="isRunning || !selectedStrategy" @click="runBacktest">
           {{ isRunning ? '运行中...' : '📊 模拟交易' }}
@@ -112,7 +111,7 @@
       </div>
 
       <!-- 规则配置面板 -->
-      <div v-if="showRulesPanel" class="rules-panel">
+      <div v-if="selectedStrategy" class="rules-panel">
         <div class="rules-section">
           <h4 class="rules-title">📐 卖出规则</h4>
           <div class="rules-list">
@@ -404,7 +403,6 @@ const exitRulesOverride = ref<strategyApi.ExitRules>({
 const positionRulesOverride = ref<strategyApi.PositionRules>({
   max_positions: 5, max_single_pct: 20, allocation: 'equal',
 })
-const showRulesPanel = ref(false)
 
 // ========== 运行状态 ==========
 type RunStatus = 'idle' | 'pending' | 'running' | 'done' | 'failed'
@@ -518,7 +516,60 @@ function toggleStrategyDropdown(e?: MouseEvent) {
   showStrategyDropdown.value = true
   nextTick(() => sdSearchInputRef.value?.focus())
 }
-function selectStrategy(s: StrategyItem) { selectedStrategy.value = s; showStrategyDropdown.value = false; loadHistoryRuns() }
+/** 旧格式卖出规则转换：{stop_loss: {threshold_pct: -8}, ...} → ExitRules 格式 */
+function convertLegacyExitRules(legacy: Record<string, any>): strategyApi.ExitRules {
+  const ruleMap: Record<string, strategyApi.ExitRuleConfig> = {
+    stop_loss:      { type: 'stop_loss', enabled: true, params: { threshold_pct: -8 }, priority: 1 },
+    take_profit:    { type: 'take_profit', enabled: true, params: { threshold_pct: 20 }, priority: 2 },
+    time_exit:      { type: 'time_exit', enabled: false, params: { hold_days: 60 }, priority: 3 },
+    trailing_stop:  { type: 'trailing_stop', enabled: false, params: { trail_pct: 5, activation_pct: 10 }, priority: 2 },
+    segment_profit: { type: 'segment_profit', enabled: false, params: { levels: [{ threshold_pct: 10, sell_ratio: 0.5 }] }, priority: 2 },
+    signal_exit:    { type: 'signal_exit', enabled: false, params: { signal_id: '', operator: '', params: {} }, priority: 5 },
+  }
+  for (const [key, val] of Object.entries(legacy)) {
+    const tmpl = ruleMap[key]
+    if (!tmpl) continue
+    tmpl.enabled = (val as any)?.enabled ?? true
+    tmpl.params = { ...tmpl.params, ...(val as any)?.params }
+    ruleMap[key] = tmpl
+  }
+  return {
+    rules: Object.values(ruleMap),
+    slippage_pct: legacy.slippage_pct ?? 0.3,
+  }
+}
+
+async function selectStrategy(s: StrategyItem) {
+  selectedStrategy.value = s
+  showStrategyDropdown.value = false
+  // 加载策略详情，自动填充卖出规则和仓位管理
+  try {
+    const detail = await strategyApi.fetchStrategyById(s.id)
+    if (detail.exit_rules) {
+      try {
+        const rules = JSON.parse(detail.exit_rules)
+        if (rules && typeof rules === 'object') {
+          // 兼容旧格式 {stop_loss: {...}} → 新格式 {rules: [...]}
+          if (Array.isArray(rules.rules)) {
+            exitRulesOverride.value = rules as strategyApi.ExitRules
+          } else {
+            // 旧格式转换：提取各个 rule type
+            exitRulesOverride.value = convertLegacyExitRules(rules)
+          }
+        }
+      } catch (_) {}
+    }
+    if (detail.position_rules) {
+      try {
+        const rules = JSON.parse(detail.position_rules)
+        if (rules && typeof rules === 'object') {
+          positionRulesOverride.value = { ...positionRulesOverride.value, ...rules }
+        }
+      } catch (_) {}
+    }
+  } catch (e) { console.error('加载策略详情失败:', e) }
+  loadHistoryRuns()
+}
 function moveSelDown() { if (filteredStrategies.value.length > 0 && highlightIdx.value < filteredStrategies.value.length - 1) highlightIdx.value++ }
 function moveSelUp() { if (highlightIdx.value > 0) highlightIdx.value-- }
 function selectHighlighted() {
@@ -531,7 +582,7 @@ async function loadAllStrategies() {
     allStrategies.value = (res.list || []).map((s: any) => ({ id: s.id, name: s.name, signals: s.signals }))
     if (props.defaultStrategyId) {
       const found = allStrategies.value.find(s => s.id === props.defaultStrategyId)
-      if (found) { selectedStrategy.value = found; loadHistoryRuns() }
+      if (found) await selectStrategy(found)
     }
   } catch (e) { console.error('加载策略列表失败:', e) }
 }
@@ -744,6 +795,10 @@ function ruleName(type: string): string {
 function onGoBack() {
   if (selectedStrategy.value) emit('goToEdit', selectedStrategy.value.id)
   else emit('goBack')
+}
+
+function onGoToEdit() {
+  if (selectedStrategy.value) emit('goToEdit', selectedStrategy.value.id)
 }
 
 // ========== K 线悬浮 ==========
