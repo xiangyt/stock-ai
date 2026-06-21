@@ -22,6 +22,7 @@ import (
 	"stock-ai/internal/subscription/quotecache"
 	"stock-ai/internal/subscription/runner"
 	"stock-ai/internal/subscription/scheduler"
+	"stock-ai/internal/subscription/watchlist"
 	"stock-ai/utils"
 )
 
@@ -31,6 +32,7 @@ func InitializeApp(cfg *config.Config) (*App, error) {
 	registry := provideRegistry()
 	quotecacheConfig := provideQuoteCacheConfig(registry)
 	quoteCache := quotecache.New(quotecacheConfig)
+	manager := watchlist.NewManager(quoteCache)
 	stockSourceProvider := runner.NewCachedQuoteProvider(quoteCache)
 	v := provideQuoteSubscriber(quoteCache)
 	v2 := handler.AllBuiltins()
@@ -39,29 +41,30 @@ func InitializeApp(cfg *config.Config) (*App, error) {
 	notifierNotifier := notifier.NewNotifier()
 	subscriptionRunner := runner.NewSubscriptionRunner(stockSourceProvider, engine, notifierNotifier)
 	schedulerScheduler := scheduler.NewScheduler(subscriptionRunner)
-	dataCollectRunner := datacollect.NewDataCollectRunner()
+	dataCollectRunner := datacollect.NewDataCollectRunner(manager)
 	datacollectScheduler := datacollect.NewScheduler(dataCollectRunner)
 	service := backtest.NewService(engine)
 	backtestHandler := backtest.NewHandler(service)
 	monitorMonitor := monitor.NewMonitor(v, notifierNotifier)
 	ginEngine := provideRouter(dataCollectRunner, backtestHandler)
 	app := &App{
-		Config:        cfg,
-		Registry:      registry,
-		QuoteCache:    quoteCache,
-		StockProvider: stockSourceProvider,
-		QuoteSub:      v,
-		IndicatorReg:  indicatorRegistry,
-		Engine:        engine,
-		Notifier:      notifierNotifier,
-		SubRunner:     subscriptionRunner,
-		SubScheduler:  schedulerScheduler,
-		DCRunner:      dataCollectRunner,
-		DCScheduler:   datacollectScheduler,
-		BtService:     service,
-		BtHandler:     backtestHandler,
-		Monitor:       monitorMonitor,
-		Router:        ginEngine,
+		Config:           cfg,
+		Registry:         registry,
+		QuoteCache:       quoteCache,
+		WatchlistManager: manager,
+		StockProvider:    stockSourceProvider,
+		QuoteSub:         v,
+		IndicatorReg:     indicatorRegistry,
+		Engine:           engine,
+		Notifier:         notifierNotifier,
+		SubRunner:        subscriptionRunner,
+		SubScheduler:     schedulerScheduler,
+		DCRunner:         dataCollectRunner,
+		DCScheduler:      datacollectScheduler,
+		BtService:        service,
+		BtHandler:        backtestHandler,
+		Monitor:          monitorMonitor,
+		Router:           ginEngine,
 	}
 	return app, nil
 }
@@ -134,6 +137,7 @@ func convertAdapterIntraday(id *adapter.IntradayData) *quotecache.MinuteData {
 		Date:     id.Date,
 
 		Name:           id.Name,
+		Open:           id.Open,
 		Current:        id.Current,
 		High:           id.High,
 		Low:            id.Low,

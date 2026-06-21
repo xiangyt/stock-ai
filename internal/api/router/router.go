@@ -65,7 +65,6 @@ func SetupRouter(runner *datacollect.DataCollectRunner) *gin.Engine {
 	apiV1 := r.Group("/api/v1")
 	{
 		RegisterAuthRoutes(apiV1, authSvc)
-		RegisterStockRoutes(apiV1)
 		RegisterStrategyRoutes(apiV1, authSvc)
 		RegisterIndicatorRoutes(apiV1, authSvc, screenSvc)
 		RegisterKLineRoutes(apiV1)

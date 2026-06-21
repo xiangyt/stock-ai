@@ -13,6 +13,7 @@ import (
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
 	"stock-ai/internal/notifier"
+	"stock-ai/internal/subscription/watchlist"
 	"stock-ai/utils"
 
 	"github.com/robfig/cron/v3"
@@ -69,8 +70,9 @@ type TaskRunner interface {
 // DataCollectRunner 数据采集运行器，按内置任务 ID 分发到对应的 TaskHandler。
 // 执行完成后，通过关联的机器人推送执行结果通知。
 type DataCollectRunner struct {
-	handlers map[uint]TaskHandler  // taskID → 处理函数
-	notifier *subscriptionNotifier // 机器人推送封装
+	handlers     map[uint]TaskHandler  // taskID → 处理函数
+	notifier     *subscriptionNotifier // 机器人推送封装
+	watchlistMgr *watchlist.Manager    // 关注列表管理器（用于高优先级任务，可选）
 }
 
 // subscriptionNotifier 对 notifier 包的轻量封装，仅暴露机器人推送能力。
@@ -90,10 +92,12 @@ func (s *subscriptionNotifier) Push(ctx context.Context, bots []model.PushBot, m
 }
 
 // NewDataCollectRunner 创建数据采集运行器，注册所有任务 Handler。
-func NewDataCollectRunner() *DataCollectRunner {
+// mgr 为 nil 时高优先级任务不可用。
+func NewDataCollectRunner(mgr *watchlist.Manager) *DataCollectRunner {
 	r := &DataCollectRunner{
-		handlers: make(map[uint]TaskHandler),
-		notifier: &subscriptionNotifier{ntf: notifier.NewNotifier()},
+		handlers:     make(map[uint]TaskHandler),
+		notifier:     &subscriptionNotifier{ntf: notifier.NewNotifier()},
+		watchlistMgr: mgr,
 	}
 
 	// === 注册内置任务 Handler ===
@@ -133,6 +137,9 @@ func NewDataCollectRunner() *DataCollectRunner {
 
 	// Task 12: 名称变更同步 → RunNameChangesBatch
 	r.handlers[model.TaskNameChangeSync] = r.handleNameChangeSync
+
+	// Task 13: 重置行情缓存高优先级
+	r.handlers[model.TaskReloadHighPriority] = r.handleReloadHighPriority
 
 	return r
 }
@@ -760,4 +767,17 @@ func GetBoardName(board string) string {
 	default:
 		return board
 	}
+}
+
+// ============================================================================
+//  Task 13: 重置行情缓存高优先级
+// ============================================================================
+
+// handleReloadHighPriority 每日 8:00 委托 watchlist.Manager 重置并重新加载高优先级。
+func (r *DataCollectRunner) handleReloadHighPriority(ctx context.Context, task *model.DataCollectTask) (string, error) {
+	if r.watchlistMgr == nil {
+		return "watchlist Manager 未注入，跳过", nil
+	}
+	r.watchlistMgr.ReloadAll()
+	return "优先级已重置并重新加载", nil
 }

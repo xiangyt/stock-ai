@@ -66,16 +66,11 @@ func (c *CachedStock) GetDailySnapshot() (*model.StockDailySnapshot, error) {
 	defer cancel()
 
 	data, err := c.cache.Get(ctx, c.code)
-	if err != nil || data == nil {
+	if err != nil || data == nil || data.Intraday == nil {
 		return snap, nil // 无缓存，返回 DB 快照（昨收价计算的市值）
 	}
 
-	daily := data.Daily() // 从分时 bar 聚合的当日日线
-	if daily == nil {
-		return snap, nil
-	}
-
-	price := float64(daily.Close) / 100 // Close 单位：分，转为元
+	price := float64(data.Intraday.Current) / 100 // Current 单位：分，转为元
 	if price <= 0 {
 		return snap, nil
 	}
@@ -111,12 +106,11 @@ func (c *CachedStock) GetDailyKline() ([]*model.DailyKline, error) {
 	if err != nil {
 		return klines, nil
 	}
-	daily := data.Daily()
-	if daily == nil {
+	if data.Intraday == nil {
 		return klines, nil
 	}
 
-	return appendKlineHead(klines, daily, convertToDailyKline), nil
+	return appendKlineHead(klines, data.Intraday), nil
 }
 
 // ============================================================================
@@ -157,43 +151,45 @@ func (p *CachedQuoteProvider) BuildStockSources(ctx context.Context, codes []str
 //  转换函数
 // ============================================================================
 
-func convertToDailyKline(p *quotecache.StockPriceDaily) *model.DailyKline {
+// intradayToDailyKline 将 quotecache.MinuteData 转为 model.DailyKline。
+// API 已直接返回 OHLCV，无需从分时 bar 计算。
+func intradayToDailyKline(md *quotecache.MinuteData) *model.DailyKline {
 	return &model.DailyKline{
-		StockCode:    p.Code,
-		TradeDate:    parseDateToInt(p.Date),
-		Open:         int(p.Open),
-		High:         int(p.High),
-		Low:          int(p.Low),
-		Close:        int(p.Close),
-		Volume:       p.Volume,
-		Amount:       p.Amount,
-		TurnoverRate: p.Turnover,
+		StockCode:    "",           // 由调用方填充
+		TradeDate:    parseDateToInt(md.Date),
+		Open:         int(md.Open),
+		High:         int(md.High),
+		Low:          int(md.Low),
+		Close:        int(md.Current),
+		Volume:       md.Volume,
+		Amount:       md.Amount,
+		TurnoverRate: md.Turnover,
 	}
 }
 
-// appendKlineHead 将缓存数据拼接到 K 线头部。
-func appendKlineHead[T any](klines []*T, price *quotecache.StockPriceDaily, convert func(*quotecache.StockPriceDaily) *T) []*T {
-	if len(klines) == 0 || price == nil || price.Date == "" {
+// appendKlineHead 将实时行情拼接到 K 线头部。
+func appendKlineHead(klines []*model.DailyKline, md *quotecache.MinuteData) []*model.DailyKline {
+	if len(klines) == 0 || md == nil || md.Date == "" {
 		return klines
 	}
 
 	latestDate := getTradeDateFromKline(klines[0])
-	priceDate := parseDateToInt(price.Date)
+	priceDate := parseDateToInt(md.Date)
 
 	if priceDate <= 0 || priceDate < latestDate {
 		return klines
 	}
 
-	item := convert(price)
+	item := intradayToDailyKline(md)
 	if priceDate > latestDate {
-		result := make([]*T, 0, len(klines)+1)
+		result := make([]*model.DailyKline, 0, len(klines)+1)
 		result = append(result, item)
 		result = append(result, klines...)
 		return result
 	}
 
 	// priceDate == latestDate：覆盖第一条
-	result := make([]*T, len(klines))
+	result := make([]*model.DailyKline, len(klines))
 	result[0] = item
 	copy(result[1:], klines[1:])
 	return result

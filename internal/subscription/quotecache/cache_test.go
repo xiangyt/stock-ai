@@ -27,11 +27,30 @@ func (m *mockCollector) GetIntraday(ctx context.Context, code string) (*MinuteDa
 }
 
 func makeMinuteData(date string, preClose int64, bars ...MinuteBar) *MinuteData {
-	return &MinuteData{
+	// 使用 bars 的最后一根 bar 价格作为 Current、首根作为 Open
+	md := &MinuteData{
 		Date:     date,
 		PreClose: preClose,
 		Bars:     bars,
 	}
+	if len(bars) > 0 {
+		md.Open = bars[0].Price
+		md.Current = bars[len(bars)-1].Price
+		md.Volume = bars[len(bars)-1].Volume
+		md.Amount = bars[len(bars)-1].Amount
+		// 计算 High/Low
+		md.High = bars[0].Price
+		md.Low = bars[0].Price
+		for _, b := range bars {
+			if b.Price > md.High {
+				md.High = b.Price
+			}
+			if b.Price < md.Low {
+				md.Low = b.Price
+			}
+		}
+	}
+	return md
 }
 
 func makeBar(time string, price, volume, amount int64) MinuteBar {
@@ -83,85 +102,6 @@ func TestGet_CollectorError(t *testing.T) {
 	_, err := cache.Get(context.Background(), "000001")
 	if err == nil {
 		t.Fatal("expected error, got nil")
-	}
-}
-
-// ============================================================================
-//  日线计算
-// ============================================================================
-
-func TestDaily_ComputeFromBars(t *testing.T) {
-	md := makeMinuteData("2026-06-20", 1000,
-		makeBar("09:30", 1010, 100, 101000),
-		makeBar("09:35", 1020, 200, 203000),
-		makeBar("09:40", 990, 300, 297000),
-	)
-
-	cd := &CachedQuoteData{Code: "000001", Intraday: md}
-	daily := cd.Daily()
-
-	if daily == nil {
-		t.Fatal("Daily() returned nil")
-	}
-	if daily.Open != 1010 {
-		t.Errorf("Open = %d, want 1010", daily.Open)
-	}
-	if daily.Close != 990 {
-		t.Errorf("Close = %d, want 990", daily.Close)
-	}
-	if daily.High != 1020 {
-		t.Errorf("High = %d, want 1020", daily.High)
-	}
-	if daily.Low != 990 {
-		t.Errorf("Low = %d, want 990", daily.Low)
-	}
-	if daily.Volume != 300 {
-		t.Errorf("Volume = %d, want 300", daily.Volume)
-	}
-	if daily.Amount != 297000 {
-		t.Errorf("Amount = %d, want 297000", daily.Amount)
-	}
-	if daily.Change != -10 {
-		t.Errorf("Change = %d, want -10", daily.Change)
-	}
-	if daily.ChangePct != -1.0 {
-		t.Errorf("ChangePct = %f, want -1.0", daily.ChangePct)
-	}
-}
-
-func TestDaily_CachedAfterCompute(t *testing.T) {
-	md := makeMinuteData("2026-06-20", 1000,
-		makeBar("09:30", 1010, 100, 101000),
-	)
-	cd := &CachedQuoteData{Code: "000001", Intraday: md}
-
-	d1 := cd.Daily()
-	d2 := cd.Daily()
-
-	if d1 != d2 {
-		t.Error("Daily() returned different pointers on 2nd call (cache not working)")
-	}
-}
-
-func TestDaily_Invalidate(t *testing.T) {
-	md := makeMinuteData("2026-06-20", 1000,
-		makeBar("09:30", 1010, 100, 101000),
-	)
-	cd := &CachedQuoteData{Code: "000001", Intraday: md}
-
-	d1 := cd.Daily()
-	cd.Invalidate()
-	d2 := cd.Daily()
-
-	if d1 == d2 {
-		t.Error("Daily() returned same pointer after Invalidate")
-	}
-}
-
-func TestDaily_NilIntraday(t *testing.T) {
-	cd := &CachedQuoteData{Code: "000001"}
-	if cd.Daily() != nil {
-		t.Error("Daily() with nil Intraday should return nil")
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
 	"stock-ai/internal/subscription/monitor"
+	"stock-ai/internal/subscription/watchlist"
 )
 
 // ============================================================================
@@ -24,6 +25,7 @@ const maxBotsPerMonitorConfig = 5
 // MonitorConfigService 监控配置业务逻辑层
 type MonitorConfigService struct {
 	notifyChangeFn func(monitor.ChangeType, uint)
+	watchlistMgr   *watchlist.Manager // 可选：为 nil 时不同步关注列表
 }
 
 // NewMonitorConfigService 创建监控配置服务
@@ -36,10 +38,22 @@ func (s *MonitorConfigService) SetNotifyChange(fn func(monitor.ChangeType, uint)
 	s.notifyChangeFn = fn
 }
 
+// SetWatchlistManager 设置关注列表管理器（由 main.go 注入）
+func (s *MonitorConfigService) SetWatchlistManager(mgr *watchlist.Manager) {
+	s.watchlistMgr = mgr
+}
+
 // notifyChange 安全调用回调
 func (s *MonitorConfigService) notifyChange(ct monitor.ChangeType, id uint) {
 	if s.notifyChangeFn != nil {
 		s.notifyChangeFn(ct, id)
+	}
+}
+
+// notifyWatchlist 通知关注列表重新计算优先级
+func (s *MonitorConfigService) notifyWatchlist(uid uint) {
+	if s.watchlistMgr != nil {
+		s.watchlistMgr.OnMonitorChanged(uid)
 	}
 }
 
@@ -178,6 +192,8 @@ func (s *MonitorConfigService) Create(req *CreateMonitorConfigReq, uid uint) (*M
 
 	// 9. 通知 Monitor
 	s.notifyChange(monitor.ChangeCreated, cfg.ID)
+	// 10. 同步到关注列表
+	s.notifyWatchlist(uid)
 
 	return s.buildDetail(cfg), nil
 }
@@ -238,6 +254,8 @@ func (s *MonitorConfigService) Update(id, uid uint, req *UpdateMonitorConfigReq)
 
 	// 4. 通知 Monitor
 	s.notifyChange(monitor.ChangeUpdated, cfg.ID)
+	// 5. 同步到关注列表
+	s.notifyWatchlist(uid)
 
 	return s.buildDetail(cfg), nil
 }
@@ -248,6 +266,7 @@ func (s *MonitorConfigService) Delete(id, uid uint) error {
 		return err
 	}
 	s.notifyChange(monitor.ChangeDeleted, id)
+	s.notifyWatchlist(uid)
 	return nil
 }
 
@@ -261,6 +280,7 @@ func (s *MonitorConfigService) SetActive(id, uid uint, active bool) error {
 	} else {
 		s.notifyChange(monitor.ChangeDisabled, id)
 	}
+	s.notifyWatchlist(uid)
 	return nil
 }
 

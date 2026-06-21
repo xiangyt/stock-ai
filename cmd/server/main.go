@@ -140,6 +140,11 @@ func main() {
 	if app.QuoteCache != nil {
 		app.QuoteCache.Start()
 		log.Println("✅ QuoteCache 已启动")
+
+		// 立即初始化优先级，避免组件启动后首个调度周期使用默认 Normal
+		if app.WatchlistManager != nil {
+			app.WatchlistManager.ReloadAll()
+		}
 	}
 
 	if app.SubRunner != nil {
@@ -191,6 +196,19 @@ func main() {
 		})
 	}
 
+	// 关注列表管理器: 注入到持仓/盯盘/订阅 Service
+	if app.WatchlistManager != nil {
+		if router.PortfolioServiceRef != nil {
+			router.PortfolioServiceRef.SetWatchlistManager(app.WatchlistManager)
+		}
+		if router.MonitorConfigServiceRef != nil {
+			router.MonitorConfigServiceRef.SetWatchlistManager(app.WatchlistManager)
+		}
+		if router.SubscriptionServiceRef != nil {
+			router.SubscriptionServiceRef.SetWatchlistManager(app.WatchlistManager)
+		}
+	}
+
 	// 数据采集: NotifyChange 回调
 	if router.DataCollectServiceRef != nil && app.DCScheduler != nil {
 		router.DataCollectServiceRef.SetNotifyChange(func(ct datacollect.ChangeType, id uint) {
@@ -201,6 +219,11 @@ func main() {
 	// 持仓管理: 注入 QuoteCache 用于获取现价
 	if router.PortfolioServiceRef != nil && app.QuoteCache != nil {
 		router.PortfolioServiceRef.SetQuoteCache(app.QuoteCache)
+	}
+
+	// 持仓管理: 注入持仓变动回调 → 通知 Monitor 重算 ScopeHeld
+	if router.PortfolioServiceRef != nil && app.Monitor != nil {
+		router.PortfolioServiceRef.SetNotifyHoldingChanged(app.Monitor.NotifyHoldingChanged)
 	}
 
 	// ====================================================================

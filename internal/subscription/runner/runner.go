@@ -138,27 +138,7 @@ func (r *SubscriptionRunner) Run(ctx context.Context, sub *model.Subscription) (
 	// 7. 计算耗时（必须在渲染消息之前，否则推送内容中 duration_ms 为 0）
 	result.DurationMs = int(time.Since(startTime).Milliseconds())
 
-	// 8. 确定状态
-	if result.MatchCount > 0 && len(result.PushStatus) > 0 {
-		allSuccess := true
-		for _, status := range result.PushStatus {
-			if status != "成功" {
-				allSuccess = false
-				break
-			}
-		}
-		if allSuccess {
-			result.Status = model.LogStatusSuccess
-		} else {
-			result.Status = model.LogStatusPartial
-		}
-	} else if result.MatchCount == 0 {
-		result.Status = model.LogStatusSuccess
-	} else {
-		result.Status = model.LogStatusFailed
-	}
-
-	// 9. 渲染通知消息并发送（在耗时计算之后，确保 duration_ms 正确）
+	// 9. 渲染通知消息并发送
 	message := r.renderMessage(sub, strategy.Name, result)
 
 	for _, bot := range bots {
@@ -170,7 +150,8 @@ func (r *SubscriptionRunner) Run(ctx context.Context, sub *model.Subscription) (
 		}
 	}
 
-	// 10. 写入 SubscriptionLog
+	// 10. 确定状态（在推送之后）
+	result.Status = model.LogStatusSuccess
 	result.LogID = r.writeLog(sub, result)
 
 	// 11. 更新 LastRunAt

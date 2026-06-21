@@ -19,6 +19,7 @@ import (
 	"stock-ai/internal/subscription/quotecache"
 	"stock-ai/internal/subscription/runner"
 	subsched "stock-ai/internal/subscription/scheduler"
+	"stock-ai/internal/subscription/watchlist"
 	"stock-ai/utils"
 
 	"github.com/gin-gonic/gin"
@@ -96,6 +97,7 @@ func convertAdapterIntraday(id *adapter.IntradayData) *quotecache.MinuteData {
 		Date:     id.Date,
 
 		Name:           id.Name,
+		Open:           id.Open,
 		Current:        id.Current,
 		High:           id.High,
 		Low:            id.Low,
@@ -155,6 +157,7 @@ func InitializeApp(cfg *config.Config) (*App, error) {
 
 		// --- 行情缓存 ---
 		quotecache.New,
+		watchlist.NewManager,
 
 		// --- 缓存 Stock 构建 ---
 		runner.NewCachedQuoteProvider,

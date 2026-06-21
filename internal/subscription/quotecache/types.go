@@ -1,7 +1,5 @@
 package quotecache
 
-import "sync"
-
 // ============================================================================
 //  Priority 分级刷新
 // ============================================================================
@@ -47,6 +45,7 @@ type MinuteData struct {
 
 	// 以下由 collectorAdapter 从 adapter.IntradayData 同步，供上层使用
 	Name           string  `json:"name"`             // 股票名称
+	Open           int64   `json:"open"`             // 今开（分）
 	Current        int64   `json:"current"`          // 当前价（分）
 	High           int64   `json:"high"`             // 最高（分）
 	Low            int64   `json:"low"`              // 最低（分）
@@ -86,21 +85,6 @@ type MarketDepth struct {
 	Bid4Volume int64 `json:"bid4_volume"`
 	Bid5Price  int64 `json:"bid5_price"`
 	Bid5Volume int64 `json:"bid5_volume"`
-}
-
-// StockPriceDaily 日线 OHLCV（本包自定，不依赖 adapter）。
-type StockPriceDaily struct {
-	Code      string  // 股票代码
-	Date      string  // "2026-06-20"
-	Open      int64   // 开盘（分）
-	High      int64   // 最高（分）
-	Low       int64   // 最低（分）
-	Close     int64   // 收盘（分）
-	Volume    int64   // 成交量（股）
-	Amount    int64   // 成交额（分）
-	Change    int64   // 涨跌额（分）
-	ChangePct float64 // 涨跌幅 %
-	Turnover  float64 // 换手率 %
 }
 
 // QuoteData 推送给订阅者的行情快照。
@@ -161,7 +145,7 @@ type Stats struct {
 // CachedQuoteData 缓存的行情数据。
 //
 // 唯一原始数据：Intraday（分时 bar）。
-// 日线通过 Daily() 从 Intraday 实时计算（Lazy + 缓存）。
+// 日线 OHLCV 由 adapter 直接提供，通过 Intraday.Open/Current/High/Low 等字段访问。
 // 周/月/年暂不处理（TODO）。
 //
 // Meta 字段供上层通过 OnQuoteReady hook 注入扩展数据（如 Snapshot），
@@ -171,74 +155,4 @@ type CachedQuoteData struct {
 	Name     string         // 股票名称
 	Intraday *MinuteData    // 分时行情（唯一原始数据）
 	Meta     map[string]any // 扩展数据，由上层 hook 注入（如 snapshot, pe, pb 等）
-
-	// 私有：日线 Lazy 计算缓存
-	dailyMu sync.Mutex
-	daily   *StockPriceDaily // 计算后缓存
-}
-
-// Daily 返回当日日线数据（Lazy 计算）。
-//
-// 若已缓存则直接返回。
-// 若 Intraday 可用，从分时 bar 聚合计算 OHLCV：
-//   Open  = 首根 bar 价格
-//   Close = 末根 bar 价格
-//   High  = 全部 bar 最高价
-//   Low   = 全部 bar 最低价
-//   Volume = 末根 bar 累计成交量
-//   Amount = 末根 bar 累计成交额
-//   ChangePct = (Close - PreClose) / PreClose * 100
-func (d *CachedQuoteData) Daily() *StockPriceDaily {
-	d.dailyMu.Lock()
-	defer d.dailyMu.Unlock()
-
-	if d.daily != nil {
-		return d.daily
-	}
-	if d.Intraday == nil || len(d.Intraday.Bars) == 0 {
-		return nil
-	}
-
-	d.daily = computeDailyFromBars(d.Code, d.Intraday)
-	return d.daily
-}
-
-// Invalidate 清空日线计算缓存（Intraday 刷新时调用）。
-func (d *CachedQuoteData) Invalidate() {
-	d.dailyMu.Lock()
-	d.daily = nil
-	d.dailyMu.Unlock()
-}
-
-// computeDailyFromBars 从分时 bar 列表聚合日线 OHLCV。
-func computeDailyFromBars(code string, intraday *MinuteData) *StockPriceDaily {
-	bars := intraday.Bars
-	first, last := bars[0], bars[len(bars)-1]
-
-	daily := &StockPriceDaily{
-		Code:   code,
-		Date:   intraday.Date,
-		Open:   first.Price,
-		Close:  last.Price,
-		High:   first.Price,
-		Low:    first.Price,
-		Volume: last.Volume,
-		Amount: last.Amount,
-	}
-
-	for _, b := range bars {
-		if b.Price > daily.High {
-			daily.High = b.Price
-		}
-		if b.Price < daily.Low {
-			daily.Low = b.Price
-		}
-	}
-
-	if intraday.PreClose > 0 {
-		daily.Change = last.Price - intraday.PreClose
-		daily.ChangePct = float64(daily.Change) / float64(intraday.PreClose) * 100
-	}
-
-	return daily
 }

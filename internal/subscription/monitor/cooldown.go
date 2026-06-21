@@ -30,7 +30,10 @@ func NewCooldownController() *CooldownController {
 	}
 }
 
-// ShouldAlert 检查是否允许推送告警
+// ShouldAlert 检查是否允许推送告警。
+//
+// 冷却数据保存在内存中，服务器重启后归零。
+// 重启后的多余告警可接受：重启是小概率事件，且当日上限通常足够大。
 //
 // intervalMinutes: 同股同类型告警最小间隔（分钟）
 // dailyMax: 每天同股同类型最多推送次数

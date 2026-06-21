@@ -10,12 +10,15 @@ import (
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
 	"stock-ai/internal/subscription/quotecache"
+	"stock-ai/internal/subscription/watchlist"
 	"stock-ai/utils"
 )
 
 // PortfolioService 持仓管理业务逻辑
 type PortfolioService struct {
-	cache quotecache.QuoteCache // 可选：为 nil 时不填充现价/盈亏
+	cache                  quotecache.QuoteCache // 可选：为 nil 时不填充现价/盈亏
+	watchlistMgr           *watchlist.Manager    // 可选：为 nil 时不同步关注列表
+	notifyHoldingChangedFn func()                // 可选：持仓股变动时通知 Monitor 重算 ScopeHeld
 }
 
 // NewPortfolioService 创建持仓服务实例
@@ -26,6 +29,23 @@ func NewPortfolioService() *PortfolioService {
 // SetQuoteCache 设置行情缓存（可选，main.go 启动后注入）
 func (svc *PortfolioService) SetQuoteCache(cache quotecache.QuoteCache) {
 	svc.cache = cache
+}
+
+// SetWatchlistManager 设置关注列表管理器（可选，main.go 启动后注入）
+func (svc *PortfolioService) SetWatchlistManager(mgr *watchlist.Manager) {
+	svc.watchlistMgr = mgr
+}
+
+// SetNotifyHoldingChanged 设置持仓股变动回调（main.go 注入 Monitor.NotifyHoldingChanged）
+func (svc *PortfolioService) SetNotifyHoldingChanged(fn func()) {
+	svc.notifyHoldingChangedFn = fn
+}
+
+// notifyHoldingChanged 安全调用持仓变动回调
+func (svc *PortfolioService) notifyHoldingChanged() {
+	if svc.notifyHoldingChangedFn != nil {
+		svc.notifyHoldingChangedFn()
+	}
 }
 
 // ============================================================================
@@ -116,6 +136,12 @@ func (svc *PortfolioService) OpenPosition(req *OpenPositionReq, uid uint) (*mode
 		return nil, fmt.Errorf("创建持仓失败: %w", err)
 	}
 
+	// 建仓后同步到关注列表
+	if svc.watchlistMgr != nil {
+		svc.watchlistMgr.OnPositionOpened(uid,req.StockCode)
+		svc.notifyHoldingChanged()
+	}
+
 	// 4. 计算手续费并创建交易记录
 	commission := svc.calculateCommission(uid, amount)
 	trade := &model.PositionTrade{
@@ -170,6 +196,11 @@ func (svc *PortfolioService) BuyMore(id uint, req *TradeReq, uid uint) (*model.P
 	position.AvgCost = newAvgCost
 	if err := db.UpdatePosition(position); err != nil {
 		return nil, fmt.Errorf("更新持仓失败: %w", err)
+	}
+
+	// 加仓后同步到关注列表
+	if svc.watchlistMgr != nil {
+		svc.watchlistMgr.OnPositionOpened(uid,position.StockCode)
 	}
 
 	// 创建买入交易记录
@@ -268,6 +299,12 @@ func (svc *PortfolioService) ClosePosition(id uint, price float64, tradeDateStr,
 	position.Status = string(model.PositionClosed)
 	if err := db.UpdatePosition(position); err != nil {
 		return nil, fmt.Errorf("更新持仓失败: %w", err)
+	}
+
+	// 清仓后同步到关注列表（内部检查是否还有人持有）
+	if svc.watchlistMgr != nil {
+		svc.watchlistMgr.OnPositionClosed(uid, position.StockCode)
+		svc.notifyHoldingChanged()
 	}
 
 	// 创建清仓卖出记录
@@ -374,7 +411,22 @@ func (svc *PortfolioService) UpdatePositionNote(id uint, note string, uid uint) 
 
 // DeletePosition 删除持仓
 func (svc *PortfolioService) DeletePosition(id, uid uint) error {
-	return db.DeletePositionByID(id, uid)
+	// 先查持仓获取股票代码（用于降级优先级）
+	position, err := db.GetPositionByIDAndUID(id, uid)
+	if err != nil {
+		return errors.New("持仓不存在或无权访问")
+	}
+
+	if err := db.DeletePositionByID(id, uid); err != nil {
+		return err
+	}
+
+	// 删除后同步到关注列表（内部检查是否还有人持有）
+	if svc.watchlistMgr != nil {
+		svc.watchlistMgr.OnPositionClosed(uid, position.StockCode)
+		svc.notifyHoldingChanged()
+	}
+	return nil
 }
 
 // ============================================================================

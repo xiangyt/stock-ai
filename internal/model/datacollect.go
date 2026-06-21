@@ -47,6 +47,7 @@ const (
 	TaskDividendSync         uint = 10 // 同步分红历史
 	TaskDividendKlineSync    uint = 11 // 除权K线同步（日/周/月）
 	TaskNameChangeSync        uint = 12 // 同步名称变更
+	TaskReloadHighPriority    uint = 13 // 每日重置行情缓存高优先级
 )
 
 // ============================================================================
@@ -183,6 +184,13 @@ func GetInitialDataCollectTasks() []InitialDataCollectTask {
 			CronExpr: "0 10 2 ? * 1-5",
 			IsActive: true,
 			Params:   `{"source":"eastmoney"}`,
+		},
+		{
+			ID:       TaskReloadHighPriority,
+			Name:     "重置行情缓存高优先级",
+			CronExpr: "0 0 8 * * *",
+			IsActive: true,
+			Params:   `{}`,
 		},
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"stock-ai/internal/subscription/quotecache"
 	"stock-ai/internal/subscription/runner"
 	subsched "stock-ai/internal/subscription/scheduler"
+	"stock-ai/internal/subscription/watchlist"
 
 	"github.com/gin-gonic/gin"
 )
@@ -35,8 +36,9 @@ type App struct {
 	Registry *adapter.Registry
 
 	// 行情缓存链路
-	QuoteCache    quotecache.QuoteCache
-	StockProvider runner.StockSourceProvider
+	QuoteCache      quotecache.QuoteCache
+	WatchlistManager *watchlist.Manager
+	StockProvider   runner.StockSourceProvider
 	QuoteSub      model.QuoteSubscriber
 
 	// 指标引擎

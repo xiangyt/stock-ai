@@ -15,6 +15,7 @@ import (
 	"stock-ai/internal/model"
 	"stock-ai/internal/subscription/runner"
 	"stock-ai/internal/subscription/scheduler"
+	"stock-ai/internal/subscription/watchlist"
 )
 
 // ============================================================================
@@ -31,6 +32,7 @@ const maxBotsPerSubscription = 5
 type SubscriptionService struct {
 	notifyChangeFn func(scheduler.ChangeType, uint) // 通知 Scheduler 变更的回调
 	runner         *runner.SubscriptionRunner
+	watchlistMgr   *watchlist.Manager // 可选：为 nil 时不同步关注列表
 }
 
 // NewSubscriptionService 创建订阅服务
@@ -46,6 +48,18 @@ func (s *SubscriptionService) SetNotifyChange(fn func(scheduler.ChangeType, uint
 // SetRunner 设置执行器引用（由 main.go 注入）
 func (s *SubscriptionService) SetRunner(r *runner.SubscriptionRunner) {
 	s.runner = r
+}
+
+// SetWatchlistManager 设置关注列表管理器（由 main.go 注入）
+func (s *SubscriptionService) SetWatchlistManager(mgr *watchlist.Manager) {
+	s.watchlistMgr = mgr
+}
+
+// notifyWatchlist 通知关注列表重新计算优先级
+func (s *SubscriptionService) notifyWatchlist(uid uint) {
+	if s.watchlistMgr != nil {
+		s.watchlistMgr.OnSubscriptionChanged(uid)
+	}
 }
 
 // ============================================================================
@@ -255,6 +269,7 @@ func (s *SubscriptionService) Create(req *CreateSubscriptionReq, uid uint) (*Sub
 
 	// 通知 Scheduler 注册新订阅
 	s.notifyChange(scheduler.ChangeCreated, sub.ID)
+	s.notifyWatchlist(uid)
 
 	// 返回详情
 	return s.GetByID(sub.ID, uid)
@@ -456,6 +471,7 @@ func (s *SubscriptionService) Update(id, uid uint, req *UpdateSubscriptionReq) (
 
 	// 通知 Scheduler 重新加载
 	s.notifyChange(scheduler.ChangeUpdated, id)
+	s.notifyWatchlist(uid)
 
 	return s.GetByID(id, uid)
 }
@@ -476,6 +492,7 @@ func (s *SubscriptionService) Delete(id, uid uint) error {
 
 	// 通知 Scheduler 移除 cron job
 	s.notifyChange(scheduler.ChangeDeleted, id)
+	s.notifyWatchlist(uid)
 
 	return nil
 }
@@ -500,6 +517,7 @@ func (s *SubscriptionService) SetActive(id, uid uint, active bool) error {
 	} else {
 		s.notifyChange(scheduler.ChangeDisabled, id)
 	}
+	s.notifyWatchlist(uid)
 
 	return nil
 }

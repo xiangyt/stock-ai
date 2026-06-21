@@ -12,11 +12,11 @@
 // Daily OHLCV is computed lazily from intraday bars. Weekly/Monthly/Yearly aggregation
 // is not handled (TODO).
 //
-// Refresh strategy by priority:
+// Refresh strategy by priority (set externally via SetPriority):
 //
-//	High:   every 1 minute, full concurrency (held & monitored stocks)
-//	Normal: every 5 minutes, semaphore(50) (searched & watched stocks)
-//	Low:    10:30 / 12:00 / 14:00, semaphore(100) (indices & temp queries)
+//	High:   every 1 minute, full concurrency (持仓股、Monitor监控股)
+//	Normal: every 5 minutes, semaphore(50) (default for all unknown stocks)
+//	Low:    10:30 / 12:00 / 14:00, semaphore(100) (index, temp queries)
 package quotecache
 
 import (
@@ -61,6 +61,10 @@ type QuoteCache interface {
 
 	// SetPriority 批量设置优先级。
 	SetPriority(codes []string, p Priority)
+
+	// ResetPriorities 重置所有优先级配置（每日 8:00 由外部任务调用）。
+	// 清空 priority map 和缓存条目中的 priority 字段，后续使用默认 Normal。
+	ResetPriorities()
 
 	// Start 启动后台刷新。
 	Start()
@@ -248,6 +252,25 @@ func (q *quoteCacheImpl) SetPriority(codes []string, p Priority) {
 	}
 }
 
+// ResetPriorities 清空所有优先级配置。
+// 每日 8:00 由数据采集任务调用，清空后由外部重新按 Monitor/Subscription 设 High。
+func (q *quoteCacheImpl) ResetPriorities() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	count := len(q.priority)
+	q.priority = make(map[string]Priority)
+
+	// 重置已有缓存项的 priority 为默认值
+	for _, item := range q.items {
+		item.priority = PriorityNormal
+	}
+
+	if count > 0 {
+		log.Printf("[quotecache] reset %d priority entries", count)
+	}
+}
+
 // ============================================================================
 //  Stats
 // ============================================================================
@@ -340,9 +363,8 @@ func (q *quoteCacheImpl) scheduler() {
 		select {
 		case now = <-timer.C:
 			if q.isActive != nil && !q.isActive() {
-				// 非活跃时段：仅 9:00 重置标记 + 清理过期缓存
-				if now.Hour() == 9 && now.Minute() == 0 {
-					lowExecuted = make(map[int]bool)
+				// 非活跃时段：仅 8:00 清理过期缓存
+				if now.Hour() == 8 && now.Minute() == 0 {
 					q.cleanStale()
 				}
 				continue
@@ -363,11 +385,6 @@ func (q *quoteCacheImpl) scheduler() {
 					lowExecuted[sched] = true
 					go q.refreshPriority(PriorityLow, 100)
 				}
-			}
-
-			// 每日 9:00 重置低优先级标记
-			if now.Hour() == 9 && now.Minute() == 0 {
-				lowExecuted = make(map[int]bool)
 			}
 		case <-q.stopCh:
 			if timer != nil {
@@ -435,9 +452,8 @@ func (q *quoteCacheImpl) refreshOne(code string) {
 	// 更新缓存
 	q.mu.Lock()
 	if existing, ok := q.items[code]; ok {
-		existing.data.Intraday = intraday
-		existing.data.Invalidate()
-		existing.fetchedAt = time.Now()
+			existing.data.Intraday = intraday
+			existing.fetchedAt = time.Now()
 	} else {
 		pri := q.getPriority(code)
 		data := &CachedQuoteData{Code: code, Intraday: intraday}
@@ -496,37 +512,31 @@ func (q *quoteCacheImpl) notifySubscribers(code string, data *CachedQuoteData) {
 
 // buildEvent 构建推送事件。
 func (q *quoteCacheImpl) buildEvent(data *CachedQuoteData) *QuoteEvent {
-	if data == nil {
+	if data == nil || data.Intraday == nil {
 		return nil
 	}
-	daily := data.Daily()
-	if daily == nil {
-		return nil
-	}
+	id := data.Intraday
 	qd := &QuoteData{
-		Code:      data.Code,
-		Name:      data.Name,
-		Price:     float64(daily.Close) / 100,
-		ChangePct: daily.ChangePct,
-		Volume:    daily.Volume,
-		Turnover:  daily.Turnover,
+		Code:           data.Code,
+		Name:           data.Name,
+		Date:           id.Date,
+		Price:          float64(id.Current) / 100,
+		PreClose:       float64(id.PreClose) / 100,
+		ChangePct:      id.ChangePct,
+		Volume:         id.Volume,
+		Turnover:       id.Turnover,
+		MarketCap:      id.MarketCap,
+		FloatMarketCap: id.FloatMarketCap,
+		Pe:             id.Pe,
+		Pb:             id.Pb,
+		Amplitude:      id.Amplitude,
+		Depth:          id.Depth,
 	}
-	if data.Intraday != nil {
-		qd.Date = data.Intraday.Date
-		qd.PreClose = float64(data.Intraday.PreClose) / 100
-		for _, b := range data.Intraday.Bars {
-			qd.Minutes = append(qd.Minutes, MinuteBarInfo{
-				Time:  b.Time,
-				Price: float64(b.Price) / 100,
-			})
-		}
-		qd.Turnover = data.Intraday.Turnover
-		qd.MarketCap = data.Intraday.MarketCap
-		qd.FloatMarketCap = data.Intraday.FloatMarketCap
-		qd.Pe = data.Intraday.Pe
-		qd.Pb = data.Intraday.Pb
-		qd.Amplitude = data.Intraday.Amplitude
-		qd.Depth = data.Intraday.Depth
+	for _, b := range id.Bars {
+		qd.Minutes = append(qd.Minutes, MinuteBarInfo{
+			Time:  b.Time,
+			Price: float64(b.Price) / 100,
+		})
 	}
 	return &QuoteEvent{Code: data.Code, Data: qd}
 }
@@ -565,7 +575,7 @@ func (q *quoteCacheImpl) getCodesByPriority(p Priority) []string {
 	return codes
 }
 
-// cleanStale 清理过期缓存（每日 9:00 调用）。
+// cleanStale 清理过期缓存（每日 8:00 调用）。
 func (q *quoteCacheImpl) cleanStale() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
