@@ -9,5 +9,7 @@ func All() []indicator.Indicator {
 	return []indicator.Indicator{
 		NewVolume(),
 		NewAmount(),
+		NewVolumeRatio(),
+		NewChangePct(),
 	}
 }

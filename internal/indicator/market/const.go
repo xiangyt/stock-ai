@@ -7,6 +7,8 @@ package market
 // ============================================================================
 
 const (
-	IndVolumeSeq = "001" // 成交量
-	IndAmountSeq = "002" // 成交额
+	IndVolumeSeq      = "001" // 成交量
+	IndAmountSeq      = "002" // 成交额
+	IndVolumeRatioSeq = "003" // 量比
+	IndChangePctSeq   = "004" // 涨跌幅
 )
