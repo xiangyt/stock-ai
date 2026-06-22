@@ -69,11 +69,25 @@ func (a *Adapter) getKLines(ctx context.Context, code, adjType, klineType string
 }
 
 // parseKLineResponse 解析同花顺K线响应数据
+//
+// 同花顺 v6 line API 返回 JSONP 压缩格式：
+//
+//	  quotebridge_v6_line_hs_CODE_TYPE_all({
+//	    "data":"20240101,10.5,10.8,10.2,10.6,1000000;...",
+//	    "start":"20200101",
+//	    "sortYear":[[2020,242],[2021,242],...],
+//	    "price":"2.80,160,201,155,2.30,170,210,160,...",   // 4值一组: 最低价基值,开差,高差,收差(单位:分)
+//	    "volumn":"12345678,98765432,...",                    // 成交量(单位:股)
+//	    "dates":"0102,0103,0106,..."                         // MMDD 格式日期
+//	  })
+//
+// 价格编码(分组压缩): prices[i*4]=最低基价(分), prices[i*4+1]=开盘差, prices[i*4+2]=最高差, prices[i*4+3]=收盘差
+//
+//	开盘 = 最低基价 + 开差(分)
+//	收盘 = 最低基价 + 收差(分)
+//	最高 = 最低基价 + 高差(分)
+//	最低 = 最低基价(分)
 func (a *Adapter) parseKLineResponse(code, thsCode, klineType, res string) ([]adapter.StockPriceDaily, error) {
-	// 同花顺返回的是JavaScript格式，需要提取数据部分
-	// 示例格式: quotebridge_v6_line_hs_001208_01_all({"data":"20240101,10.5,10.8,10.2,10.6,1000000;..."})
-
-	// 构建回调函数名
 	callbackName := fmt.Sprintf("quotebridge_v6_line_%s_%s_all(", thsCode, klineType)
 
 	res = strings.TrimPrefix(res, callbackName)
@@ -120,7 +134,7 @@ func (a *Adapter) parseKLineResponse(code, thsCode, klineType, res string) ([]ad
 			data.Open = int64(low + open)
 			data.High = int64(low + high)
 			data.Close = int64(low + over)
-			data.Volume = volume
+			data.Volume = volume // API 已返回股，无需转换
 
 			klineData = append(klineData, data)
 

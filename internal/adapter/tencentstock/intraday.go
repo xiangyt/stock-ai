@@ -88,10 +88,14 @@ func parseIntradayResponse(body, origCode, tc string) (*adapter.IntradayData, er
 
 	// 解析分时 bar
 	var bars []adapter.IntradayBar
+	is688 := strings.HasPrefix(origCode, "688")
 	for _, line := range raw.Data.Data {
 		bar, err := parseMinuteBar(line)
 		if err != nil {
 			continue
+		}
+		if is688 {
+			bar.Volume /= 100 // 科创板API已返回股，回退parseMinuteBar内置的×100
 		}
 		bars = append(bars, bar)
 	}
@@ -137,18 +141,22 @@ func parseQtFields(qt map[string][]string, rawDate, tc, origCode string) *adapte
 	result.Name = qtArr[1]
 
 	// === 价量核心 (3-6) ===
-	result.Current = helpers.ParsePriceToCents(qtArr[3])
-	result.PreClose = helpers.ParsePriceToCents(qtArr[4])
-	result.Open = helpers.ParsePriceToCents(qtArr[5])
-	result.Volume = parseVolume(qtArr[6])
+	result.Current = helpers.ParsePriceToCents(qtArr[3])  // 当前价(元→分)
+	result.PreClose = helpers.ParsePriceToCents(qtArr[4])  // 昨收(元→分)
+	result.Open = helpers.ParsePriceToCents(qtArr[5])      // 今开(元→分)
+	result.Volume = parseVolume(qtArr[6])                  // 成交量(手→股, parseVolume 内部 ×100)
+	// 科创板(688xxx)API已返回股，需回退parseVolume内置的×100
+	if strings.HasPrefix(origCode, "688") {
+		result.Volume /= 100
+	}
 
 	// === 涨跌 (31-32) ===
-	result.Change = helpers.ParsePriceToCents(qtArr[31])
-	result.ChangePct = parseFloat(qtArr[32])
+	result.Change = helpers.ParsePriceToCents(qtArr[31])   // 涨跌额(元→分)
+	result.ChangePct = parseFloat(qtArr[32])                // 涨跌幅%
 
 	// === 高低 (33-34) ===
-	result.High = helpers.ParsePriceToCents(qtArr[33])
-	result.Low = helpers.ParsePriceToCents(qtArr[34])
+	result.High = helpers.ParsePriceToCents(qtArr[33])     // 最高(元→分)
+	result.Low = helpers.ParsePriceToCents(qtArr[34])      // 最低(元→分)
 	if result.High == 0 && result.Current > 0 {
 		result.High = result.Current
 	}
@@ -157,20 +165,20 @@ func parseQtFields(qt map[string][]string, rawDate, tc, origCode string) *adapte
 	}
 
 	// === 成交额/换手/估值 (37-39) ===
-	result.Amount = helpers.ParseWanYuanToCents(qtArr[37])
-	result.Turnover = parseFloat(qtArr[38])
-	result.Pe = parseFloat(qtArr[39])
+	result.Amount = helpers.ParseWanYuanToCents(qtArr[37]) // 成交额(万元→分)
+	result.Turnover = parseFloat(qtArr[38])                // 换手率%
+	result.Pe = parseFloat(qtArr[39])                      // 市盈率(TTM)
 
 	// === 五档盘口 (7-28) ===
-	result.Depth = parseDepth(qtArr)
+	result.Depth = parseDepth(qtArr) // 价格(分), 数量(股)
 
 	// === 振幅 (43) ===
-	result.Amplitude = parseFloat(qtArr[43])
+	result.Amplitude = parseFloat(qtArr[43]) // 振幅%
 
 	// === 市值/市净率 (44-46) ===
-	result.FloatMarketCap = parseFloat(qtArr[44])
-	result.MarketCap = parseFloat(qtArr[45])
-	result.Pb = parseFloat(qtArr[46])
+	result.FloatMarketCap = parseFloat(qtArr[44]) // 流通市值(亿)
+	result.MarketCap = parseFloat(qtArr[45])       // 总市值(亿)
+	result.Pb = parseFloat(qtArr[46])              // 市净率
 
 	// === 日期：优先使用 API 返回的 date 字段 (YYYYMMDD) ===
 	if len(rawDate) == 8 {
@@ -236,8 +244,8 @@ func getArr(arr []string, idx int) string {
 	return ""
 }
 
-// parseMinuteBar 解析单行分时数据 "HHmm price volume(手) amount(元)"
-// volume 单位: 手, 需 ×100 转为股
+// parseMinuteBar 解析单行分时数据 "HHmm price volume amount"
+// volume 单位: 主板(600/000/002/300)=手→×100→股; 科创板(688)=股(调用方需回退×100)
 // amount 单位: 元(浮点), 需 ×100 转为分
 func parseMinuteBar(line string) (adapter.IntradayBar, error) {
 	parts := strings.Fields(line)

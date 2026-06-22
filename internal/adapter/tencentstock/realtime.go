@@ -121,7 +121,14 @@ func parseSnapshotLine(body, origCode string) (*adapter.StockPriceDaily, error) 
 	// 字段解析（基于真实 sqt.gtimg.cn 接口返回数据验证）
 	curPrice := helpers.ParsePriceToCents(fields[3])   // 当前价(分)
 	todayOpen := helpers.ParsePriceToCents(fields[5])   // 今开(分)
-	volume := parseInt(fields[6])                        // 成交量（手，×100=股）
+	volume := parseInt(fields[6])                        // 成交量（手, 主板×100→股; 科创板已是股）
+
+	// Apply ×100 conversion for volume: main board stocks return in 手 (lots),
+	// while STAR Market (688xxx) stocks return in 股 (shares) directly.
+	vol := volume
+	if !strings.HasPrefix(origCode, "688") {
+		vol *= 100
+	}
 	// 高低价：fields[33]=最高, fields[34]=最低
 	var high, low int64
 	if len(fields) > 34 {
@@ -183,7 +190,7 @@ func parseSnapshotLine(body, origCode string) (*adapter.StockPriceDaily, error) 
 		High:      high,
 		Low:       low,
 		Close:     curPrice,
-		Volume:    volume * 100, // 手→股
+		Volume:    vol, // 手→股（主板×100, 科创板API已返回股）
 		Amount:    amount,
 		Change:    change,
 		ChangePct: changePct,
@@ -204,13 +211,13 @@ type batchSnapshotResponse struct {
 type snapshotItem struct {
 	Name      string      `json:"name"`
 	Code      string      `json:"code"`
-	Price     json.Number `json:"price"`
-	Open      json.Number `json:"open"`
-	High      json.Number `json:"high"`
-	Low       json.Number `json:"low"`
-	Close     json.Number `json:"close"` // 昨收
-	Volume    int64       `json:"volume"`
-	Amount    float64     `json:"amount"`
+	Price     json.Number `json:"price"`  // 当前价(元)
+	Open      json.Number `json:"open"`   // 今开(元)
+	High      json.Number `json:"high"`   // 最高(元)
+	Low       json.Number `json:"low"`    // 最低(元)
+	Close     json.Number `json:"close"`  // 昨收(元)
+	Volume    int64       `json:"volume"` // 成交量(手)
+	Amount    float64     `json:"amount"` // 成交额(元)
 	ChangePct float64     `json:"percent"`
 }
 
@@ -254,15 +261,19 @@ func (a *Adapter) fetchBatchSnapshot(ctx context.Context, codes []string) (map[s
 			l = priceCents
 		}
 		_, symbol := splitTencentCode(tc)
+		vol := item.Volume
+		if !strings.HasPrefix(symbol, "688") {
+			vol *= 100 // 手→股（科创板API已返回股）
+		}
 		result[tc] = &adapter.StockPriceDaily{
 			Code:      symbol,
 			Date:      today,
-			Open:      helpers.ParsePriceToCents(item.Open.String()),
-			High:      h,
-			Low:       l,
-			Close:     priceCents,
-			Volume:    item.Volume,
-			Amount:    int64(item.Amount * 100),
+			Open:      helpers.ParsePriceToCents(item.Open.String()),  // 元→分
+			High:      h,                                               // 元→分
+			Low:       l,                                               // 元→分
+			Close:     priceCents,                                      // 元→分
+			Volume:    vol,                                              // 手→股（主板×100, 科创板API已返回股）
+			Amount:    int64(item.Amount * 100),                        // 元→分
 			ChangePct: item.ChangePct,
 		}
 	}

@@ -30,7 +30,7 @@ import (
 //	[2] 收盘价(元)     "38.19"
 //	[3] 最高价(元)     "41.05"
 //	[4] 最低价(元)     "37.11"
-//	[5] 成交量(手)     "73506.85"  — 与东财(手)、THS(股)不同，需 ×100→股
+//   [5] 成交量           "73506.85" — 主板(600/000/002/300):手→×100→股; 科创板(688):API已返回股
 //	[6] 除权事件       {} 或 {"nd":"2019","fh_sh":"2","djr":"2020-07-09",...}
 //	[7] 换手率(%)     "19.75"
 //	[8] 成交额(万元)   "28433.88"  — 与东财(元)不同，需 ParseWanYuanToCents
@@ -263,6 +263,13 @@ func parseKLineRows(klineRaw json.RawMessage, tc string) ([]adapter.StockPriceDa
 
 		// 提取纯数字代码（与东财/THS一致），腾讯内部用 sz000422 格式
 		_, symbol := splitTencentCode(tc)
+		vol := parseInt(getStr(5))
+		// 腾讯 newFqKLine 成交量单位因板块而异:
+		//   主板(600/000/002/300): 手 → ×100 → 股
+		//   科创板(688):           股 → 直接赋值（API 已返回股）
+		if !strings.HasPrefix(symbol, "688") {
+			vol *= 100
+		}
 		result = append(result, adapter.StockPriceDaily{
 			Code:     symbol,
 			Date:     getStr(0),
@@ -270,7 +277,7 @@ func parseKLineRows(klineRaw json.RawMessage, tc string) ([]adapter.StockPriceDa
 			Close:    helpers.ParsePriceToCents(getStr(2)),
 			High:     helpers.ParsePriceToCents(getStr(3)),
 			Low:      helpers.ParsePriceToCents(getStr(4)),
-			Volume:   parseInt(getStr(5)) * 100, // 手→股（与东财一致，东财也是手×100）
+			Volume:   vol,
 			Turnover: parseFloat(getStr(7)),
 			Amount:   helpers.ParseWanYuanToCents(getStr(8)), // 万元→分
 		})

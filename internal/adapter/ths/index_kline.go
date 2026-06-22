@@ -106,6 +106,17 @@ func (a *Adapter) splitYearTasks(start, end time.Time) []yearTask {
 }
 
 // parseIndexKLineData 解析单年响应的 data 字段（内部方法，不含回调名剥离逻辑）
+//
+// 同花顺指数 K 线 API 返回格式: "date,open,high,low,close,volume,amount,turnover;..."
+//
+//	[0] date     — 日期 YYYYMMDD
+//	[1] open     — 开盘价(元) → ParsePriceToCents → 分
+//	[2] high     — 最高价(元) → ParsePriceToCents → 分
+//	[3] low      — 最低价(元) → ParsePriceToCents → 分
+//	[4] close    — 收盘价(元) → ParsePriceToCents → 分
+//	[5] volume   — 成交量(手) → 直接赋值 int64（指数无股/手概念，保留原始值）
+//	[6] amount   — 成交额(元) → ParsePriceToCents → 分
+//	[7] turnover — 换手率(%) → parseFloat
 func (a *Adapter) parseIndexKLineData(code string, res string) ([]adapter.StockPriceDaily, error) {
 	// 去除 JSONP 包装
 	var response struct {

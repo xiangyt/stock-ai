@@ -174,6 +174,14 @@ func (a *Adapter) doRequest(ctx context.Context, req *http.Request) (*http.Respo
 
 // parseQuoteData 解析 quote_data 返回的K线数据
 func parseQuoteData(code string, qd quoteDataItem) ([]adapter.StockPriceDaily, error) {
+	// 同花顺 quota-h API 字段定义（与 ths realtime 相同编号体系）:
+	//   "1"  — 时间戳(ms)
+	//   "7"  — 开盘价(元)    → yuanToCents → 分
+	//   "8"  — 最高价(元)    → yuanToCents → 分
+	//   "9"  — 最低价(元)    → yuanToCents → 分
+	//   "11" — 收盘价(元)    → yuanToCents → 分
+	//   "13" — 成交量(手)    → ×100 → 股
+	//   "19" — 成交额(万元)  → yuanToCents → 分  (注: yuanToCents 仅 ×100，万元→分 需 PNV)
 	// 构建字段名→索引映射，兼容字段顺序变化
 	fieldIndex := make(map[string]int)
 	for i, f := range qd.DataFields {
@@ -203,7 +211,7 @@ func parseQuoteData(code string, qd quoteDataItem) ([]adapter.StockPriceDaily, e
 		high := yuanToCents(row[highIdx])
 		low := yuanToCents(row[lowIdx])
 		closePrice := yuanToCents(row[closeIdx])
-		volume := int64(row[volIdx])
+		volume := int64(row[volIdx]) // API已返回股
 		amount := yuanToCents(row[amountIdx])
 
 		date := time.UnixMilli(tsMs).Format(time.DateOnly)

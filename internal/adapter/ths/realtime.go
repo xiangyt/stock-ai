@@ -104,7 +104,7 @@ func (a *Adapter) parseTodayDataResponse(tsCode, thsCode, body string) (*adapter
 		High:   helpers.ParsePriceToCents(highStr),
 		Low:    helpers.ParsePriceToCents(lowStr),
 		Close:  helpers.ParsePriceToCents(closeStr),
-		Volume: parseInt64(volStr),
+		Volume: parseInt64(volStr), // API已返回股
 		Amount: helpers.ParsePriceToCents(amountStr),
 	}, nil
 }
