@@ -516,3 +516,24 @@ func GetLatestDailyClose(code string) (float64, error) {
 	// Close 存储的是"分"，需要转为"元"
 	return float64(k.Close) / 100.0, nil
 }
+
+// GetLatestDailyKlineDate 获取 daily_kline 表中最近的交易日期
+// 返回 YYYYMMDD 格式整数，若无记录返回 0
+func GetLatestDailyKlineDate() (int, error) {
+	var maxDate int
+	err := GetDB().Model(&model.DailyKline{}).
+		Select("MAX(trade_date)").
+		Scan(&maxDate).Error
+	return maxDate, err
+}
+
+// FindNearestDailyKlineDate 查找最接近 targetDate 且 <= targetDate 的最近一个交易日
+// 例如前端传入周末/节假日日期时，自动对齐到该日期之前最近的实际交易日
+func FindNearestDailyKlineDate(targetDate int) (int, error) {
+	var nearestDate int
+	err := GetDB().Model(&model.DailyKline{}).
+		Select("MAX(trade_date)").
+		Where("trade_date <= ?", targetDate).
+		Scan(&nearestDate).Error
+	return nearestDate, err
+}

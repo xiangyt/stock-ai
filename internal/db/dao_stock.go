@@ -74,3 +74,15 @@ func UpdateStockName(code, name, delistDate string) error {
 		Where("code = ?", code).
 		Updates(updates).Error
 }
+
+// LoadStockCodesByTradeDate 加载在指定交易日有日K数据的股票列表
+// 通过 INNER JOIN daily_kline 过滤，确保选股范围内每只股票在当天都有交易数据
+// 排除在交易日之前已退市的股票（退市日期 > 交易日 的仍保留）
+func LoadStockCodesByTradeDate(tradeDate int) ([]model.Stock, error) {
+	var stocks []model.Stock
+	err := GetDB().
+		Joins("INNER JOIN daily_kline dk ON dk.stock_code = stocks.code AND dk.trade_date = ?", tradeDate).
+		Where("stocks.delist_date = ? OR stocks.delist_date > ?", "", FormatTradeDate(tradeDate)).
+		Find(&stocks).Error
+	return stocks, err
+}

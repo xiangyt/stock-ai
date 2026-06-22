@@ -71,7 +71,7 @@ type ExecuteResponse struct {
 //
 // 处理流程:
 //  1. 从请求体解析 SignalConfig 列表
-//  2. 调用 ScreenService.BuildAll() 获取全量股票数据
+//  2. 调用 ScreenService.BuildAll() 获取当日有 K 线数据的股票（date 为空时自动取最近交易日）
 //  3. 调用 Engine.Execute() 并发评估
 //  4. 按 Passed/Rejected 分组返回
 func (h *IndicatorHandler) Execute(c *gin.Context) {
