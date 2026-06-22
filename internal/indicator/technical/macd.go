@@ -62,10 +62,10 @@ func NewMacd() *Macd {
 	}
 
 	i.SetBuiltInSignals([]indicator.Signal{
-		newSignalMacdCross("01", "水上金叉", "DIF在零轴上方上穿DEA（DIF>0且金叉）", true, true, indicator.OpCustom, "参数设置"),
-		newSignalMacdCross("02", "水下金叉", "DIF在零轴下方上穿DEA（DIF≤0且金叉）", true, false, indicator.OpCustom, "参数设置"),
-		newSignalMacdCross("03", "水上死叉", "DIF在零轴上方下穿DEA（DIF>0且死叉）", false, true, indicator.OpCrossBelow, "死叉"),
-		newSignalMacdCross("04", "水下死叉", "DIF在零轴下方下穿DEA（DIF≤0且死叉）", false, false, indicator.OpCrossBelow, "死叉"),
+		newSignalMacdCross("01", "水上金叉", "DIF在零轴上方上穿DEA（DIF>0且金叉）", true, true, true, indicator.OpCustom, "参数设置"),
+		newSignalMacdCross("02", "水下金叉", "DIF在零轴下方上穿DEA（DIF≤0且金叉）", true, false, true, indicator.OpCustom, "参数设置"),
+		newSignalMacdCross("03", "水上死叉", "DIF在零轴上方下穿DEA（DIF>0且死叉）", false, true, true, indicator.OpCustom, "死叉"),
+		newSignalMacdCross("04", "水下死叉", "DIF在零轴下方下穿DEA（DIF≤0且死叉）", false, false, true, indicator.OpCustom, "死叉"),
 		NewSignalMacdTopDivergence(),    // 05 顶背离
 		NewSignalMacdBottomDivergence(), // 06 底背离
 	})
@@ -74,6 +74,8 @@ func NewMacd() *Macd {
 		newSigMacdVal(macdValDIF, "01", "DIF值", "DIF快线数值比较", indicator.OpGTE),
 		newSigMacdVal(macdValDEA, "02", "DEA值", "DEA慢线数值比较", indicator.OpGTE),
 		newSigMacdVal(macdValHist, "03", "MACD柱", "MACD柱线数值比较", indicator.OpGT),
+		newSignalMacdCross("04", "金叉", "DIF上穿DEA（不区分水上水下，支持时间区间）", true, false, false, indicator.OpCustom, "参数设置"),
+		newSignalMacdCross("05", "死叉", "DIF下穿DEA（不区分水上水下，支持时间区间）", false, false, false, indicator.OpCustom, "参数设置"),
 	})
 	return i
 }
@@ -225,10 +227,12 @@ type SignalMacdCross struct {
 	indicator.BaseSignal
 	IsGolden   bool // true=金叉, false=死叉
 	AboveWater bool // true=水上(DIF>0), false=水下(DIF<=0)
+	CheckWater bool // true=检查水上水下, false=不检查（仅判断交叉）
 }
 
-// newSignalMacdCross 创建金叉/死叉信号的工厂函数
-func newSignalMacdCross(id, name, desc string, isGolden, aboveWater bool, op indicator.CompareOperator, label string) *SignalMacdCross {
+// newSignalMacdCross 创建金叉/死叉信号的工厂函数。
+// checkWater=true 时按 aboveWater 判断水上/水下；checkWater=false 时仅判断交叉。
+func newSignalMacdCross(id, name, desc string, isGolden, aboveWater, checkWater bool, op indicator.CompareOperator, label string) *SignalMacdCross {
 	return &SignalMacdCross{
 		BaseSignal: indicator.NewBaseSignal(
 			id,
@@ -255,10 +259,15 @@ func newSignalMacdCross(id, name, desc string, isGolden, aboveWater bool, op ind
 		),
 		IsGolden:   isGolden,
 		AboveWater: aboveWater,
+		CheckWater: checkWater,
 	}
 }
 
 func (s *SignalMacdCross) Evaluate(result MACDResult, _ []*model.DailyKline, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	if !config.IsCustom() {
+		config = s.DefaultConfig()
+	}
+
 	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 0))
 	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
 
@@ -268,6 +277,12 @@ func (s *SignalMacdCross) Evaluate(result MACDResult, _ []*model.DailyKline, con
 	}
 
 	name := signalCrossName(s.IsGolden, s.AboveWater)
+	if !s.CheckWater {
+		name = "金叉"
+		if !s.IsGolden {
+			name = "死叉"
+		}
+	}
 
 	for i := idxEnd - 1; i >= idxStart; i-- {
 		if i <= 0 {
@@ -283,6 +298,11 @@ func (s *SignalMacdCross) Evaluate(result MACDResult, _ []*model.DailyKline, con
 
 		if !crossed {
 			continue
+		}
+
+		// 不检查水上水下时，交叉即通过
+		if !s.CheckWater {
+			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
 		}
 
 		// 水上/水下校验

@@ -61,7 +61,7 @@ func NewKdj() *Kdj {
 	}
 
 	i.SetBuiltInSignals([]indicator.Signal{
-		NewSignalKdjGoldenCross(),      // 01 金叉
+		newSignalKdjGoldenCross("01", indicator.OpCustom),      // 01 金叉
 		NewSignalKdjDeathCross(),       // 02 死叉
 		NewSignalKdjBottomDivergence(), // 03 底背离
 		NewSignalKdjTopDivergence(),    // 04 顶背离
@@ -71,6 +71,7 @@ func NewKdj() *Kdj {
 		newSigKdjVal(kdjValK, "01", "K值", "K线是快速确认线——数值在90以上为超买，数值在10以下为超卖", indicator.OpGTE, 50),
 		newSigKdjVal(kdjValD, "02", "D值", "D线是慢速主干线——数值在80以上为超买，数值在20以下为超卖", indicator.OpGTE, 50),
 		newSigKdjVal(kdjValJ, "03", "J值", "J线为方向敏感线，当J值大于90，特别是连续5天以上，股价至少会形成短期头部，反之J值小于10时，特别是连续数天以上，股价至少会形成短期底部", indicator.OpGTE, 50),
+		newSignalKdjGoldenCross("04", indicator.OpCustom),
 	})
 	return i
 }
@@ -189,15 +190,19 @@ type SignalKdjGoldenCross struct {
 }
 
 func NewSignalKdjGoldenCross() *SignalKdjGoldenCross {
+	return newSignalKdjGoldenCross("01", indicator.OpCrossAbove)
+}
+
+func newSignalKdjGoldenCross(id string, op indicator.CompareOperator) *SignalKdjGoldenCross {
 	return &SignalKdjGoldenCross{
 		BaseSignal: indicator.NewBaseSignal(
-			"01",
+			id,
 			"金叉",
 			"K上穿D（金叉买入信号）",
 			indicator.ValSeries,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpCrossAbove,
+					Operator: op,
 					Label:    "金叉",
 					Params: []indicator.ParamDef{
 						signalutil.ParamLookbackStart(0, "天前"),
@@ -206,7 +211,7 @@ func NewSignalKdjGoldenCross() *SignalKdjGoldenCross {
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpCrossAbove,
+				Operator: op,
 				Params: map[string]any{
 					indicator.ParamKeyLookbackStart: float64(0),
 					indicator.ParamKeyLookbackEnd:   float64(0),
@@ -217,6 +222,10 @@ func NewSignalKdjGoldenCross() *SignalKdjGoldenCross {
 }
 
 func (s *SignalKdjGoldenCross) Evaluate(result KDJResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	if !config.IsCustom() {
+		config = s.DefaultConfig()
+	}
+
 	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 0))
 	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
 
@@ -264,7 +273,7 @@ func NewSignalKdjDeathCross() *SignalKdjDeathCross {
 			indicator.ValSeries,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpCrossBelow,
+					Operator: indicator.OpCustom,
 					Label:    "死叉",
 					Params: []indicator.ParamDef{
 						signalutil.ParamLookbackStart(0, "天前"),
@@ -273,7 +282,7 @@ func NewSignalKdjDeathCross() *SignalKdjDeathCross {
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpCrossBelow,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
 					indicator.ParamKeyLookbackStart: float64(0),
 					indicator.ParamKeyLookbackEnd:   float64(0),

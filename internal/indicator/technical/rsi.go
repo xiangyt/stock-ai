@@ -1,3 +1,26 @@
+// ============================================================================
+//  RSI — 相对强弱指标 (三线系统: 6/12/24)
+//  ID: 01005 = CatCodeTechnical("01") + IndRsiSeq("005")
+//  数据源: GetDailyKline()
+//
+//  设计:
+//    在 Evaluate 层统一计算 6日/12日/24日 三条 RSI 序列，
+//    所有信号共享同一份 RSIResult，不重复计算。
+//
+//  三条线:
+//    快线 (RSI6)  — 短期 RSI，对价格波动最敏感
+//    中线 (RSI12) — 中期 RSI，走势相对平滑
+//    慢线 (RSI24) — 长期 RSI，稳定性最强
+//
+//  信号:
+//    01 金叉    — 短期 RSI 由下向上穿过中期 RSI（买入信号）
+//    02 死叉    — 短期 RSI 由上向下穿过中期 RSI（卖出信号）
+//    03 三线合一 — 三条线在低位(30以下)由发散转粘合并同步向上形成金叉（强烈买入信号）
+//    04 金叉    — 同01，允许自定义时间窗口
+//    05 死叉    — 同02，允许自定义时间窗口
+//    06 三线合一 — 同03，允许自定义时间窗口+低位阈值
+// ============================================================================
+
 package technical
 
 import (
@@ -9,50 +32,29 @@ import (
 )
 
 // ============================================================================
-//  RSI — 相对强弱指标 (序列型)
-//  ID: 01005 = CatCodeTechnical("01") + IndRsiSeq("005")
-//  数据源: GetDailyKline()
-//
-//  设计要点:
-//    在 Rsi.Evaluate 层统一计算 RSI 全量序列，
-//    所有信号共享同一份 RSIResult，不重复计算。
-//
-//  公式 (默认参数 N=14):
-//    Delta = Close - Ref(Close, 1)
-//    Up   = Max(Delta, 0)
-//    Down = Max(-Delta, 0)  即 Abs(Min(Delta, 0))
-//    RSI  = SMA(Up, N, 1) / (SMA(Up, N, 1) + SMA(Down, N, 1)) * 100
-//
-//  信号:
-//    01 超买 — RSI 上穿超买线 (默认70)
-//    02 超卖 — RSI 下穿超卖线 (默认30)
-//    03 顶背离 — 价格创新高但RSI未创新高
-//    04 底背离 — 价格创新低但RSI未创新低
+//  RSIResult — RSI 预计算结果，供所有信号复用
+//  数据顺序: 从旧到新 ([0]=最旧, [len-1]=最新)
 // ============================================================================
 
-// RSIResult RSI 预计算结果，供该指标下所有信号复用。
-//
-// 数据顺序: 从旧到新 ([0]=最旧, [len-1]=最新)
-// 与 NormalizeLookback 的索引映射一致 ("N天前" → dataLen-1-N)
 type RSIResult struct {
-	RSI        []float64 // RSI值序列（从旧到新）
+	RSI6       []float64 // 6日RSI序列
+	RSI12      []float64 // 12日RSI序列
+	RSI24      []float64 // 24日RSI序列
 	ClosePrice []float64 // 收盘价（元，从旧到新）
 }
 
-// rsiMinKlines 计算 RSI 所需的最少 K 线根数
-const rsiMinKlines = 33
-
 // RSI 默认参数
 const (
-	rsiDefaultPeriod     = 14  // RSI 计算周期
-	rsiDefaultOverbought = 70  // 超买阈值
-	rsiDefaultOversold   = 30  // 超卖阈值
+	rsiDefaultFastPeriod = 6  // 快线周期
+	rsiDefaultMidPeriod  = 12 // 中线周期
+	rsiDefaultSlowPeriod = 24 // 慢线周期
+	rsiDefaultLowZone    = 30 // 低位阈值
+	rsiMinKlines         = 50 // 最少K线根数（max(6,12,24) + lookback + 缓冲）
 )
 
-// paramOverbought / paramOversold — 超买/超卖阈值参数 key
+// 自定义参数 key
 const (
-	paramOverbought = "overbought"
-	paramOversold   = "oversold"
+	paramLowZone = "low_zone" // 低位阈值（三线合一信号）
 )
 
 type Rsi struct {
@@ -65,26 +67,31 @@ func NewRsi() *Rsi {
 			Seq:         IndRsiSeq,
 			NameStr:     "RSI",
 			CategoryVal: indicator.CatTechnical,
-			Desc:        "相对强弱指标（超买/超卖/背离等）",
+			Desc:        "相对强弱指标 6/12/24 三线系统（金叉/死叉/三线合一）",
 			UnitStr:     "",
 		},
 	}
 
 	i.SetBuiltInSignals([]indicator.Signal{
-		NewSignalRsiOverbought(),      // 01 超买
-		NewSignalRsiOversold(),        // 02 超卖
-		NewSignalRsiTopDivergence(),   // 03 顶背离
-		NewSignalRsiBottomDivergence(), // 04 底背离
+		newSignalRsiGoldenCross("01", "金叉"),             // 01 金叉
+		newSignalRsiDeathCross("02", "死叉"),              // 02 死叉
+		newSignalRsiTripleConvergence("03", "三线合一"),     // 03 三线合一
 	})
 
-	i.SetCustomSignals(nil)
+	i.SetCustomSignals([]indicator.Signal{
+		newSignalRsiGoldenCross("04", "金叉"),             // 04 自定义金叉（可调时间窗口）
+		newSignalRsiDeathCross("05", "死叉"),              // 05 自定义死叉（可调时间窗口）
+		newSignalRsiTripleConvergence("06", "三线合一"),     // 06 自定义三线合一（可调时间窗口+低位阈值）
+	})
 	return i
 }
 
-// Evaluate RSI 指标评估入口
-//
-//  1. 固定计算 RSI 全量序列
-//  2. 将结果传给各信号分发处理
+// ============================================================================
+//  Evaluate — RSI 指标评估入口
+//  1. 计算 RSI6/RSI12/RSI24 三条序列
+//  2. 分发给各信号评估
+// ============================================================================
+
 func (i *Rsi) Evaluate(stock indicator.StockSource, configs []*indicator.SignalConfig) *indicator.EvaluatedStock {
 	if len(configs) == 0 {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, Message: indicator.ErrNoConfig.Error()}
@@ -92,8 +99,7 @@ func (i *Rsi) Evaluate(stock indicator.StockSource, configs []*indicator.SignalC
 
 	klines, err := stock.GetDailyKline()
 	if err != nil {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID,
-			Message: err.Error()}
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID, Message: err.Error()}
 	}
 
 	if len(klines) < rsiMinKlines {
@@ -110,13 +116,11 @@ func (i *Rsi) Evaluate(stock indicator.StockSource, configs []*indicator.SignalC
 		if s, ok := i.Signal[cfg.SignalID]; ok {
 			var res *indicator.EvaluatedStock
 			switch v := s.(type) {
-			case *SignalRsiOverbought:
+			case *SignalRsiGoldenCross:
 				res = v.Evaluate(result, cfg)
-			case *SignalRsiOversold:
+			case *SignalRsiDeathCross:
 				res = v.Evaluate(result, cfg)
-			case *SignalRsiTopDivergence:
-				res = v.Evaluate(result, cfg)
-			case *SignalRsiBottomDivergence:
+			case *SignalRsiTripleConvergence:
 				res = v.Evaluate(result, cfg)
 			default:
 				return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: cfg.SignalID,
@@ -134,23 +138,25 @@ func (i *Rsi) Evaluate(stock indicator.StockSource, configs []*indicator.SignalC
 	return &indicator.EvaluatedStock{Result: indicator.ResultPassed}
 }
 
-// buildRSI 计算 RSI 序列。
+// ============================================================================
+//  buildRSI — 计算 RSI6/RSI12/RSI24 三条序列
 //
-//	公式 (SMA 版本，通达信标准):
-//	  Delta[i] = Close[i] - Close[i-1]
-//	  Up[i]    = Max(Delta[i], 0)
-//	  Down[i]  = Max(-Delta[i], 0)
-//	  AvgUp    = SMA(Up, N, 1)    即 (Up + (N-1)*PrevAvgUp) / N
-//	  AvgDown  = SMA(Down, N, 1)
-//	  RSI      = AvgUp / (AvgUp + AvgDown) * 100
+//  公式 (SMA 版本，通达信标准):
+//    Delta[i] = Close[i] - Close[i-1]
+//    Up[i]    = Max(Delta[i], 0)
+//    Down[i]  = Max(-Delta[i], 0)
+//    AvgUp    = SMA(Up, N, 1) / N
+//    AvgDown  = SMA(Down, N, 1) / N
+//    RSI      = AvgUp / (AvgUp + AvgDown) * 100
 //
-//	第一根K线: Delta=0, RSI=50（中性）
-//	klines 输入: [0]=最新, [len-1]=最旧
-//	结果: oldest-first (从旧到新), [0]=最旧, [len-1]=最新
+//  klines 输入: [0]=最新, [len-1]=最旧
+//  结果: oldest-first (从旧到新), [0]=最旧, [len-1]=最新
+// ============================================================================
+
 func buildRSI(klines []*model.DailyKline) RSIResult {
 	n := len(klines)
 
-	// klines[0] = 最新 → 拷贝并反转为 oldest-first，同时分→元
+	// klines[0] = 最新 → 反转为 oldest-first，分→元
 	closePrices := make([]float64, n)
 	for i := range klines {
 		closePrices[n-1-i] = float64(klines[i].Close) / 100.0
@@ -167,47 +173,58 @@ func buildRSI(klines []*model.DailyKline) RSIResult {
 			down[i] = -delta
 		}
 	}
-	// 第一根K线: 无前值，up/down 均为 0
 
-	// SMA(Up, N, 1) / SMA(Down, N, 1)
-	avgUp := sma(up, rsiDefaultPeriod, 1)
-	avgDown := sma(down, rsiDefaultPeriod, 1)
+	// 分别计算三个周期的 RSI
+	rsi6 := computeRSI(up, down, rsiDefaultFastPeriod)
+	rsi12 := computeRSI(up, down, rsiDefaultMidPeriod)
+	rsi24 := computeRSI(up, down, rsiDefaultSlowPeriod)
 
-	// RSI = AvgUp / (AvgUp + AvgDown) * 100
+	return RSIResult{
+		RSI6:       rsi6,
+		RSI12:      rsi12,
+		RSI24:      rsi24,
+		ClosePrice: closePrices,
+	}
+}
+
+// computeRSI 根据 up/down 序列和周期 N 计算 RSI 序列
+func computeRSI(up, down []float64, period int) []float64 {
+	n := len(up)
+	avgUp := sma(up, period, 1)
+	avgDown := sma(down, period, 1)
+
 	rsi := make([]float64, n)
 	for i := range rsi {
 		sum := avgUp[i] + avgDown[i]
 		if sum != 0 {
 			rsi[i] = avgUp[i] / sum * 100
 		} else {
-			rsi[i] = 50 // 无涨跌时取中性值
+			rsi[i] = 50
 		}
 	}
-
-	return RSIResult{
-		RSI:        rsi,
-		ClosePrice: closePrices,
-	}
+	return rsi
 }
 
 // ============================================================================
-//  SignalRsiOverbought — 01 超买
+//  SignalRsiGoldenCross — 金叉信号
 //
-//  判定规则:
-//    RSI 从下方上穿超买线
-//    即: 前一日 RSI <= 超买线, 当日 RSI > 超买线
+//  内置 ID: 01 (默认时间窗口 5天前~今天)
+//  自定义 ID: 04 (可调时间窗口)
+//
+//  判定: 短期RSI(6)由下向上穿过中期RSI(12)
+//  条件: 前一日 RSI6 <= RSI12, 当日 RSI6 > RSI12
 // ============================================================================
 
-type SignalRsiOverbought struct {
+type SignalRsiGoldenCross struct {
 	indicator.BaseSignal
 }
 
-func NewSignalRsiOverbought() *SignalRsiOverbought {
-	return &SignalRsiOverbought{
+func newSignalRsiGoldenCross(id, name string) *SignalRsiGoldenCross {
+	return &SignalRsiGoldenCross{
 		BaseSignal: indicator.NewBaseSignal(
-			"01",
-			"超买",
-			"RSI上穿超买线（超买信号）",
+			id,
+			name,
+			"短期RSI(6日)由下向上穿过中期RSI(12日)——买入信号",
 			indicator.ValSeries,
 			[]indicator.OperatorOption{
 				{
@@ -216,7 +233,6 @@ func NewSignalRsiOverbought() *SignalRsiOverbought {
 					Params: []indicator.ParamDef{
 						signalutil.ParamLookbackStart(5, "天前"),
 						signalutil.ParamLookbackEnd(0, "天前"),
-						{Key: paramOverbought, Label: "超买线", Type: "number", Required: false, Default: float64(rsiDefaultOverbought), Min: 50, Max: 100, Step: 1, Unit: ""},
 					},
 				},
 			},
@@ -225,232 +241,293 @@ func NewSignalRsiOverbought() *SignalRsiOverbought {
 				Params: map[string]any{
 					indicator.ParamKeyLookbackStart: float64(5),
 					indicator.ParamKeyLookbackEnd:   float64(0),
-					paramOverbought:                 float64(rsiDefaultOverbought),
 				},
 			},
 		),
 	}
 }
 
-func (s *SignalRsiOverbought) Evaluate(result RSIResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+func (s *SignalRsiGoldenCross) Evaluate(result RSIResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
 	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 5))
 	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
-	overbought := config.GetFloat64(paramOverbought, float64(rsiDefaultOverbought))
 
-	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(result.RSI))
+	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(result.RSI6))
 	if err != nil {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: err.Error()}
 	}
 
-	// 在窗口 [idxStart, idxEnd) 内查找超买信号
-	for i := idxEnd - 1; i >= idxStart; i-- {
-		if i <= 0 {
-			continue // 无前一日数据
-		}
-		// 超买条件: 前一日 RSI <= 超买线, 当日 RSI > 超买线
-		if result.RSI[i] > overbought && result.RSI[i-1] <= overbought {
-			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
-		}
-	}
-
-	return &indicator.EvaluatedStock{
-		Result:   indicator.ResultRejected,
-		SignalID: config.SignalID,
-		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未检测到RSI上穿超买线(%.0f)", start, end, overbought),
-	}
-}
-
-// ============================================================================
-//  SignalRsiOversold — 02 超卖
-//
-//  判定规则:
-//    RSI 从上方下穿超卖线
-//    即: 前一日 RSI >= 超卖线, 当日 RSI < 超卖线
-// ============================================================================
-
-type SignalRsiOversold struct {
-	indicator.BaseSignal
-}
-
-func NewSignalRsiOversold() *SignalRsiOversold {
-	return &SignalRsiOversold{
-		BaseSignal: indicator.NewBaseSignal(
-			"02",
-			"超卖",
-			"RSI下穿超卖线（超卖信号）",
-			indicator.ValSeries,
-			[]indicator.OperatorOption{
-				{
-					Operator: indicator.OpCustom,
-					Label:    "参数设置",
-					Params: []indicator.ParamDef{
-						signalutil.ParamLookbackStart(5, "天前"),
-						signalutil.ParamLookbackEnd(0, "天前"),
-						{Key: paramOversold, Label: "超卖线", Type: "number", Required: false, Default: float64(rsiDefaultOversold), Min: 0, Max: 50, Step: 1, Unit: ""},
-					},
-				},
-			},
-			&indicator.SignalConfig{
-				Operator: indicator.OpCustom,
-				Params: map[string]any{
-					indicator.ParamKeyLookbackStart: float64(5),
-					indicator.ParamKeyLookbackEnd:   float64(0),
-					paramOversold:                   float64(rsiDefaultOversold),
-				},
-			},
-		),
-	}
-}
-
-func (s *SignalRsiOversold) Evaluate(result RSIResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 5))
-	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
-	oversold := config.GetFloat64(paramOversold, float64(rsiDefaultOversold))
-
-	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(result.RSI))
-	if err != nil {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: err.Error()}
-	}
-
-	// 在窗口内查找超卖信号
+	// 从新到旧扫描窗口 [idxStart, idxEnd)
 	for i := idxEnd - 1; i >= idxStart; i-- {
 		if i <= 0 {
 			continue
 		}
-		// 超卖条件: 前一日 RSI >= 超卖线, 当日 RSI < 超卖线
-		if result.RSI[i] < oversold && result.RSI[i-1] >= oversold {
-			return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
+		// 金叉: 前一日 RSI6 <= RSI12, 当日 RSI6 > RSI12
+		if result.RSI6[i] > result.RSI12[i] && result.RSI6[i-1] <= result.RSI12[i-1] {
+			return &indicator.EvaluatedStock{
+				Result:   indicator.ResultPassed,
+				SignalID: config.SignalID,
+				Message:  fmt.Sprintf("金叉：RSI6(%.1f)上穿RSI12(%.1f)", result.RSI6[i], result.RSI12[i]),
+			}
 		}
 	}
 
 	return &indicator.EvaluatedStock{
 		Result:   indicator.ResultRejected,
 		SignalID: config.SignalID,
-		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未检测到RSI下穿超卖线(%.0f)", start, end, oversold),
+		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未检测到RSI金叉", start, end),
 	}
 }
 
 // ============================================================================
-//  SignalRsiTopDivergence — 03 顶背离
+//  SignalRsiDeathCross — 死叉信号
 //
-//  判定规则:
-//    股价一峰比一峰高（创新高），但 RSI 一峰比一峰低（未创新高）。
-//    一般是股价高位即将反转下跌的卖出信号。
+//  内置 ID: 02 (默认时间窗口 5天前~今天)
+//  自定义 ID: 05 (可调时间窗口)
 //
-//  实现方式:
-//    复用 findPeaks / checkDivergence（macd.go 同包公共函数），
-//    使用 RSI 值替代 MACD 柱。
+//  判定: 短期RSI(6)由上向下穿过中期RSI(12)
+//  条件: 前一日 RSI6 >= RSI12, 当日 RSI6 < RSI12
 // ============================================================================
 
-type SignalRsiTopDivergence struct {
+type SignalRsiDeathCross struct {
 	indicator.BaseSignal
 }
 
-func NewSignalRsiTopDivergence() *SignalRsiTopDivergence {
-	return &SignalRsiTopDivergence{
+func newSignalRsiDeathCross(id, name string) *SignalRsiDeathCross {
+	return &SignalRsiDeathCross{
 		BaseSignal: indicator.NewBaseSignal(
-			"03",
-			"顶背离",
-			"价格创新高但RSI未创新高（股价高位反转信号）",
+			id,
+			name,
+			"短期RSI(6日)由上向下穿过中期RSI(12日)——卖出信号",
 			indicator.ValSeries,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpDivergencePos,
-					Label:    "顶背离",
+					Operator: indicator.OpCustom,
+					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						signalutil.ParamLookbackStart(60, "天前"),
+						signalutil.ParamLookbackStart(5, "天前"),
 						signalutil.ParamLookbackEnd(0, "天前"),
-						{Key: paramPeakWindow, Label: "峰值检测窗口", Type: "number", Required: false, Default: 5, Min: 2, Max: 20, Step: 1, Unit: "天"},
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpDivergencePos,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					indicator.ParamKeyLookbackStart: float64(60),
+					indicator.ParamKeyLookbackStart: float64(5),
 					indicator.ParamKeyLookbackEnd:   float64(0),
-					paramPeakWindow:                 float64(defaultPeakWindow),
 				},
 			},
 		),
 	}
 }
 
-func (s *SignalRsiTopDivergence) Evaluate(result RSIResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 60))
+func (s *SignalRsiDeathCross) Evaluate(result RSIResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 5))
 	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
-	peakWindow := int(config.GetFloat64(paramPeakWindow, float64(defaultPeakWindow)))
 
-	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(result.ClosePrice))
+	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(result.RSI6))
 	if err != nil {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: err.Error()}
 	}
 
-	if ok, msg := checkDivergence(result.ClosePrice, result.RSI, idxStart, idxEnd, peakWindow, true); ok {
-		return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID, Message: msg}
-	} else {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: msg}
+	for i := idxEnd - 1; i >= idxStart; i-- {
+		if i <= 0 {
+			continue
+		}
+		// 死叉: 前一日 RSI6 >= RSI12, 当日 RSI6 < RSI12
+		if result.RSI6[i] < result.RSI12[i] && result.RSI6[i-1] >= result.RSI12[i-1] {
+			return &indicator.EvaluatedStock{
+				Result:   indicator.ResultPassed,
+				SignalID: config.SignalID,
+				Message:  fmt.Sprintf("死叉：RSI6(%.1f)下穿RSI12(%.1f)", result.RSI6[i], result.RSI12[i]),
+			}
+		}
+	}
+
+	return &indicator.EvaluatedStock{
+		Result:   indicator.ResultRejected,
+		SignalID: config.SignalID,
+		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未检测到RSI死叉", start, end),
 	}
 }
 
 // ============================================================================
-//  SignalRsiBottomDivergence — 04 底背离
+//  SignalRsiTripleConvergence — 三线合一信号
 //
-//  判定规则:
-//    股价一底比一底低（创新低），但 RSI 一底比一底高（未创新低）。
-//    一般是股价低位可能反弹向上的买入信号。
+//  内置 ID: 03 (默认时间窗口 20天前~今天, low_zone=30)
+//  自定义 ID: 06 (可调时间窗口+低位阈值)
 //
-//  实现方式:
-//    与顶背离对称，使用 isTop=false
+//  判定: 三线在低位区域(30以下)由发散转为粘合并同步向上形成金叉
+//
+//  检测逻辑（从新到旧扫描 lookback 窗口）:
+//    1. 三条线(RSI6/RSI12/RSI24)均在低位阈值以下
+//    2. 前段发散 → 后段粘合（三条线之间的最大间距缩小）
+//    3. 最新位置出现金叉（RSI6上穿RSI12）
+//    4. 三条线同步向上（RSI6 > 前一日RSI6, RSI12 > 前一日RSI12）
 // ============================================================================
 
-type SignalRsiBottomDivergence struct {
+// rsiTripleConvergenceMinDays 三线合一至少需要的低位天数
+const rsiTripleConvergenceMinDays = 5
+
+type SignalRsiTripleConvergence struct {
 	indicator.BaseSignal
 }
 
-func NewSignalRsiBottomDivergence() *SignalRsiBottomDivergence {
-	return &SignalRsiBottomDivergence{
+func newSignalRsiTripleConvergence(id, name string) *SignalRsiTripleConvergence {
+	return &SignalRsiTripleConvergence{
 		BaseSignal: indicator.NewBaseSignal(
-			"04",
-			"底背离",
-			"价格创新低但RSI未创新低（股价低位反弹信号）",
+			id,
+			name,
+			"三条RSI线在低位(30以下)由发散转粘合并同步向上金叉——强烈买入信号",
 			indicator.ValSeries,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpDivergenceNeg,
-					Label:    "底背离",
+					Operator: indicator.OpCustom,
+					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						signalutil.ParamLookbackStart(60, "天前"),
+						signalutil.ParamLookbackStart(20, "天前"),
 						signalutil.ParamLookbackEnd(0, "天前"),
-						{Key: paramPeakWindow, Label: "峰值检测窗口", Type: "number", Required: false, Default: 5, Min: 2, Max: 20, Step: 1, Unit: "天"},
+						{Key: paramLowZone, Label: "低位阈值", Type: "number", Required: false,
+							Default: rsiDefaultLowZone, Min: 10, Max: 50, Step: 1, Unit: ""},
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpDivergenceNeg,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					indicator.ParamKeyLookbackStart: float64(60),
+					indicator.ParamKeyLookbackStart: float64(20),
 					indicator.ParamKeyLookbackEnd:   float64(0),
-					paramPeakWindow:                 float64(defaultPeakWindow),
+					paramLowZone:                    float64(rsiDefaultLowZone),
 				},
 			},
 		),
 	}
 }
 
-func (s *SignalRsiBottomDivergence) Evaluate(result RSIResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 60))
+func (s *SignalRsiTripleConvergence) Evaluate(result RSIResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 20))
 	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
-	peakWindow := int(config.GetFloat64(paramPeakWindow, float64(defaultPeakWindow)))
+	lowZone := config.GetFloat64(paramLowZone, rsiDefaultLowZone)
 
-	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(result.ClosePrice))
+	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(result.RSI6))
 	if err != nil {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: err.Error()}
 	}
 
-	if ok, msg := checkDivergence(result.ClosePrice, result.RSI, idxStart, idxEnd, peakWindow, false); ok {
-		return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID, Message: msg}
-	} else {
-		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: msg}
+	// 从新到旧扫描，找满足三线合一条件的区间
+	for i := idxEnd - 1; i >= idxStart+rsiTripleConvergenceMinDays; i-- {
+		if !isTripleConvergence(result, i, idxStart, lowZone) {
+			continue
+		}
+
+		return &indicator.EvaluatedStock{
+			Result:   indicator.ResultPassed,
+			SignalID: config.SignalID,
+			Message: fmt.Sprintf("三线合一：RSI6(%.1f)/RSI12(%.1f)/RSI24(%.1f) 低位粘合并金叉向上",
+				result.RSI6[i], result.RSI12[i], result.RSI24[i]),
+		}
 	}
+
+	return &indicator.EvaluatedStock{
+		Result:   indicator.ResultRejected,
+		SignalID: config.SignalID,
+		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未检测到三线合一信号", start, end),
+	}
+}
+
+// isTripleConvergence 判断从 endIdx 往回 rsiTripleConvergenceMinDays 天是否构成三线合一。
+//
+// 参数:
+//   - endIdx: 当前检查的最迟索引（窗口最右侧）
+//   - windowStart: lookback 窗口最早索引
+//   - lowZone: 低位阈值
+func isTripleConvergence(result RSIResult, endIdx, windowStart int, lowZone float64) bool {
+	// endIdx 需要往前 rsiTripleConvergenceMinDays 天
+	if endIdx-rsiTripleConvergenceMinDays+1 < windowStart {
+		return false
+	}
+
+	rangeStart := endIdx - rsiTripleConvergenceMinDays + 1
+	rangeEnd := endIdx
+
+	// 条件1: 窗口内所有三条线都在低位阈值以下
+	for d := rangeStart; d <= rangeEnd; d++ {
+		if result.RSI6[d] >= lowZone || result.RSI12[d] >= lowZone || result.RSI24[d] >= lowZone {
+			return false
+		}
+	}
+
+	// 条件2: 由发散转为粘合 — 前半段的最大间距 > 后半段的最大间距
+	// 前半段: [rangeStart, mid]   后半段: [mid+1, rangeEnd]
+	mid := (rangeStart + rangeEnd) / 2
+	frontSpread := maxTripleSpread(result, rangeStart, mid)
+	backSpread := maxTripleSpread(result, mid+1, rangeEnd)
+	if frontSpread < backSpread*1.2 {
+		// 收敛不明显（允许 20% 容差）
+		return false
+	}
+
+	// 条件3: 最新位置出现金叉
+	// RSI6 从下方穿过 RSI12: 前一日 RSI6 <= RSI12, 当日 RSI6 > RSI12
+	if result.RSI6[rangeEnd] <= result.RSI12[rangeEnd] {
+		return false
+	}
+	if result.RSI6[rangeEnd-1] > result.RSI12[rangeEnd-1] {
+		// 前一日已在上方，不是刚发生的金叉
+		// 放宽条件：只要当前 RSI6 > RSI12 且前一日在下方或附近，也算
+		if result.RSI6[rangeEnd-1] > result.RSI12[rangeEnd-1]+2 {
+			return false
+		}
+	}
+
+	// 条件4: 三条线同步向上（RSI6 和 RSI12 都在涨）
+	if result.RSI6[rangeEnd] <= result.RSI6[rangeEnd-1] {
+		return false
+	}
+	if result.RSI12[rangeEnd] <= result.RSI12[rangeEnd-1] {
+		return false
+	}
+
+	return true
+}
+
+// maxTripleSpread 计算三条RSI线在 [start, end] 范围内的最大间距
+func maxTripleSpread(result RSIResult, start, end int) float64 {
+	maxSpread := 0.0
+	for d := start; d <= end; d++ {
+		maxVal := max3(result.RSI6[d], result.RSI12[d], result.RSI24[d])
+		minVal := min3(result.RSI6[d], result.RSI12[d], result.RSI24[d])
+		spread := maxVal - minVal
+		if spread > maxSpread {
+			maxSpread = spread
+		}
+	}
+	return maxSpread
+}
+
+// max3 返回三个 float64 的最大值
+func max3(a, b, c float64) float64 {
+	if a > b {
+		if a > c {
+			return a
+		}
+		return c
+	}
+	if b > c {
+		return b
+	}
+	return c
+}
+
+// min3 返回三个 float64 的最小值
+func min3(a, b, c float64) float64 {
+	if a < b {
+		if a < c {
+			return a
+		}
+		return c
+	}
+	if b < c {
+		return b
+	}
+	return c
 }
