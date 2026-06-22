@@ -483,13 +483,13 @@ func GetAvgVolume4DayHistorical(code string, tradeDate int) (float64, error) {
 	return float64(sum) / float64(len(volumes)), nil
 }
 
-// GetVolumeSum4DayHistorical 获取近4个已完结交易日的成交量总和
-func GetVolumeSum4DayHistorical(code string, tradeDate int) (int64, error) {
+// GetVolumeSum5DayHistorical 获取近5个已完结交易日的成交量总和（量比分母基准）
+func GetVolumeSum5DayHistorical(code string, tradeDate int) (int64, error) {
 	var volumes []int64
 	err := GetDB().Model(&model.DailyKline{}).
 		Where("stock_code = ? AND trade_date < ?", code, tradeDate).
 		Order("trade_date DESC").
-		Limit(4).
+		Limit(5).
 		Pluck("volume", &volumes).Error
 	if err != nil || len(volumes) == 0 {
 		return 0, err

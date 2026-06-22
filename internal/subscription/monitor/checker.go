@@ -183,21 +183,31 @@ func (c *AlertChecker) checkVolumeRatio(rule model.MonitorRule, data *model.Quot
 		return nil
 	}
 
+	// 当日累计成交量（股）
 	todayVol := float64(data.Volume)
 	if todayVol <= 0 {
 		return nil
 	}
 
-	// 量比 = 当日实时成交量 / 近5日均量
-	// 均量 = (近4个已完结交易日成交量 + 当日实时成交量) / 5
-	todayDate, _ := strconv.Atoi(strings.ReplaceAll(data.Date, "-", ""))
-	histSum, err := db.GetVolumeSum4DayHistorical(data.Code, todayDate)
-	if err != nil || histSum <= 0 {
+	// 当日累计开市分钟数：用分时 bar 数量近似，上限 240（全天交易分钟数）
+	elapsedMinutes := len(data.Minutes)
+	if elapsedMinutes <= 0 {
 		return nil
 	}
-	totalSum := float64(histSum) + todayVol
-	avgVol := totalSum / 5
-	ratio := todayVol / avgVol
+	if elapsedMinutes > 240 {
+		elapsedMinutes = 240
+	}
+
+	// 量比 = 现成交总量 ÷ (过去5个交易日平均每分钟成交量 × 当日累计开市分钟数)
+	// 过去5个交易日平均每分钟成交量 = hist5DayVol / (5 × 240)
+	// 化简: ratio = todayVol × 5 × 240 / (hist5DayVol × elapsedMinutes)
+	todayDate, _ := strconv.Atoi(strings.ReplaceAll(data.Date, "-", ""))
+	hist5DayVol, err := db.GetVolumeSum5DayHistorical(data.Code, todayDate)
+	if err != nil || hist5DayVol <= 0 {
+		return nil
+	}
+	ratio := todayVol * float64(5*240) / (float64(hist5DayVol) * float64(elapsedMinutes))
+
 	if ratio >= params.MinRatio {
 		return []Alert{{
 			RuleType:    string(model.RuleTypeVolumeRatio),
