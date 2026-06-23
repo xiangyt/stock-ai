@@ -338,10 +338,25 @@ func (s *SyncKLineService) fetchFullDataWithCurrentMerge(ctx context.Context, co
 	}
 
 	// 当期修正尾条
-	if period == db.KLinePeriodDaily && fullData[len(fullData)-1].Date != currentItem.Date {
-		fullData = append(fullData, *currentItem)
+	lastIdx := len(fullData) - 1
+	if period == db.KLinePeriodDaily {
+		// 日K：日期不同则追加，相同则覆盖
+		if fullData[lastIdx].Date != currentItem.Date {
+			fullData = append(fullData, *currentItem)
+		} else {
+			fullData[lastIdx] = *currentItem
+		}
 	} else {
-		fullData[len(fullData)-1] = *currentItem
+		// 非日K：用 IsSamePeriod 判断是否同一周期
+		currentDate := parseTradeDate(currentItem.Date)
+		lastDate := parseTradeDate(fullData[lastIdx].Date)
+		if currentDate > 0 && lastDate > 0 && db.IsSamePeriod(period, currentDate, lastDate) {
+			// 同一周期：直接用 currentItem 替换最后一条（含 Date）
+			fullData[lastIdx] = *currentItem
+		} else {
+			// 不同周期：追加新的一条
+			fullData = append(fullData, *currentItem)
+		}
 	}
 
 	return fullData, nil
