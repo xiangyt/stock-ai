@@ -183,6 +183,14 @@ func (c *AlertChecker) checkVolumeRatio(rule model.MonitorRule, data *model.Quot
 		return nil
 	}
 
+	// 10:00 前数据量不足，量比严重虚高，跳过检测
+	if len(data.Minutes) > 0 {
+		lastTime := data.Minutes[len(data.Minutes)-1].Time
+		if parseMinute(lastTime) < 10*60 {
+			return nil
+		}
+	}
+
 	// 当日累计成交量（股）
 	todayVol := float64(data.Volume)
 	if todayVol <= 0 {
