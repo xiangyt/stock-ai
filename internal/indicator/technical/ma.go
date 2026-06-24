@@ -71,18 +71,21 @@ func NewMa() *Ma {
 		},
 	}
 
-	i.SetBuiltInSignals([]indicator.Signal{
+	// 内置信号：非交叉信号 + 交叉信号配置表循环生成
+	builtInSigs := []indicator.Signal{
 		NewSignalMaBullish(),
 		NewSignalMaSticky(),
 		NewSignalPriceAboveMA5(),
-		NewSignalMA5CrossMA10(),
-	})
+	}
+	builtInSigs = append(builtInSigs, buildMaCrossSignals(maCrossDefs)...)
+	i.SetBuiltInSignals(builtInSigs)
 
 	i.SetCustomSignals([]indicator.Signal{
 		NewSignalMaBullish(),
 		NewSignalMaSticky(),
 		NewSignalPriceAboveMA5(),
-		NewSignalMA5CrossMA10(),
+		NewSignalMaCrossGold(),  // 自定义通用金叉
+		NewSignalMaCrossDeath(), // 自定义通用死叉
 	})
 	return i
 }
@@ -133,7 +136,7 @@ func (i *Ma) Evaluate(stock indicator.StockSource, config []*indicator.SignalCon
 				} else {
 					return res
 				}
-			case *SignalMA5CrossMA10:
+			case *SignalMaCross:
 				if res := vv.Evaluate(lines, v); res.Result == indicator.ResultPassed {
 					continue
 				} else {
@@ -183,9 +186,13 @@ func calcSMA(klines []*model.DailyKline, n int) float64 {
 //  SignalMaBullish — 多头排列
 //
 //  判定规则:
-//    在 [lookback_start, lookback_end] 窗口内，最近连续 3 日均满足：
-//      MA5 > MA10 > MA20 > MA60，且 MA5/MA10/MA20 自身逐日上升
-//    默认窗口 lookback_start=3, lookback_end=0，即检查最近 3 天（今天~2天前）
+//    在 [lookback_start, lookback_end] 窗口内，每日均满足：
+//      1. 均线顺序：MA5 > MA10 > MA20 > MA60
+//      2. 均线上升：MA5/MA10/MA20 逐日上升（需至少2天，单日跳过此项）
+//    默认窗口 lookback_start=2, lookback_end=0，即最近 3 天每天都满足
+//
+//  语义：窗口内所有日均需满足（AND 逻辑），任一日不满足即拒绝
+//  索引方向：newest-first，MA5[0]=最新一日，MA5[N]=N天前
 // ============================================================================
 
 type SignalMaBullish struct {
@@ -197,14 +204,14 @@ func NewSignalMaBullish() *SignalMaBullish {
 		BaseSignal: indicator.NewBaseSignal(
 			"01",
 			"多头排列",
-			"多头排列",
+			"窗口内每日MA5>MA10>MA20>MA60且均线逐日上升",
 			indicator.ValSeries,
 			[]indicator.OperatorOption{
 				{
 					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
-						signalutil.ParamLookbackStart(3, "天前"),
+						signalutil.ParamLookbackStart(2, "天前"),
 						signalutil.ParamLookbackEnd(0, "天前"),
 					},
 				},
@@ -212,7 +219,7 @@ func NewSignalMaBullish() *SignalMaBullish {
 			&indicator.SignalConfig{
 				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					indicator.ParamKeyLookbackStart: float64(3),
+					indicator.ParamKeyLookbackStart: float64(2),
 					indicator.ParamKeyLookbackEnd:   float64(0),
 				},
 			},
@@ -220,62 +227,52 @@ func NewSignalMaBullish() *SignalMaBullish {
 	}
 }
 
-// checkBullish 判断在 [start, end] 窗口内，最近连续 3 天（即 [end, end+3)）是否同时满足：
-//  1. 均线顺序正确: MA5 > MA10 > MA20 > MA60（每日都检查）
-//  2. 均线自身上升: MA5[0]>MA5[1]>MA5[2]>MA5[3]（MA10/MA20 同理，MA60 不检查）
-// 索引说明：lines.MA5[0]=最新一日，[maSeriesDays-1]=最早一日
-// start/end 均为"N天前"，即 end < start，检查区间为 [end, end+4)
-func checkBullish(lines MALines, start, end int) (bool, int, string) {
-	const requiredDays = 3
-	checkStart := end
-	checkEnd := end + requiredDays
-	if checkEnd > start+1 {
-		return false, 0, "参数越界：需要连续3天，超出信号窗口范围"
-	}
-	// 先检查均线自身是否上升（MA5/MA10/MA20，在 [checkStart, checkEnd) 内）
-	for i := checkStart; i < checkEnd-1; i++ {
-		if lines.MA5[i] <= lines.MA5[i+1] {
-			return false, i - checkStart, fmt.Sprintf("MA5第%d日(%.2f) ≤ 第%d日(%.2f)", i-checkStart+1, lines.MA5[i], i-checkStart+2, lines.MA5[i+1])
-		}
-		if lines.MA10[i] <= lines.MA10[i+1] {
-			return false, i - checkStart, fmt.Sprintf("MA10第%d日(%.2f) ≤ 第%d日(%.2f)", i-checkStart+1, lines.MA10[i], i-checkStart+2, lines.MA10[i+1])
-		}
-		if lines.MA20[i] <= lines.MA20[i+1] {
-			return false, i - checkStart, fmt.Sprintf("MA20第%d日(%.2f) ≤ 第%d日(%.2f)", i-checkStart+1, lines.MA20[i], i-checkStart+2, lines.MA20[i+1])
-		}
-	}
-	// 再检查每日均线顺序是否正确
-	for i := checkStart; i < checkEnd; i++ {
-		v5, v10, v20, v60 := lines.MA5[i], lines.MA10[i], lines.MA20[i], lines.MA60[i]
-		if !(v5 > v10 && v10 > v20 && v20 > v60) {
-			return false, i - checkStart, fmt.Sprintf("MA5(%.2f) MA10(%.2f) MA20(%.2f) MA60(%.2f)", v5, v10, v20, v60)
-		}
-	}
-	return true, 0, ""
-}
-
 func (s *SignalMaBullish) Evaluate(lines MALines, klines []*model.DailyKline, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 3))
+	if !config.IsCustom() {
+		config = s.DefaultConfig()
+	}
+
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 2))
 	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
 
 	if start < end {
-		start, end = end, start // 容错：保证 start >= end
+		start, end = end, start // 容错：保证 start >= end（start=更早，end=更新）
 	}
-	// 默认窗口 [3, 0]，检查最近 [0, 3) 共 3 天；若用户自定义窗口，检查 [end, end+3)
-	// 校验窗口大小至少为 3
-	if start-end+1 < 3 {
-		return &indicator.EvaluatedStock{
-			Result:   indicator.ResultRejected,
-			SignalID: config.SignalID,
-			Message:  fmt.Sprintf("信号窗口需至少覆盖 3 天，当前仅 %d 天", start-end+1),
+
+	// 1. 每一天检查均线顺序：MA5 > MA10 > MA20 > MA60
+	for i := end; i <= start; i++ {
+		v5, v10, v20, v60 := lines.MA5[i], lines.MA10[i], lines.MA20[i], lines.MA60[i]
+		if !(v5 > v10 && v10 > v20 && v20 > v60) {
+			return &indicator.EvaluatedStock{
+				Result:   indicator.ResultRejected,
+				SignalID: config.SignalID,
+				Message:  fmt.Sprintf("%d天前均线顺序不满足: MA5(%.2f) MA10(%.2f) MA20(%.2f) MA60(%.2f)", i, v5, v10, v20, v60),
+			}
 		}
 	}
 
-	if ok, idx, msg := checkBullish(lines, start, end); !ok {
-		return &indicator.EvaluatedStock{
-			Result:   indicator.ResultRejected,
-			SignalID: config.SignalID,
-			Message:  fmt.Sprintf("第 %d 天: %s", idx+1, msg),
+	// 2. 窗口内均线逐日上升（newest-first: MA5[i] > MA5[i+1] 表示上升）
+	for i := end; i < start; i++ {
+		if lines.MA5[i] <= lines.MA5[i+1] {
+			return &indicator.EvaluatedStock{
+				Result:   indicator.ResultRejected,
+				SignalID: config.SignalID,
+				Message:  fmt.Sprintf("%d天前MA5(%.2f) ≤ %d天前MA5(%.2f)，未上升", i, lines.MA5[i], i+1, lines.MA5[i+1]),
+			}
+		}
+		if lines.MA10[i] <= lines.MA10[i+1] {
+			return &indicator.EvaluatedStock{
+				Result:   indicator.ResultRejected,
+				SignalID: config.SignalID,
+				Message:  fmt.Sprintf("%d天前MA10(%.2f) ≤ %d天前MA10(%.2f)，未上升", i, lines.MA10[i], i+1, lines.MA10[i+1]),
+			}
+		}
+		if lines.MA20[i] <= lines.MA20[i+1] {
+			return &indicator.EvaluatedStock{
+				Result:   indicator.ResultRejected,
+				SignalID: config.SignalID,
+				Message:  fmt.Sprintf("%d天前MA20(%.2f) ≤ %d天前MA20(%.2f)，未上升", i, lines.MA20[i], i+1, lines.MA20[i+1]),
+			}
 		}
 	}
 
@@ -286,9 +283,11 @@ func (s *SignalMaBullish) Evaluate(lines MALines, klines []*model.DailyKline, co
 //  SignalMaSticky — 均线粘合
 //
 //  判定规则:
-//    MA5/MA10/MA20 三条均线两两之间的最大偏离度 < threshold%（默认 2%）
-//    在 [lookback_start, lookback_end] 窗口内，每日均满足粘合条件
+//    在 [lookback_start, lookback_end] 窗口内，每日 MA5/MA10/MA20 三条均线
+//    两两之间的最大偏离度均 < threshold%（默认 2%）
 //    默认 start=2, end=0，即检查今天~2天前共 3 天
+//
+//  语义：窗口内所有日均需满足（AND 逻辑），任一日不满足即拒绝
 // ============================================================================
 
 const (
@@ -304,7 +303,7 @@ func NewSignalMaSticky() *SignalMaSticky {
 		BaseSignal: indicator.NewBaseSignal(
 			"02",
 			"均线粘合",
-			"均线粘合",
+			"MA5/MA10/MA20三线最大偏离度<threshold%",
 			indicator.ValSeries,
 			[]indicator.OperatorOption{
 				{
@@ -359,6 +358,10 @@ func maxFloat64(vals ...float64) float64 {
 }
 
 func (s *SignalMaSticky) Evaluate(lines MALines, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	if !config.IsCustom() {
+		config = s.DefaultConfig()
+	}
+
 	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 2))
 	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
 	threshold := config.GetFloat64(paramStickyThreshold, 2.0)
@@ -373,7 +376,7 @@ func (s *SignalMaSticky) Evaluate(lines MALines, config *indicator.SignalConfig)
 			return &indicator.EvaluatedStock{
 				Result:   indicator.ResultRejected,
 				SignalID: config.SignalID,
-				Message:  fmt.Sprintf("第 %d 日粘合偏离 %.2f%% ≥ %.2f%%", i-end+1, dev, threshold),
+				Message:  fmt.Sprintf("%d天前粘合偏离 %.2f%% ≥ %.2f%%", i, dev, threshold),
 			}
 		}
 	}
@@ -387,6 +390,8 @@ func (s *SignalMaSticky) Evaluate(lines MALines, config *indicator.SignalConfig)
 //  判定规则:
 //    在 [lookback_start, lookback_end] 窗口内，每日收盘价 > MA5
 //    默认 start=0, end=0，即检查今天
+//
+//  语义：窗口内所有日均需满足（AND 逻辑），任一日不满足即拒绝
 // ============================================================================
 
 type SignalPriceAboveMA5 struct {
@@ -398,11 +403,11 @@ func NewSignalPriceAboveMA5() *SignalPriceAboveMA5 {
 		BaseSignal: indicator.NewBaseSignal(
 			"03",
 			"股价站上5日线",
-			"连续N日收盘价站上MA5",
+			"窗口内每日收盘价>MA5",
 			indicator.ValSeries,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpCrossAbove,
+					Operator: indicator.OpCustom,
 					Label:    "参数设置",
 					Params: []indicator.ParamDef{
 						signalutil.ParamLookbackStart(0, "天前"),
@@ -411,7 +416,7 @@ func NewSignalPriceAboveMA5() *SignalPriceAboveMA5 {
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpCrossAbove,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
 					indicator.ParamKeyLookbackStart: float64(0),
 					indicator.ParamKeyLookbackEnd:   float64(0),
@@ -422,6 +427,10 @@ func NewSignalPriceAboveMA5() *SignalPriceAboveMA5 {
 }
 
 func (s *SignalPriceAboveMA5) Evaluate(lines MALines, klines []*model.DailyKline, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	if !config.IsCustom() {
+		config = s.DefaultConfig()
+	}
+
 	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 0))
 	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
 
@@ -436,7 +445,7 @@ func (s *SignalPriceAboveMA5) Evaluate(lines MALines, klines []*model.DailyKline
 			return &indicator.EvaluatedStock{
 				Result:   indicator.ResultRejected,
 				SignalID: config.SignalID,
-				Message:  fmt.Sprintf("第%d日收盘价(%.2f)未站上MA5(%.2f)", i-end+1, price/100, ma5/100),
+				Message:  fmt.Sprintf("%d天前收盘价(%.2f)未站上MA5(%.2f)", i, price/100, ma5/100),
 			}
 		}
 	}
@@ -445,96 +454,195 @@ func (s *SignalPriceAboveMA5) Evaluate(lines MALines, klines []*model.DailyKline
 }
 
 // ============================================================================
-//  SignalMA5CrossMA10 — 5日线金叉10日线
+//  SignalMaCross — 均线交叉（金叉/死叉共用）
 //
-//  判定规则:
-//    在 [lookback_start, lookback_end] 窗口内（按 oldest-first 索引），
-//    存在某一天 i 满足：
-//      前一日：MA5[i+1] <= MA10[i+1]
-//      当日：  MA5[i]   >  MA10[i]
-//    可选：两线均向上（MA5今日 > MA5昨日 且 MA10今日 > MA10昨日）
+//  金叉(上穿): 前一日 fast <= slow, 当日 fast > slow
+//  死叉(下穿): 前一日 fast >= slow, 当日 fast < slow
+//  可选：两线均向上（fast今日>fast昨日 且 slow今日>slow昨日）
+//
+//  语义：窗口内任意日满足即通过（OR 逻辑，滑动搜索）
+//  索引方向：newest-first，MA5[0]=最新一日
 // ============================================================================
 
 const (
 	paramCrossBothRising = "both_rising"
 )
 
-type SignalMA5CrossMA10 struct {
-	indicator.BaseSignal
+// maLineSelector 标识均线类型，用于交叉信号的快慢线选择
+type maLineSelector int
+
+const (
+	maLine5  maLineSelector = iota // MA5
+	maLine10                       // MA10
+	maLine20                       // MA20
+)
+
+func (s maLineSelector) label() string {
+	switch s {
+	case maLine5:
+		return "MA5"
+	case maLine10:
+		return "MA10"
+	default:
+		return "MA20"
+	}
 }
 
-func NewSignalMA5CrossMA10() *SignalMA5CrossMA10 {
-	return &SignalMA5CrossMA10{
+func (s maLineSelector) get(lines MALines, i int) float64 {
+	switch s {
+	case maLine5:
+		return lines.MA5[i]
+	case maLine10:
+		return lines.MA10[i]
+	default:
+		return lines.MA20[i]
+	}
+}
+
+type SignalMaCross struct {
+	indicator.BaseSignal
+	Fast     maLineSelector // 快线
+	Slow     maLineSelector // 慢线
+	IsGolden bool           // true=金叉(上穿), false=死叉(下穿)
+}
+
+// maCrossDef 均线交叉信号配置
+type maCrossDef struct {
+	Seq      string          // 信号序号
+	Name     string          // 信号名称
+	Desc     string          // 信号描述
+	Fast     maLineSelector  // 快线
+	Slow     maLineSelector  // 慢线
+	IsGolden bool            // true=金叉, false=死叉
+}
+
+// maCrossDefs 内置均线交叉信号配置表
+var maCrossDefs = []maCrossDef{
+	{"04", "5日线金叉10日线", "MA5从下方上穿MA10（金叉）", maLine5, maLine10, true},
+	{"05", "10日线金叉20日线", "MA10从下方上穿MA20（金叉）", maLine10, maLine20, true},
+	{"06", "5日线死叉10日线", "MA5从上方下穿MA10（死叉）", maLine5, maLine10, false},
+	{"07", "10日线死叉20日线", "MA10从上方下穿MA20（死叉）", maLine10, maLine20, false},
+}
+
+// buildMaCrossSignals 根据配置表循环生成均线交叉信号。
+func buildMaCrossSignals(defs []maCrossDef) []indicator.Signal {
+	sigs := make([]indicator.Signal, len(defs))
+	for i, d := range defs {
+		sigs[i] = newSignalMaCross(d.Seq, d.Name, d.Desc, d.Fast, d.Slow, d.IsGolden)
+	}
+	return sigs
+}
+// newSignalMaCross 创建均线交叉信号的工厂函数。
+func newSignalMaCross(id, name, desc string, fast, slow maLineSelector, isGolden bool) *SignalMaCross {
+	label := "金叉"
+	if !isGolden {
+		label = "死叉"
+	}
+	return &SignalMaCross{
 		BaseSignal: indicator.NewBaseSignal(
-			"04",
-			"5日线金叉10日线",
-			"5日线金叉10日线",
+			id, name, desc,
 			indicator.ValSeries,
 			[]indicator.OperatorOption{
 				{
-					Operator: indicator.OpCrossAbove,
-					Label:    "金叉",
+					Operator: indicator.OpCustom,
+					Label:    label,
 					Params: []indicator.ParamDef{
-						{Key: indicator.ParamKeyLookbackStart, Label: "信号起点(天前)", Type: "number", Required: false, Default: 1, Min: 1, Max: 9, Unit: ""},
-						{Key: indicator.ParamKeyLookbackEnd, Label: "信号终点(天前)", Type: "number", Required: false, Default: 1, Min: 1, Max: 9, Unit: ""},
+						signalutil.ParamLookbackStart(0, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
 						ParamSelect(paramCrossBothRising, "两线均向上", false, 0, "否", "是"),
 					},
 				},
 			},
 			&indicator.SignalConfig{
-				Operator: indicator.OpCrossAbove,
+				Operator: indicator.OpCustom,
 				Params: map[string]any{
-					indicator.ParamKeyLookbackStart: float64(1),
-					indicator.ParamKeyLookbackEnd:   float64(1),
-					paramCrossBothRising:   float64(0),
+					indicator.ParamKeyLookbackStart: float64(0),
+					indicator.ParamKeyLookbackEnd:   float64(0),
+					paramCrossBothRising:            float64(0),
 				},
 			},
 		),
+		Fast:     fast,
+		Slow:     slow,
+		IsGolden: isGolden,
 	}
 }
 
-func (s *SignalMA5CrossMA10) Evaluate(lines MALines, config *indicator.SignalConfig) *indicator.EvaluatedStock {
-	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 1))
-	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 1))
+func NewSignalMA5CrossMA10() *SignalMaCross {
+	return newSignalMaCross("04", "5日线金叉10日线", "MA5从下方上穿MA10（金叉）", maLine5, maLine10, true)
+}
+
+func NewSignalMA10CrossMA20() *SignalMaCross {
+	return newSignalMaCross("05", "10日线金叉20日线", "MA10从下方上穿MA20（金叉）", maLine10, maLine20, true)
+}
+
+func NewSignalMA5DeathCrossMA10() *SignalMaCross {
+	return newSignalMaCross("06", "5日线死叉10日线", "MA5从上方下穿MA10（死叉）", maLine5, maLine10, false)
+}
+
+func NewSignalMA10DeathCrossMA20() *SignalMaCross {
+	return newSignalMaCross("07", "10日线死叉20日线", "MA10从上方下穿MA20（死叉）", maLine10, maLine20, false)
+}
+
+// NewSignalMaCrossGold 创建通用均线金叉信号（自定义用：不限定具体快慢线，用户可配置参数）。
+func NewSignalMaCrossGold() *SignalMaCross {
+	return newSignalMaCross("01", "均线金叉", "快线从下方上穿慢线（金叉），可配置快慢线周期和信号窗口", maLine5, maLine10, true)
+}
+
+// NewSignalMaCrossDeath 创建通用均线死叉信号（自定义用：不限定具体快慢线，用户可配置参数）。
+func NewSignalMaCrossDeath() *SignalMaCross {
+	return newSignalMaCross("02", "均线死叉", "快线从上方下穿慢线（死叉），可配置快慢线周期和信号窗口", maLine5, maLine10, false)
+}
+
+func (s *SignalMaCross) Evaluate(lines MALines, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	if !config.IsCustom() {
+		config = s.DefaultConfig()
+	}
+
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 0))
+	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
 
 	if start < end {
 		start, end = end, start // 容错
 	}
-	// 检查区间：[end, start+1)，i 为当日索引，i+1 需合法
+	// 需要前一日数据，检查边界
 	if end+1 >= maSeriesDays {
 		return &indicator.EvaluatedStock{
 			Result:   indicator.ResultRejected,
 			SignalID: config.SignalID,
-			Message:  "参数越界：回看终点太靠近今天，无前一日数据",
+			Message:  fmt.Sprintf("参数越界：回看终点 %d 太靠近今天，无前一日数据", end),
 		}
 	}
 	if start >= maSeriesDays {
 		return &indicator.EvaluatedStock{
 			Result:   indicator.ResultRejected,
 			SignalID: config.SignalID,
-			Message:  "参数越界：回看起点超出数据范围",
+			Message:  fmt.Sprintf("参数越界：回看起点 %d 超出数据范围", start),
 		}
 	}
 
 	bothRising := config.GetFloat64(paramCrossBothRising, 0) != 0
+	name := fmt.Sprintf("%s%s%s", s.Fast.label(), signalCrossOp(s.IsGolden), s.Slow.label())
 
 	for i := end; i <= start; i++ {
-		ma5Today, ma10Today := lines.MA5[i], lines.MA10[i]
-		ma5Prev, ma10Prev := lines.MA5[i+1], lines.MA10[i+1]
+		fastToday, slowToday := s.Fast.get(lines, i), s.Slow.get(lines, i)
+		fastPrev, slowPrev := s.Fast.get(lines, i+1), s.Slow.get(lines, i+1)
 
-		// 金叉：前一日 MA5 <= MA10，当日 MA5 > MA10
-		if ma5Prev > ma10Prev {
-			continue
+		var crossed bool
+		if s.IsGolden {
+			// 金叉：前一日 fast <= slow，当日 fast > slow
+			crossed = fastPrev <= slowPrev && fastToday > slowToday
+		} else {
+			// 死叉：前一日 fast >= slow，当日 fast < slow
+			crossed = fastPrev >= slowPrev && fastToday < slowToday
 		}
-		if ma5Today <= ma10Today {
+
+		if !crossed {
 			continue
 		}
 
 		if bothRising {
-			if ma5Today <= ma5Prev {
-				continue
-			}
-			if ma10Today <= ma10Prev {
+			if fastToday <= fastPrev || slowToday <= slowPrev {
 				continue
 			}
 		}
@@ -545,6 +653,13 @@ func (s *SignalMA5CrossMA10) Evaluate(lines MALines, config *indicator.SignalCon
 	return &indicator.EvaluatedStock{
 		Result:   indicator.ResultRejected,
 		SignalID: config.SignalID,
-		Message:  fmt.Sprintf("在[第%d天前, 第%d天前]窗口内未检测到MA5金叉MA10", start, end),
+		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未检测到%s", start, end, name),
 	}
+}
+
+func signalCrossOp(isGolden bool) string {
+	if isGolden {
+		return "金叉"
+	}
+	return "死叉"
 }
