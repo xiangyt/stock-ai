@@ -116,17 +116,24 @@ func (r *DBTradeRecorder) FailRun(ctx context.Context, runID uint64, msg string)
 		Where("id = ?", runID).Updates(updates)
 }
 
-// RecordTrade 写入 backtest_trades 表。
+// RecordTrade 写入 backtest_trades 表，并更新 run 的 trade_count。
 func (r *DBTradeRecorder) RecordTrade(
 	ctx context.Context, _ uint64, trade Trade,
 ) error {
 	sql := `INSERT INTO backtest_trades (run_id,stock_code,trade_type,quantity,price,
 		amount,commission,stamp_tax,trade_date,exit_reason,profit_loss,profit_loss_pct,created_at)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NOW())`
-	return db.GetDB().WithContext(ctx).Exec(sql,
+	if err := db.GetDB().WithContext(ctx).Exec(sql,
 		r.runID, trade.Code, trade.Type, trade.Quantity, trade.Price,
 		trade.Amount, trade.Commission, trade.StampTax, trade.Date,
-		trade.Reason, trade.Profit, trade.ProfitPct).Error
+		trade.Reason, trade.Profit, trade.ProfitPct).Error; err != nil {
+		return err
+	}
+	// 实时更新 trade_count，确保前端轮询时可见
+	db.GetDB().WithContext(ctx).Exec(
+		"UPDATE backtest_runs SET trade_count = trade_count + 1, updated_at = NOW() WHERE id = ?",
+		r.runID)
+	return nil
 }
 
 // RecordSnapshot 写入 daily_snapshots 表。

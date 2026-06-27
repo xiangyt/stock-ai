@@ -129,8 +129,9 @@ type EquitySnapshot struct {
 
 // ExitRule 卖出规则。
 type ExitRule struct {
-	Type   string         `json:"type"`   // 规则类型 "stop_loss" | "take_profit" | "time_exit" | "signal"
-	Params map[string]any `json:"params"` // 规则参数
+	Type    string         `json:"type"`    // 规则类型 "stop_loss" | "take_profit" | "time_exit" | "signal"
+	Enabled bool           `json:"enabled"` // 是否启用
+	Params  map[string]any `json:"params"`  // 规则参数
 }
 
 // ============================================================================

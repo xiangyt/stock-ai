@@ -89,7 +89,7 @@ func (d *DAO) CreateTrades(trades []BacktestTrade) error {
 	return nil
 }
 
-// GetTradesByRun 按回测 ID 获取交易记录（分页）
+// GetTradesByRun 按回测 ID 获取交易记录（分页）。
 func (d *DAO) GetTradesByRun(runID uint64, offset, limit int) ([]BacktestTrade, int64, error) {
 	var total int64
 	if err := db.GetDB().Model(&BacktestTrade{}).Where("run_id = ?", runID).Count(&total).Error; err != nil {
@@ -102,17 +102,40 @@ func (d *DAO) GetTradesByRun(runID uint64, offset, limit int) ([]BacktestTrade, 
 		Offset(offset).
 		Limit(limit).
 		Find(&trades).Error
-	return trades, total, err
+	if err != nil {
+		return nil, 0, err
+	}
+	fillTradeStockNames(trades)
+	return trades, total, nil
 }
 
-// GetTradesByRunAll 获取回测的全部交易记录（不分页）
+// fillTradeStockNames 批量填充交易记录中的股票名称。
+func fillTradeStockNames(trades []BacktestTrade) {
+	if len(trades) == 0 { return }
+	codeSet := make(map[string]bool)
+	for _, t := range trades {
+		codeSet[t.StockCode] = true
+	}
+	codes := make([]string, 0, len(codeSet))
+	for c := range codeSet { codes = append(codes, c) }
+
+	var stocks []struct { Code string; Name string }
+	db.GetDB().Table("stocks").Select("code, name").Where("code IN ?", codes).Find(&stocks)
+	nameMap := make(map[string]string, len(stocks))
+	for _, s := range stocks { nameMap[s.Code] = s.Name }
+	for i := range trades {
+		trades[i].StockName = nameMap[trades[i].StockCode]
+	}
+}
+
+// GetTradesByRunAll 获取回测的全部交易记录（不分页）。
 func (d *DAO) GetTradesByRunAll(runID uint64) ([]BacktestTrade, error) {
 	var trades []BacktestTrade
-	err := db.GetDB().
-		Where("run_id = ?", runID).
-		Order("trade_date ASC, id ASC").
-		Find(&trades).Error
-	return trades, err
+	if err := db.GetDB().Where("run_id = ?", runID).Order("trade_date ASC, id ASC").Find(&trades).Error; err != nil {
+		return nil, err
+	}
+	fillTradeStockNames(trades)
+	return trades, nil
 }
 
 // =========================== DailySnapshot ===========================
@@ -140,12 +163,15 @@ func (d *DAO) CreateSnapshots(snapshots []DailySnapshot) error {
 	return nil
 }
 
-// GetSnapshotsByRun 获取回测的每日快照（按日期升序）
-func (d *DAO) GetSnapshotsByRun(runID uint64) ([]DailySnapshot, error) {
-	var snapshots []DailySnapshot
-	err := db.GetDB().
+// GetSnapshotsByRun 获取回测的每日快照（按日期升序，支持 afterID 增量加载）。
+func (d *DAO) GetSnapshotsByRun(runID uint64, afterID uint64) ([]DailySnapshot, error) {
+	q := db.GetDB().
 		Where("run_id = ?", runID).
-		Order("snap_date ASC").
-		Find(&snapshots).Error
+		Order("id ASC")
+	if afterID > 0 {
+		q = q.Where("id > ?", afterID)
+	}
+	var snapshots []DailySnapshot
+	err := q.Find(&snapshots).Error
 	return snapshots, err
 }

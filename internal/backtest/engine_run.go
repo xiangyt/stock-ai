@@ -225,6 +225,13 @@ func (e *defaultEngine) executeSell(
 		Commission: fee, StampTax: amount * 0.001, Date: date,
 		Profit: profit, ProfitPct: profitPct, Reason: decision.Reason,
 	})
+	if e.tradeRecorder != nil {
+		e.tradeRecorder.RecordTrade(context.TODO(), 0, Trade{
+			Code: code, Type: 2, Quantity: qty, Price: price, Amount: amount,
+			Commission: fee, StampTax: amount * 0.001, Date: date,
+			Profit: profit, ProfitPct: profitPct, Reason: decision.Reason,
+		})
+	}
 
 	if qty == pos.Quantity {
 		acct.RemoveHolding(code)
@@ -252,6 +259,12 @@ func (e *defaultEngine) executeBuy(
 		Code: order.Code, Type: 1, Quantity: order.Quantity,
 		Price: b.close, Amount: amount, Commission: fee, Date: date,
 	})
+	if e.tradeRecorder != nil {
+		e.tradeRecorder.RecordTrade(context.TODO(), 0, Trade{
+			Code: order.Code, Type: 1, Quantity: order.Quantity,
+			Price: b.close, Amount: amount, Commission: fee, Date: date,
+		})
+	}
 	pos := &HoldingPosition{
 		Code: order.Code, Quantity: order.Quantity,
 		EntryPrice: b.close, EntryDate: date,
@@ -307,6 +320,15 @@ func (e *defaultEngine) forceClose(rc *runContext, lastDate string, pool []strin
 			Profit: profit, ProfitPct: profitPct,
 			Reason: "force_close",
 		})
+		if e.tradeRecorder != nil {
+			e.tradeRecorder.RecordTrade(context.TODO(), 0, Trade{
+				Code: code, Type: 2, Quantity: pos.Quantity,
+				Price: b.close, Amount: amount, Commission: fee,
+				StampTax: amount * 0.001, Date: lastDate,
+				Profit: profit, ProfitPct: profitPct,
+				Reason: "force_close",
+			})
+		}
 		acct.RemoveHolding(code)
 	}
 	_ = snaps

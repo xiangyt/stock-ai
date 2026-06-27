@@ -247,21 +247,33 @@
           <section class="chart-section" v-if="snapshotData.length > 0">
             <div class="chart-header">
               <span class="chart-title">净值曲线</span>
+              <span class="chart-subtitle">累计收益率</span>
             </div>
             <div class="chart-body">
-              <svg :viewBox="`0 0 ${chartW} ${chartH}`" preserveAspectRatio="none">
+              <svg :viewBox="`0 0 ${chartW} ${chartH}`" preserveAspectRatio="xMidYMid meet" class="chart-svg" :style="{ '--line-color': lineColor }">
+                <defs>
+                  <linearGradient id="areaGrad" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" :stop-color="lineColor" stop-opacity="0.35" />
+                    <stop offset="100%" :stop-color="lineColor" stop-opacity="0.05" />
+                  </linearGradient>
+                  <filter id="shadow">
+                    <feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.1" />
+                  </filter>
+                </defs>
                 <!-- 网格线 -->
                 <line v-for="(y, i) in gridYs" :key="'g'+i" x1="yAxisW" :y1="y" x2="chartW - marginR" :y2="y" class="grid-line" />
                 <!-- Y轴标签 -->
-                <text v-for="(yt, i) in yTickLabels" :key="'yt'+i" :x="yAxisW - 6" :y="i * yStep + paddingTop + 4" text-anchor="end" class="axis-label">{{ yt }}</text>
+                <text v-for="(yt, i) in yTickLabels" :key="'yt'+i" :x="yAxisW - 8" :y="i * yStep + paddingTop + 5" text-anchor="end" class="y-label">{{ yt }}</text>
                 <!-- X轴标签 -->
-                <text v-for="(d, i) in xLabels" :key="'xt'+i" :x="yAxisW + i * xStep" :y="chartH - paddingBottom + 4" text-anchor="middle" class="axis-label">{{ d }}</text>
+                <text v-for="(l, i) in xLabels" :key="'xt'+i" :x="l.x" :y="chartH - paddingBottom + 16" text-anchor="middle" class="x-label">{{ l.label }}</text>
                 <!-- 零线 -->
                 <line :x1="yAxisW" :y1="zeroY" :x2="chartW - marginR" :y2="zeroY" class="zero-line" />
+                <!-- 面积填充 -->
+                <polygon v-if="snapshotData.length > 1" :points="areaPoints" fill="url(#areaGrad)" />
                 <!-- 策略净值线 -->
-                <polyline :points="stratPoints" fill="none" class="line-strategy" />
-                <!-- 数据点 -->
-                <circle v-for="(d, i) in snapshotData" :key="'p'+i" :cx="xPos(i)" :cy="yPos(d.strategy)" r="2.5" class="dot-strategy" />
+                <polyline :points="stratPoints" fill="none" class="line-strategy" filter="url(#shadow)" />
+                <!-- 数据点（仅少量时显示） -->
+                <circle v-if="snapshotData.length <= 60" v-for="(d, i) in snapshotData" :key="'p'+i" :cx="xPos(i)" :cy="yPos(d.strategy)" r="2.5" class="dot-strategy" />
               </svg>
             </div>
           </section>
@@ -328,7 +340,7 @@
               </thead>
               <tbody>
                 <tr v-for="s in rawSnapshots" :key="s.snap_date">
-                  <td>{{ s.snap_date }}</td>
+                  <td>{{ s.snap_date.slice(0, 10) }}</td>
                   <td>¥{{ s.total_equity.toLocaleString('zh-CN', { maximumFractionDigits: 0 }) }}</td>
                   <td>¥{{ s.cash.toLocaleString('zh-CN', { maximumFractionDigits: 0 }) }}</td>
                   <td>¥{{ s.market_value.toLocaleString('zh-CN', { maximumFractionDigits: 0 }) }}</td>
@@ -369,7 +381,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, reactive, nextTick, onUnmounted } from 'vue'
+import { ref, computed, onMounted, reactive, nextTick, onUnmounted, watch } from 'vue'
 import * as strategyApi from '../api/strategies'
 import KLineTooltip from './KLineTooltip.vue'
 
@@ -600,6 +612,13 @@ const tabs: { key: TabKey; label: string; icon: string }[] = [
   { key: 'logs', label: '运行日志', icon: '📝' },
 ]
 
+// 切换到数据页时，若回测已完成或运行中则立即加载
+watch(activeTab, (tab) => {
+  if (!currentRunId.value) return
+  if (tab === 'trades') loadTradePage(1)
+  else if (tab === 'holdings') loadSnapshots(currentRunId.value, 0)
+})
+
 // ========== 日志 ==========
 interface LogEntry { time: string; level: string; message: string }
 const backtestLogs = ref<LogEntry[]>([])
@@ -663,15 +682,15 @@ function startPolling() {
   }, 2000) // 2 秒轮询一次，避免过于频繁
 }
 
+let lastSnapshotId = 0
+
 /** 回测运行中逐步加载中间结果 */
 async function loadRunningResults(runId: number) {
   try {
-    // 加载交易（第一页，让用户看到已产生的买卖记录）
-    if (tradeData.value.length === 0) {
-      await loadTradePage(1)
-    }
-    // 加载快照（净值曲线逐步展示）
-    await loadSnapshots(runId)
+    // 加载交易（第一页，展示最新产生的买卖记录）
+    await loadTradePage(1)
+    // 加载快照（增量：仅拉取新记录，净值曲线逐步展示）
+    await loadSnapshots(runId, lastSnapshotId)
   } catch (e) { /* 静默忽略中间加载失败 */ }
 }
 
@@ -690,7 +709,8 @@ const snapshotData = ref<{ date: string; strategy: number }[]>([])
 
 function clearResults() {
   statsData.value = []; tradeData.value = []; rawSnapshots.value = []; snapshotData.value = []
-  tradePage.value = 1; tradeTotal.value = 0; elapsedTime.value = ''; backtestLogs.value = []
+  tradePage.value = 1; tradeTotal.value = 0; lastSnapshotId = 0
+  elapsedTime.value = ''; backtestLogs.value = []
 }
 
 async function loadResults(runId: number) {
@@ -722,10 +742,11 @@ async function loadResults(runId: number) {
 
     addLog('info', `累计收益: ${run.total_return != null ? run.total_return.toFixed(2) + '%' : 'N/A'}，最大回撤: ${run.max_drawdown != null ? run.max_drawdown.toFixed(2) + '%' : 'N/A'}`)
 
-    // 加载交易
+    // 加载交易（第一页）
     await loadTradePage(1)
-    // 加载快照
-    await loadSnapshots(runId)
+    // 全量加载快照（回测完成）
+    rawSnapshots.value = []; snapshotData.value = []; lastSnapshotId = 0
+    await loadSnapshots(runId, 0)
   } catch (e: any) {
     addLog('error', `加载结果失败: ${e?.message || '未知错误'}`)
   }
@@ -755,14 +776,16 @@ async function loadTradePage(page: number) {
   } catch (e) { console.error('加载交易失败:', e) }
 }
 
-async function loadSnapshots(runId: number) {
+async function loadSnapshots(runId: number, afterId = 0) {
   try {
-    const res = await strategyApi.getBacktestSnapshots(runId)
-    rawSnapshots.value = res.snapshots || []
-    snapshotData.value = (res.snapshots || []).map(s => ({
-      date: s.snap_date.slice(5),
-      strategy: s.cumulative_return ?? 0,
-    }))
+    const res = await strategyApi.getBacktestSnapshots(runId, afterId)
+    if (!res.snapshots?.length) return
+    // 增量追加新记录
+    rawSnapshots.value.push(...res.snapshots)
+    for (const s of res.snapshots) {
+      snapshotData.value.push({ date: s.snap_date.slice(5), strategy: s.cumulative_return ?? 0 })
+      if (s.id > lastSnapshotId) lastSnapshotId = s.id
+    }
   } catch (e) { console.error('加载快照失败:', e) }
 }
 
@@ -815,7 +838,7 @@ function showKLine(e: MouseEvent, code: string) {
   if (klineTimer) clearTimeout(klineTimer)
   klineTimer = setTimeout(() => {
     klineStockCode.value = code
-    klineStockName.value = ''
+    klineStockName.value = tradeData.value.find(t => t.stockCode === code)?.stockName || ''
     klineX.value = e.clientX
     klineY.value = e.clientY
     klineVisible.value = true
@@ -844,27 +867,60 @@ const marginR = 20
 const paddingTop = 18
 const paddingBottom = 24
 
+const lineColor = computed(() => {
+  const last = snapshotData.value[snapshotData.value.length - 1]?.strategy ?? 0
+  return last >= 0 ? '#1677ff' : '#cf1322'
+})
+
 const yMin = computed(() => {
   if (snapshotData.value.length === 0) return -5
-  return Math.min(...snapshotData.value.map(d => d.strategy)) - 2
+  return Math.min(0, ...snapshotData.value.map(d => d.strategy)) - 2
 })
 const yMax = computed(() => {
   if (snapshotData.value.length === 0) return 5
-  return Math.max(...snapshotData.value.map(d => d.strategy)) + 2
+  return Math.max(0, ...snapshotData.value.map(d => d.strategy)) + 2
 })
 const yRange = computed(() => yMax.value - yMin.value || 1)
 function yPos(v: number) { return paddingTop + ((yMax.value - v) / yRange.value) * (chartH - paddingTop - paddingBottom) }
 function xPos(i: number) { return yAxisW + i * xStep.value }
 const zeroY = computed(() => yPos(0))
 const yStep = computed(() => (chartH - paddingTop - paddingBottom) / 5)
-const yTickLabels = computed(() => Array.from({ length: 6 }, (_, i) => (yMax.value - i * yRange.value / 5).toFixed(1) + '%'))
+const yTickLabels = computed(() => Array.from({ length: 6 }, (_, i) => `${(yMax.value - i * yRange.value / 5).toFixed(1)}%`))
 const gridYs = computed(() => Array.from({ length: 5 }, (_, i) => paddingTop + (i + 1) * yStep.value))
+
+// 智能选取 X 轴标签（最多 10 个，均匀分布）
 const xLabels = computed(() => {
   const d = snapshotData.value
-  return d.filter((_, i) => i % Math.max(1, Math.floor(d.length / 8)) === 0 || i === d.length - 1).map(p => p.date)
+  if (d.length === 0) return []
+  const maxLabels = Math.min(10, d.length)
+  const step = Math.ceil(d.length / maxLabels)
+  const labels: { x: number; label: string }[] = []
+  for (let i = 0; i < d.length; i += step) {
+    labels.push({ x: xPos(i), label: d[i].date })
+  }
+  // 确保最后一个点有标签（避免重叠）
+  const last = d.length - 1
+  if (last > 0 && last % step !== 0) {
+    const lastLabel = { x: xPos(last), label: d[last].date }
+    const prev = labels[labels.length - 1]
+    if (!prev || Math.abs(lastLabel.x - prev.x) > 40) {
+      labels.push(lastLabel)
+    }
+  }
+  return labels
 })
+
 const xStep = computed(() => snapshotData.value.length > 1 ? (chartW - yAxisW - marginR) / (snapshotData.value.length - 1) : chartW - yAxisW - marginR)
 const stratPoints = computed(() => snapshotData.value.map((d, i) => `${xPos(i)},${yPos(d.strategy)}`).join(' '))
+
+// 面积填充：从第一个数据点沿折线到最后一个，再折回基线
+const areaPoints = computed(() => {
+  if (snapshotData.value.length === 0) return ''
+  const pts = snapshotData.value.map((d, i) => `${xPos(i)},${yPos(d.strategy)}`)
+  pts.push(`${xPos(snapshotData.value.length - 1)},${zeroY.value}`)
+  pts.push(`${xPos(0)},${zeroY.value}`)
+  return pts.join(' ')
+})
 </script>
 
 <style scoped>
@@ -982,16 +1038,18 @@ const stratPoints = computed(() => snapshotData.value.map((d, i) => `${xPos(i)},
 .stat-item.pos .stat-value { color: #16a34a; }
 
 /* ===== 净值曲线 ===== */
-.chart-section { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); padding: 16px 18px; }
-.chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.chart-title { font-size: 14px; font-weight: 600; color: #333; }
-.chart-body { overflow-x: auto; }
-.chart-body svg { display: block; width: 100%; max-width: 100%; height: auto; }
-.grid-line { stroke: #f5f5f5; stroke-width: 1; }
-.zero-line { stroke: #e0e0e0; stroke-width: 1; stroke-dasharray: 4 3; }
-.axis-label { fill: #bbb; font-size: 11px; }
-.line-strategy { stroke: #1677ff; stroke-width: 2; stroke-linejoin: round; fill: none; }
-.dot-strategy { fill: #1677ff; }
+.chart-section { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); padding: 20px 24px; }
+.chart-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+.chart-title { font-size: 15px; font-weight: 600; color: #1a1a1a; }
+.chart-subtitle { font-size: 12px; color: #999; }
+.chart-body { overflow: hidden; }
+.chart-svg { display: block; width: 100%; height: 320px; }
+.grid-line { stroke: #f0f0f0; stroke-width: 0.5; }
+.zero-line { stroke: #d9d9d9; stroke-width: 1; stroke-dasharray: 6 4; }
+.y-label { fill: #bbb; font-size: 10px; font-family: 'SF Mono', 'Menlo', monospace; }
+.x-label { fill: #999; font-size: 10px; }
+.line-strategy { stroke: var(--line-color, #1677ff); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; fill: none; }
+.dot-strategy { fill: var(--line-color, #1677ff); opacity: 0.6; }
 
 /* ===== 面板 ===== */
 .panel-section { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); padding: 20px 22px; }

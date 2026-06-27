@@ -294,9 +294,9 @@ export async function getBacktestTrades(runId: number, page = 1, pageSize = 20):
   return request<TradeListResponse>(`${BACKTEST_BASE}/backtest/runs/${runId}/trades?page=${page}&page_size=${pageSize}`)
 }
 
-/** 获取回测每日快照（净值曲线数据） */
-export async function getBacktestSnapshots(runId: number): Promise<SnapshotListResponse> {
-  return request<SnapshotListResponse>(`${BACKTEST_BASE}/backtest/runs/${runId}/snapshots`)
+/** 获取回测每日快照（净值曲线数据，支持增量加载） */
+export async function getBacktestSnapshots(runId: number, afterId = 0): Promise<SnapshotListResponse> {
+  return request<SnapshotListResponse>(`${BACKTEST_BASE}/backtest/runs/${runId}/snapshots?after_id=${afterId}`)
 }
 
 /** 获取策略的历史回测列表 */

@@ -90,7 +90,7 @@ func (h *Handler) Initiate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "error": err.Error()})
 		return
 	}
-	engine, err := h.factory.NewEngine()
+	engine, err := h.factory.NewEngine(runRequest.ExitConfigs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "error": err.Error()})
 		return
@@ -146,15 +146,43 @@ func (h *Handler) GetTrades(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"total": total, "items": trades}})
 }
 
-// GetSnapshots GET /api/v1/backtest/runs/:id/snapshots
+// snapshotItem 快照响应 DTO（格式化 snap_date）。
+type snapshotItem struct {
+	ID              uint64   `json:"id"`
+	RunID           uint64   `json:"run_id"`
+	SnapDate        string   `json:"snap_date"`
+	TotalEquity     float64  `json:"total_equity"`
+	Cash            float64  `json:"cash"`
+	MarketValue     float64  `json:"market_value"`
+	PositionCount   int      `json:"position_count"`
+	DailyReturn     *float64 `json:"daily_return"`
+	CumulativeReturn *float64 `json:"cumulative_return"`
+}
+
+// GetSnapshots GET /api/v1/backtest/runs/:id/snapshots?after_id=0
 func (h *Handler) GetSnapshots(c *gin.Context) {
 	runID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	snapshots, err := h.dao.GetSnapshotsByRun(runID)
+	afterID, _ := strconv.ParseUint(c.DefaultQuery("after_id", "0"), 10, 64)
+	snapshots, err := h.dao.GetSnapshotsByRun(runID, afterID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"snapshots": snapshots}})
+	items := make([]snapshotItem, len(snapshots))
+	for i, s := range snapshots {
+		items[i] = snapshotItem{
+			ID:              s.ID,
+			RunID:           s.RunID,
+			SnapDate:        s.SnapDate[:10],
+			TotalEquity:     s.TotalEquity,
+			Cash:            s.Cash,
+			MarketValue:     s.MarketValue,
+			PositionCount:   s.PositionCount,
+			DailyReturn:     s.DailyReturn,
+			CumulativeReturn: s.CumulativeReturn,
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"snapshots": items}})
 }
 
 // GetRuns GET /api/v1/strategies/:id/backtest/runs

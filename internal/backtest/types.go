@@ -41,7 +41,9 @@ type HoldingPosition struct {
 	EntryDate     string  // 入场日期 YYYY-MM-DD
 	HoldDays      int     // 持有天数
 	StopLossPrice float64 // 止损触发价（元）
-	HighestPrice  float64 // 入场后最高价（元）
+	HighestPrice  float64 // 入场后最高价（元，移动止盈用）
+	TrailActive   bool    // 移动止盈是否已激活
+	SegTriggered  int     // 分段止盈已触发层级数
 }
 
 // Account 资金账户，追踪现金和持仓。
