@@ -52,12 +52,18 @@ func IsTradingDayForDate(dateStr string) (bool, error) {
 }
 
 // IsTradingHours 判断当前时间是否在交易时段（9:30-11:30, 13:00-15:00）
+// 非交易日返回 false
 func IsTradingHours() bool {
 	if holidayProvider != nil {
 		return holidayProvider.IsTradingHours(time.Now())
 	}
-	// 降级模式：基础交易时段检查
-	totalMinutes := time.Now().Hour()*60 + time.Now().Minute()
+	// 降级模式：排除周末 + 基础交易时段检查
+	now := time.Now()
+	wd := now.Weekday()
+	if wd == time.Saturday || wd == time.Sunday {
+		return false
+	}
+	totalMinutes := now.Hour()*60 + now.Minute()
 	return (totalMinutes >= 9*60+30 && totalMinutes <= 11*60+30) ||
 		(totalMinutes >= 13*60 && totalMinutes <= 15*60)
 }

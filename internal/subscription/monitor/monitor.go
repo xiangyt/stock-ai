@@ -296,8 +296,8 @@ func (m *Monitor) processEvent(event model.QuoteEvent) {
 		return
 	}
 
-	// 非交易时间收到的行情事件直接丢弃
-	if !utils.IsTradingHours() {
+	// 非交易日或非交易时间收到的行情事件直接丢弃
+	if !utils.IsTradingDay() || !utils.IsTradingHours() {
 		return
 	}
 
