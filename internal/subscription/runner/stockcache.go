@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"stock-ai/internal/indicator"
-	stocksource "stock-ai/internal/indicator/stocksource"
+	"stock-ai/internal/backtest/indicator"
+	stocksource "stock-ai/internal/backtest/indicator/stocksource"
 	"stock-ai/internal/model"
 	"stock-ai/internal/subscription/quotecache"
 	"stock-ai/utils"

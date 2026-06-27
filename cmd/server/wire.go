@@ -13,7 +13,7 @@ import (
 	"stock-ai/internal/backtest"
 	"stock-ai/internal/config"
 	"stock-ai/internal/datacollect"
-	"stock-ai/internal/indicator"
+	"stock-ai/internal/backtest/indicator"
 	"stock-ai/internal/subscription/monitor"
 	"stock-ai/internal/notifier"
 	"stock-ai/internal/subscription/quotecache"
@@ -39,13 +39,32 @@ func provideQuoteSubscriber(cache quotecache.QuoteCache) quotecache.QuoteSubscri
 	return cache.Subscriber()
 }
 
-func provideEngine(reg *indicator.Registry) *indicator.Engine {
+func provideIndicatorEngine(reg *indicator.Registry) *indicator.Engine {
 	return reg.Engine()
+}
+
+func provideBacktestScreener(indicators []indicator.Indicator) backtest.Screener {
+	return backtest.NewScreener(indicators, 10)
+}
+
+func provideBacktestEngine(screener backtest.Screener) backtest.Engine {
+	engine, err := backtest.NewEngine(
+		backtest.WithScreener(screener),
+		backtest.WithFeeCalculator(backtest.NewAShareFeeCalculator(2.5, true)),
+	)
+	if err != nil {
+		panic(err)
+	}
+	return engine
 }
 
 func provideRouter(dcRunner *datacollect.DataCollectRunner, btHandler *backtest.Handler) *gin.Engine {
 	router.BacktestHandlerRef = btHandler
 	return router.SetupRouter(dcRunner)
+}
+
+func provideBacktestHandler(engine backtest.Engine) *backtest.Handler {
+	return backtest.NewHandler(engine)
 }
 
 // provideQuoteCacheConfig 构建 quotecache.Config。
@@ -151,9 +170,12 @@ func InitializeApp(cfg *config.Config) (*App, error) {
 	wire.Build(
 		provideRegistry,
 		provideQuoteSubscriber,
-		provideEngine,
+		provideIndicatorEngine,
 		provideRouter,
 		provideQuoteCacheConfig,
+		provideBacktestScreener,
+		provideBacktestEngine,
+		provideBacktestHandler,
 
 		// --- 行情缓存 ---
 		quotecache.New,
@@ -179,8 +201,6 @@ func InitializeApp(cfg *config.Config) (*App, error) {
 		datacollect.NewScheduler,
 
 		// --- 回测 ---
-		backtest.NewService,
-		backtest.NewHandler,
 
 		// --- 盯盘助手 ---
 		monitor.NewMonitor,

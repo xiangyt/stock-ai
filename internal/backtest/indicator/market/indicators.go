@@ -1,0 +1,15 @@
+package market
+
+import (
+	"stock-ai/internal/backtest/indicator"
+)
+
+// All 返回行情面指标实例
+func All() []indicator.Indicator {
+	return []indicator.Indicator{
+		NewVolume(),
+		NewAmount(),
+		NewVolumeRatio(),
+		NewChangePct(),
+	}
+}

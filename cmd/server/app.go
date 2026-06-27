@@ -5,7 +5,7 @@ import (
 	"stock-ai/internal/backtest"
 	"stock-ai/internal/config"
 	"stock-ai/internal/datacollect"
-	"stock-ai/internal/indicator"
+	"stock-ai/internal/backtest/indicator"
 	"stock-ai/internal/model"
 	"stock-ai/internal/subscription/monitor"
 	"stock-ai/internal/notifier"
@@ -57,7 +57,7 @@ type App struct {
 	DCScheduler datacollect.Scheduler
 
 	// 回测
-	BtService *backtest.Service
+	BtEngine backtest.Engine
 	BtHandler *backtest.Handler
 
 	// 盯盘助手

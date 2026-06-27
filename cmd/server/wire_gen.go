@@ -14,9 +14,9 @@ import (
 	"stock-ai/internal/api/handler"
 	"stock-ai/internal/api/router"
 	"stock-ai/internal/backtest"
+	"stock-ai/internal/backtest/indicator"
 	"stock-ai/internal/config"
 	"stock-ai/internal/datacollect"
-	"stock-ai/internal/indicator"
 	"stock-ai/internal/notifier"
 	"stock-ai/internal/subscription/monitor"
 	"stock-ai/internal/subscription/quotecache"
@@ -37,14 +37,15 @@ func InitializeApp(cfg *config.Config) (*App, error) {
 	v := provideQuoteSubscriber(quoteCache)
 	v2 := handler.AllBuiltins()
 	indicatorRegistry := indicator.NewRegistry(v2)
-	engine := provideEngine(indicatorRegistry)
+	engine := provideIndicatorEngine(indicatorRegistry)
 	notifierNotifier := notifier.NewNotifier()
 	subscriptionRunner := runner.NewSubscriptionRunner(stockSourceProvider, engine, notifierNotifier)
 	schedulerScheduler := scheduler.NewScheduler(subscriptionRunner)
 	dataCollectRunner := datacollect.NewDataCollectRunner(manager)
 	datacollectScheduler := datacollect.NewScheduler(dataCollectRunner)
-	service := backtest.NewService(engine)
-	backtestHandler := backtest.NewHandler(service)
+	screener := provideBacktestScreener(v2)
+	backtestEngine := provideBacktestEngine(screener)
+	backtestHandler := provideBacktestHandler(backtestEngine)
 	monitorMonitor := monitor.NewMonitor(v, notifierNotifier)
 	ginEngine := provideRouter(dataCollectRunner, backtestHandler)
 	app := &App{
@@ -61,7 +62,7 @@ func InitializeApp(cfg *config.Config) (*App, error) {
 		SubScheduler:     schedulerScheduler,
 		DCRunner:         dataCollectRunner,
 		DCScheduler:      datacollectScheduler,
-		BtService:        service,
+		BtEngine:         backtestEngine,
 		BtHandler:        backtestHandler,
 		Monitor:          monitorMonitor,
 		Router:           ginEngine,
@@ -80,13 +81,29 @@ func provideQuoteSubscriber(cache quotecache.QuoteCache) quotecache.QuoteSubscri
 	return cache.Subscriber()
 }
 
-func provideEngine(reg *indicator.Registry) *indicator.Engine {
+func provideIndicatorEngine(reg *indicator.Registry) *indicator.Engine {
 	return reg.Engine()
+}
+
+func provideBacktestScreener(indicators []indicator.Indicator) backtest.Screener {
+	return backtest.NewScreener(indicators, 10)
+}
+
+func provideBacktestEngine(screener backtest.Screener) backtest.Engine {
+	engine, err := backtest.NewEngine(backtest.WithScreener(screener), backtest.WithFeeCalculator(backtest.NewAShareFeeCalculator(2.5, true)))
+	if err != nil {
+		panic(err)
+	}
+	return engine
 }
 
 func provideRouter(dcRunner *datacollect.DataCollectRunner, btHandler *backtest.Handler) *gin.Engine {
 	router.BacktestHandlerRef = btHandler
 	return router.SetupRouter(dcRunner)
+}
+
+func provideBacktestHandler(engine backtest.Engine) *backtest.Handler {
+	return backtest.NewHandler(engine)
 }
 
 // provideQuoteCacheConfig 构建 quotecache.Config。

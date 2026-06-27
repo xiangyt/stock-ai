@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"stock-ai/internal/db"
-	"stock-ai/internal/indicator"
-	stocksource "stock-ai/internal/indicator/stocksource"
+	"stock-ai/internal/backtest/indicator"
+	stocksource "stock-ai/internal/backtest/indicator/stocksource"
 	"stock-ai/internal/model"
 	"stock-ai/utils"
 )

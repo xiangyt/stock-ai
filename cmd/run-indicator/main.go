@@ -13,7 +13,7 @@ import (
 	"stock-ai/internal/api/handler"
 	"stock-ai/internal/config"
 	"stock-ai/internal/db"
-	"stock-ai/internal/indicator"
+	"stock-ai/internal/backtest/indicator"
 	"stock-ai/internal/model"
 	"stock-ai/internal/service"
 

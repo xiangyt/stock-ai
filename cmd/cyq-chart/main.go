@@ -19,7 +19,7 @@ import (
 
 	"stock-ai/internal/config"
 	"stock-ai/internal/db"
-	"stock-ai/internal/indicator/technical"
+	"stock-ai/internal/backtest/indicator/technical"
 	"stock-ai/utils"
 )
 
