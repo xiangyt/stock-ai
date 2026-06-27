@@ -57,7 +57,7 @@ type App struct {
 	DCScheduler datacollect.Scheduler
 
 	// 回测
-	BtEngine backtest.Engine
+	BtFactory *backtest.EngineFactory
 	BtHandler *backtest.Handler
 
 	// 盯盘助手

@@ -59,7 +59,9 @@ func (e *defaultEngine) Initiate(ctx context.Context, req RunRequest) (uint64, e
 	if err != nil {
 		return 0, err
 	}
-	go e.runAsync(ctx, runID, req)
+	// 使用 Background context，避免 HTTP 请求结束后 ctx 被取消
+	// 导致异步 goroutine 中数据库写入失败（context canceled）。
+	go e.runAsync(context.Background(), runID, req)
 	return runID, nil
 }
 
@@ -122,6 +124,7 @@ func (e *defaultEngine) loadDay(
 		if err == nil && len(snaps) > 0 {
 			bars := make(map[string]bar, len(snaps))
 			for _, s := range snaps {
+				s.TradeDate = tradeDate
 				bars[s.Code] = bar{close: s.Price}
 			}
 			return snaps, bars
@@ -145,7 +148,7 @@ func (e *defaultEngine) loadDay(
 
 	snapshots := make([]*StockSnapshot, 0, len(bars))
 	for code, b := range bars {
-		snapshots = append(snapshots, &StockSnapshot{Code: code, Price: b.close})
+		snapshots = append(snapshots, &StockSnapshot{Code: code, Price: b.close, TradeDate: tradeDate})
 	}
 	return snapshots, bars
 }

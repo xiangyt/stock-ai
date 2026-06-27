@@ -44,8 +44,8 @@ func InitializeApp(cfg *config.Config) (*App, error) {
 	dataCollectRunner := datacollect.NewDataCollectRunner(manager)
 	datacollectScheduler := datacollect.NewScheduler(dataCollectRunner)
 	screener := provideBacktestScreener(v2)
-	backtestEngine := provideBacktestEngine(screener)
-	backtestHandler := provideBacktestHandler(backtestEngine)
+	engineFactory := provideBacktestEngineFactory(screener)
+	backtestHandler := provideBacktestHandler(engineFactory)
 	monitorMonitor := monitor.NewMonitor(v, notifierNotifier)
 	ginEngine := provideRouter(dataCollectRunner, backtestHandler)
 	app := &App{
@@ -62,7 +62,7 @@ func InitializeApp(cfg *config.Config) (*App, error) {
 		SubScheduler:     schedulerScheduler,
 		DCRunner:         dataCollectRunner,
 		DCScheduler:      datacollectScheduler,
-		BtEngine:         backtestEngine,
+		BtFactory:        engineFactory,
 		BtHandler:        backtestHandler,
 		Monitor:          monitorMonitor,
 		Router:           ginEngine,
@@ -89,12 +89,8 @@ func provideBacktestScreener(indicators []indicator.Indicator) backtest.Screener
 	return backtest.NewScreener(indicators, 10)
 }
 
-func provideBacktestEngine(screener backtest.Screener) backtest.Engine {
-	engine, err := backtest.NewEngine(backtest.WithScreener(screener), backtest.WithFeeCalculator(backtest.NewAShareFeeCalculator(2.5, true)))
-	if err != nil {
-		panic(err)
-	}
-	return engine
+func provideBacktestEngineFactory(screener backtest.Screener) *backtest.EngineFactory {
+	return backtest.NewEngineFactory(screener, backtest.NewAShareFeeCalculator(2.5, true))
 }
 
 func provideRouter(dcRunner *datacollect.DataCollectRunner, btHandler *backtest.Handler) *gin.Engine {
@@ -102,8 +98,8 @@ func provideRouter(dcRunner *datacollect.DataCollectRunner, btHandler *backtest.
 	return router.SetupRouter(dcRunner)
 }
 
-func provideBacktestHandler(engine backtest.Engine) *backtest.Handler {
-	return backtest.NewHandler(engine)
+func provideBacktestHandler(factory *backtest.EngineFactory) *backtest.Handler {
+	return backtest.NewHandler(factory)
 }
 
 // provideQuoteCacheConfig 构建 quotecache.Config。

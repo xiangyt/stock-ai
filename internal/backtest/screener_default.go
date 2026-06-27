@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"stock-ai/internal/backtest/indicator"
+	"stock-ai/internal/db"
 	"stock-ai/internal/model"
 )
 
@@ -73,16 +74,18 @@ func (s *defaultScreener) Screen(
 var _ indicator.StockSource = (*snapshotSource)(nil)
 
 type snapshotSource struct {
-	code    string
-	name    string
-	dailyKL []*model.DailyKline
+	code      string
+	name      string
+	tradeDate int                     // 交易日期 YYYYMMDD，用于懒加载历史 K 线
+	dailyKL   []*model.DailyKline    // 可选预填充（如 loadDay 已查 DB），nil 时懒加载
 }
 
 func newSnapshotSource(snap *StockSnapshot) *snapshotSource {
 	return &snapshotSource{
-		code:    snap.Code,
-		name:    snap.Name,
-		dailyKL: snap.KLine,
+		code:      snap.Code,
+		name:      snap.Name,
+		tradeDate: snap.TradeDate,
+		dailyKL:   snap.KLine,
 	}
 }
 
@@ -92,8 +95,16 @@ func (s *snapshotSource) GetCode() string { return s.code }
 // GetName 实现 StockSource，返回股票名称。
 func (s *snapshotSource) GetName() string { return s.name }
 
-// GetDailyKline 实现 TechnicalSource，返回内存中的日线数据。
-func (s *snapshotSource) GetDailyKline() ([]*model.DailyKline, error) { return s.dailyKL, nil }
+// GetDailyKline 实现 TechnicalSource。
+// 如果构造时已预填充 KLine 则直接返回，否则从 DB 懒加载最近 250 条。
+func (s *snapshotSource) GetDailyKline() ([]*model.DailyKline, error) {
+	if s.dailyKL != nil {
+		return s.dailyKL, nil
+	}
+	var err error
+	s.dailyKL, err = db.FindDailyKlines(s.code, s.tradeDate, 250)
+	return s.dailyKL, err
+}
 
 // GetWeeklyKline 实现 TechnicalSource（快照源不提供周线数据）。
 func (s *snapshotSource) GetWeeklyKline() ([]*model.WeeklyKline, error) { return nil, nil }

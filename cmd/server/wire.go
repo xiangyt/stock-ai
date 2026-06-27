@@ -47,15 +47,8 @@ func provideBacktestScreener(indicators []indicator.Indicator) backtest.Screener
 	return backtest.NewScreener(indicators, 10)
 }
 
-func provideBacktestEngine(screener backtest.Screener) backtest.Engine {
-	engine, err := backtest.NewEngine(
-		backtest.WithScreener(screener),
-		backtest.WithFeeCalculator(backtest.NewAShareFeeCalculator(2.5, true)),
-	)
-	if err != nil {
-		panic(err)
-	}
-	return engine
+func provideBacktestEngineFactory(screener backtest.Screener) *backtest.EngineFactory {
+	return backtest.NewEngineFactory(screener, backtest.NewAShareFeeCalculator(2.5, true))
 }
 
 func provideRouter(dcRunner *datacollect.DataCollectRunner, btHandler *backtest.Handler) *gin.Engine {
@@ -63,8 +56,8 @@ func provideRouter(dcRunner *datacollect.DataCollectRunner, btHandler *backtest.
 	return router.SetupRouter(dcRunner)
 }
 
-func provideBacktestHandler(engine backtest.Engine) *backtest.Handler {
-	return backtest.NewHandler(engine)
+func provideBacktestHandler(factory *backtest.EngineFactory) *backtest.Handler {
+	return backtest.NewHandler(factory)
 }
 
 // provideQuoteCacheConfig 构建 quotecache.Config。
@@ -174,7 +167,7 @@ func InitializeApp(cfg *config.Config) (*App, error) {
 		provideRouter,
 		provideQuoteCacheConfig,
 		provideBacktestScreener,
-		provideBacktestEngine,
+		provideBacktestEngineFactory,
 		provideBacktestHandler,
 
 		// --- 行情缓存 ---

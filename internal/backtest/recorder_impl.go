@@ -2,6 +2,7 @@ package backtest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -64,31 +65,46 @@ func (r *ConsoleTradeRecorder) UpdateProgress(
 }
 
 // DBTradeRecorder 数据库交易记录器。
+// runID 由 CreateRun 在首次创建回测记录时设置。
 type DBTradeRecorder struct{ runID uint64 }
 
-// NewDBTradeRecorder 创建 DB 记录器。
-func NewDBTradeRecorder(runID uint64) *DBTradeRecorder {
-	return &DBTradeRecorder{runID: runID}
+// NewDBTradeRecorder 创建 DB 记录器，runID 由 CreateRun 设置。
+func NewDBTradeRecorder() *DBTradeRecorder {
+	return &DBTradeRecorder{}
 }
 
 // RunID 返回当前 runID。
 func (r *DBTradeRecorder) RunID() uint64 { return r.runID }
 
-// CreateRun 创建 backtest_runs 记录。
+// CreateRun 创建 backtest_runs 记录并设置内部 runID。
 func (r *DBTradeRecorder) CreateRun(
 	ctx context.Context, req RunRequest,
 ) (uint64, error) {
 	now := time.Now()
-	run := struct {
-		StartDate, EndDate string
-		InitialCapital      float64
-		Status              string
-		CreatedAt, UpdatedAt time.Time
-	}{req.StartDate, req.EndDate, req.InitialCapital, "pending", now, now}
-	if err := db.GetDB().WithContext(ctx).Table("backtest_runs").Create(&run).Error; err != nil {
-		return 0, err
+
+	// 序列化 JSON 字段
+	stockPoolJSON, _ := json.Marshal(req.StockPool)
+	exitRulesJSON, _ := json.Marshal(req.ExitConfigs)
+	positionRulesJSON, _ := json.Marshal(req.PositionRules)
+
+	run := BacktestRun{
+		StrategyID:     req.StrategyID,
+		UID:            req.UID,
+		StockPool:      string(stockPoolJSON),
+		StartDate:      req.StartDate,
+		EndDate:        req.EndDate,
+		InitialCapital: req.InitialCapital,
+		ExitRules:      string(exitRulesJSON),
+		PositionRules:  string(positionRulesJSON),
+		Status:         string(StatusPending),
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
-	return 0, nil
+	if err := db.GetDB().WithContext(ctx).Create(&run).Error; err != nil {
+		return 0, fmt.Errorf("create backtest run: %w", err)
+	}
+	r.runID = run.ID
+	return run.ID, nil
 }
 
 // FailRun 标记回测失败。

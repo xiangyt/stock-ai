@@ -42,6 +42,8 @@ type Engine interface {
 
 // RunRequest 回测请求参数。
 type RunRequest struct {
+	StrategyID     uint64         `json:"strategy_id"`      // 策略ID（必填）
+	UID            uint64         `json:"uid"`              // 用户ID
 	StockPool      []string       `json:"stock_pool"`       // 股票池代码列表
 	StartDate      string         `json:"start_date"`       // 起始日期 YYYY-MM-DD
 	EndDate        string         `json:"end_date"`         // 结束日期 YYYY-MM-DD

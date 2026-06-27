@@ -17,7 +17,7 @@ func (e *defaultEngine) Run(ctx context.Context, req RunRequest) (*RunResult, er
 		return nil, fmt.Errorf("get trading days: %w", err)
 	}
 	if len(tradingDays) == 0 {
-		return nil, fmt.Errorf("no trading days in range")
+		return nil, fmt.Errorf("no trading days in range [%s, %s]", req.StartDate, req.EndDate)
 	}
 	req.Workload = len(tradingDays) * len(req.StockPool)
 
