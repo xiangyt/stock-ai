@@ -517,12 +517,13 @@ func GetLatestDailyClose(code string) (float64, error) {
 	return float64(k.Close) / 100.0, nil
 }
 
-// cachedLatestDate 最新交易日内存缓存，避免重复查询 daily_kline 全表。
-// 启动后首次调用 GetLatestDailyKlineDate 时填充。
+// cachedLatestDate 最新交易日内存缓存。
 var cachedLatestDate int
 
-// GetLatestDailyKlineDate 获取 daily_kline 表中最近的交易日期。
-// 使用 idx_trade_date 索引 + 内存缓存，首次查询后不再访问 DB。
+// InvalidateLatestDateCache 刷新最新交易日缓存（K线同步后调用）。
+func InvalidateLatestDateCache() { cachedLatestDate = 0 }
+
+// GetLatestDailyKlineDate 获取最新交易日（带缓存）。
 func GetLatestDailyKlineDate() (int, error) {
 	if cachedLatestDate > 0 {
 		return cachedLatestDate, nil
@@ -538,10 +539,7 @@ func GetLatestDailyKlineDate() (int, error) {
 }
 
 // FindNearestDailyKlineDate 查找 <= targetDate 的最近交易日。
-// 用于周末/节假日日期对齐到前一交易日。
-// 利用 idx_trade_date 索引做范围扫描，MAX(trade_date) 取最后一行。
 func FindNearestDailyKlineDate(targetDate int) (int, error) {
-	// 如果目标日期 >= 缓存的最新日期，直接返回缓存值（无需查 DB）
 	if cachedLatestDate > 0 && targetDate >= cachedLatestDate {
 		return cachedLatestDate, nil
 	}

@@ -100,6 +100,7 @@ func (s *SyncKLineService) InitAllStocks(ctx context.Context, periods []db.KLine
 	for _, p := range periods {
 		results = append(results, s.runBatch(ctx, p, SyncModeInit))
 	}
+	db.InvalidateLatestDateCache()
 	return results
 }
 
@@ -114,6 +115,7 @@ func (s *SyncKLineService) SyncDailyForAll(ctx context.Context, periods []db.KLi
 	for _, p := range periods {
 		results = append(results, s.runBatch(ctx, p, SyncModeDaily))
 	}
+	db.InvalidateLatestDateCache() // 同步后刷新缓存
 	return results
 }
 
