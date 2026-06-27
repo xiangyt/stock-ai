@@ -517,19 +517,34 @@ func GetLatestDailyClose(code string) (float64, error) {
 	return float64(k.Close) / 100.0, nil
 }
 
-// GetLatestDailyKlineDate 获取 daily_kline 表中最近的交易日期
-// 返回 YYYYMMDD 格式整数，若无记录返回 0
+// cachedLatestDate 最新交易日内存缓存，避免重复查询 daily_kline 全表。
+// 启动后首次调用 GetLatestDailyKlineDate 时填充。
+var cachedLatestDate int
+
+// GetLatestDailyKlineDate 获取 daily_kline 表中最近的交易日期。
+// 使用 idx_trade_date 索引 + 内存缓存，首次查询后不再访问 DB。
 func GetLatestDailyKlineDate() (int, error) {
+	if cachedLatestDate > 0 {
+		return cachedLatestDate, nil
+	}
 	var maxDate int
 	err := GetDB().Model(&model.DailyKline{}).
 		Select("MAX(trade_date)").
 		Scan(&maxDate).Error
+	if err == nil && maxDate > 0 {
+		cachedLatestDate = maxDate
+	}
 	return maxDate, err
 }
 
-// FindNearestDailyKlineDate 查找最接近 targetDate 且 <= targetDate 的最近一个交易日
-// 例如前端传入周末/节假日日期时，自动对齐到该日期之前最近的实际交易日
+// FindNearestDailyKlineDate 查找 <= targetDate 的最近交易日。
+// 用于周末/节假日日期对齐到前一交易日。
+// 利用 idx_trade_date 索引做范围扫描，MAX(trade_date) 取最后一行。
 func FindNearestDailyKlineDate(targetDate int) (int, error) {
+	// 如果目标日期 >= 缓存的最新日期，直接返回缓存值（无需查 DB）
+	if cachedLatestDate > 0 && targetDate >= cachedLatestDate {
+		return cachedLatestDate, nil
+	}
 	var nearestDate int
 	err := GetDB().Model(&model.DailyKline{}).
 		Select("MAX(trade_date)").
