@@ -9,9 +9,12 @@ import (
 // ============================================================================
 //  VolumeRatio — 量比 (数值型)
 //  ID: 02003 = CatCodeMarket("02") + IndVolumeRatioSeq("003")
-//  K 线顺序: 最新在前（DESC），klines[0] = 当日，klines[1:6] = 过去5日
-//  量比 = 当日成交量 / 近5日平均成交量
+//  K 线顺序: 最新在前（DESC），klines[0] = 当日
+//  量比(offset=0) = 当日成交量 / 近5日平均成交量（klines[1:6]）
+//  量比(offset=1) = 前一日成交量 / klines[2:6] 均值（前1天 vs 前6天~前2天均值）
 // ============================================================================
+
+const paramVolumeRatioOffset = "offset_days" // 偏移天数，默认 0
 
 type VolumeRatio struct {
 	indicator.BaseIndicator
@@ -30,7 +33,7 @@ func NewVolumeRatio() *VolumeRatio {
 			Seq:         IndVolumeRatioSeq,
 			NameStr:     "量比",
 			CategoryVal: indicator.CatMarket,
-			Desc:        "当日成交量与近5日均量的比值",
+			Desc:        "指定偏移日的成交量与过去5日均量的比值",
 			UnitStr:     "",
 		},
 	}
@@ -43,8 +46,22 @@ func NewVolumeRatio() *VolumeRatio {
 	})
 	v.SetBuiltInSignals(builtInSigs)
 
-	cs1 := indicator.NewBaseSignal("01", indicatorName, "量比是股市中衡量相对成交量的重要指标，主要用于反映当前盘口的成交力度与过去5个交易日的平均成交力度相比是放大还是缩小。", indicator.ValNumber, numberOps,
-		&indicator.SignalConfig{Operator: indicator.OpGT, Params: map[string]any{indicator.ParamKeyThreshold: 1.5}})
+	// 自定义信号：阈值比较操作符 + 偏移天数参数
+	customOps := append(numberOps, indicator.OperatorOption{
+		Operator: indicator.OpCustom,
+		Label:    "参数设置",
+		Params:   []indicator.ParamDef{signalutil.ParamNumber(paramVolumeRatioOffset, "偏移天数", 0, "天")},
+	})
+	cs1 := indicator.NewBaseSignal("01", indicatorName,
+		"指定偏移日的成交量与近5日均量的比值。偏移天数可调（默认0=当日）。",
+		indicator.ValNumber, customOps,
+		&indicator.SignalConfig{
+			Operator: indicator.OpGT,
+			Params: map[string]any{
+				indicator.ParamKeyThreshold: 1.5,
+				paramVolumeRatioOffset:      float64(0),
+			},
+		})
 	v.SetCustomSignals([]indicator.Signal{&volumeRatioSignal{BaseSignal: cs1}})
 	return v
 }
@@ -59,10 +76,13 @@ func (v *VolumeRatio) Evaluate(stock indicator.StockSource, configs []*indicator
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: configs[0].SignalID, Message: indicator.DataEmptyError("daily_kline").Error()}
 	}
 
-	// 量比 = 当日成交量 / 近5日平均成交量（不足5条则用已有条数）
-	value := v.getValue(klines)
-
 	for _, cfg := range configs {
+		offset := 0
+		if cfg.IsCustom() {
+			offset = int(cfg.GetFloat64(paramVolumeRatioOffset, 0))
+		}
+		value := v.getValue(klines, offset)
+
 		if s, ok := v.Signal[cfg.SignalID]; ok {
 			if ss, ok := s.(*volumeRatioSignal); ok {
 				if res := ss.Evaluate(value, cfg); res.Result == indicator.ResultPassed {
@@ -77,20 +97,22 @@ func (v *VolumeRatio) Evaluate(stock indicator.StockSource, configs []*indicator
 	return &indicator.EvaluatedStock{Result: indicator.ResultPassed}
 }
 
-func (v *VolumeRatio) getValue(klines []*model.DailyKline) float64 {
-	// 需要至少 6 条：klines[0] = 当日，klines[1]~klines[5] = 过去5日
-	if len(klines) < 6 {
+// getValue 计算量比：偏移 N 天的成交量 / 过去 5 日均量。
+// offset=0 时 klines[0] 为基准日，klines[1:N+6] 为分母；offset=1 则 klines[1] 为基准日。
+func (v *VolumeRatio) getValue(klines []*model.DailyKline, offset int) float64 {
+	need := 6 + offset
+	if len(klines) < need {
 		return 0
 	}
 
-	latestVol := float64(klines[0].Volume)
+	latestVol := float64(klines[offset].Volume)
 	if latestVol <= 0 {
 		return 0
 	}
 
-	// klines[1:6] 为过去5个交易日
+	// klines[offset+1 : offset+6] 为过去 5 个交易日
 	var sum int64
-	for i := 1; i <= 5; i++ {
+	for i := offset + 1; i < offset+6; i++ {
 		sum += klines[i].Volume
 	}
 	avgVol := float64(sum) / 5

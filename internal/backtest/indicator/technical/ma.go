@@ -75,9 +75,10 @@ func NewMa() *Ma {
 
 	// 内置信号：非交叉信号 + 交叉信号配置表循环生成
 	bareSigs := []indicator.Signal{
-		NewSignalMaBullish("01"),   // 多头排列
-		NewSignalMaBullish2("02"),  // 多头排列2
-		// 03~05 预留
+		NewSignalMaBullish("01"),   // 多头排列 (MA5/10/20/30/60)
+		NewSignalMaBullish2("02"),  // 多头排列2 (MA10/20/30/60)
+		NewSignalMaBullish3("03"),  // 多头排列3 (MA10/20/30)
+		// 04~05 预留
 		NewSignalMaSticky("06"),        // 均线粘合
 		NewSignalPriceAboveMA5("10"),   // 站上5日线
 		// 07~09, 11~14 预留
@@ -127,6 +128,12 @@ func (i *Ma) Evaluate(stock indicator.StockSource, config []*indicator.SignalCon
 				}
 			case *SignalMaBullish2:
 				if res := vv.Evaluate(lines, klines, v); res.Result == indicator.ResultPassed {
+					continue
+				} else {
+					return res
+				}
+			case *SignalMaBullish3:
+				if res := vv.Evaluate(lines, v); res.Result == indicator.ResultPassed {
 					continue
 				} else {
 					return res
@@ -383,6 +390,107 @@ func (s *SignalMaBullish2) Evaluate(lines MALines, klines []*model.DailyKline, c
 	}
 
 	// 2. 窗口内均线逐日不降：MA10/MA20/MA30
+	for i := end; i < start; i++ {
+		if floorMA(lines.MA10[i]) < floorMA(lines.MA10[i+1]) {
+			return &indicator.EvaluatedStock{
+				Result:   indicator.ResultRejected,
+				SignalID: config.SignalID,
+				Message:  fmt.Sprintf("%d天前MA10(%.2f) < %d天前MA10(%.2f)，下降", i, lines.MA10[i], i+1, lines.MA10[i+1]),
+			}
+		}
+		if floorMA(lines.MA20[i]) < floorMA(lines.MA20[i+1]) {
+			return &indicator.EvaluatedStock{
+				Result:   indicator.ResultRejected,
+				SignalID: config.SignalID,
+				Message:  fmt.Sprintf("%d天前MA20(%.2f) < %d天前MA20(%.2f)，下降", i, lines.MA20[i], i+1, lines.MA20[i+1]),
+			}
+		}
+		if floorMA(lines.MA30[i]) < floorMA(lines.MA30[i+1]) {
+			return &indicator.EvaluatedStock{
+				Result:   indicator.ResultRejected,
+				SignalID: config.SignalID,
+				Message:  fmt.Sprintf("%d天前MA30(%.2f) < %d天前MA30(%.2f)，下降", i, lines.MA30[i], i+1, lines.MA30[i+1]),
+			}
+		}
+	}
+
+	return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
+}
+
+// ============================================================================
+//  SignalMaBullish3 — 多头排列3（仅比较 MA10/20/30）
+//
+//  与多头排列2的区别：
+//    - 不关心 MA60，仅检查 MA10 >= MA20 >= MA30
+//    - 适用于中短线趋势判断
+// ============================================================================
+
+type SignalMaBullish3 struct {
+	indicator.BaseSignal
+}
+
+func NewSignalMaBullish3(seq string) *SignalMaBullish3 {
+	return &SignalMaBullish3{
+		BaseSignal: indicator.NewBaseSignal(
+			seq,
+			"多头排列3",
+			"窗口内每日MA10>=MA20>=MA30且均线逐日不降",
+			indicator.ValSeries,
+			[]indicator.OperatorOption{
+				{
+					Operator: indicator.OpCustom,
+					Label:    "参数设置",
+					Params: []indicator.ParamDef{
+						signalutil.ParamLookbackStart(20, "天前"),
+						signalutil.ParamLookbackEnd(0, "天前"),
+					},
+				},
+			},
+			&indicator.SignalConfig{
+				Operator: indicator.OpCustom,
+				Params: map[string]any{
+					indicator.ParamKeyLookbackStart: float64(20),
+					indicator.ParamKeyLookbackEnd:   float64(0),
+				},
+			},
+		),
+	}
+}
+
+func (s *SignalMaBullish3) Evaluate(lines MALines, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	if !config.IsCustom() {
+		config = s.DefaultConfig()
+	}
+
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 20))
+	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
+
+	if start < end {
+		start, end = end, start
+	}
+	if start >= maSeriesDays {
+		return &indicator.EvaluatedStock{
+			Result:   indicator.ResultRejected,
+			SignalID: config.SignalID,
+			Message:  fmt.Sprintf("参数越界：回看起点 %d 超出 MA 计算范围（最大 %d）", start, maSeriesDays-1),
+		}
+	}
+
+	// 每一天检查均线顺序：MA10 >= MA20 >= MA30
+	for i := end; i <= start; i++ {
+		f10 := floorMA(lines.MA10[i])
+		f20 := floorMA(lines.MA20[i])
+		f30 := floorMA(lines.MA30[i])
+		if !(f10 >= f20 && f20 >= f30) {
+			return &indicator.EvaluatedStock{
+				Result:   indicator.ResultRejected,
+				SignalID: config.SignalID,
+				Message:  fmt.Sprintf("%d天前均线顺序不满足: MA10=%.0f MA20=%.0f MA30=%.0f", i, f10, f20, f30),
+			}
+		}
+	}
+
+	// 窗口内均线逐日不降：MA10/MA20/MA30
 	for i := end; i < start; i++ {
 		if floorMA(lines.MA10[i]) < floorMA(lines.MA10[i+1]) {
 			return &indicator.EvaluatedStock{

@@ -288,20 +288,22 @@
 
       <!-- ========== 交易详情 ========== -->
       <div v-else-if="activeTab === 'trades'" class="tab-panel">
-        <div v-if="tradeData.length === 0" class="empty-state">
+        <div v-if="tradeData.length === 0 && !loadingMoreTrades" class="empty-state">
           <span class="empty-icon">📋</span>
           <p>暂无交易数据，请先运行回测</p>
         </div>
         <section v-else class="panel-section">
           <div class="panel-header">
-            <h3 class="section-title">交易详情 (共 {{ tradeTotal }} 条)</h3>
-            <div class="pager" v-if="tradeTotalPages > 1">
-              <button :disabled="tradePage <= 1" @click="loadTradePage(tradePage - 1)">‹</button>
-              <span>{{ tradePage }} / {{ tradeTotalPages }}</span>
-              <button :disabled="tradePage >= tradeTotalPages" @click="loadTradePage(tradePage + 1)">›</button>
+            <h3 class="section-title">交易详情 (共 {{ tradeTotal }} 条{{ tradeFilter !== 'all' ? `，筛选 ${filteredTradeData.length} 条` : '' }})</h3>
+            <div class="trade-filters">
+              <button :class="['btn-filter', { active: tradeFilter === 'all' }]" @click="tradeFilter = 'all'">全部</button>
+              <button :class="['btn-filter', { active: tradeFilter === 'buy' }]" @click="tradeFilter = 'buy'">买入</button>
+              <button :class="['btn-filter', { active: tradeFilter === 'sell' }]" @click="tradeFilter = 'sell'">卖出</button>
+              <button :class="['btn-filter', { active: tradeFilter === 'profit' }]" @click="tradeFilter = 'profit'">盈利</button>
+              <button :class="['btn-filter', { active: tradeFilter === 'loss' }]" @click="tradeFilter = 'loss'">亏损</button>
             </div>
           </div>
-          <div style="overflow-x: auto;">
+          <div style="max-height: 500px; overflow: auto;" @scroll="onTradeScroll">
             <table class="data-table">
               <thead>
                 <tr>
@@ -310,7 +312,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(t, i) in tradeData" :key="i" :class="{ buy: t.dir === '买入', sell: t.dir === '卖出' }">
+                <tr v-for="(t, i) in filteredTradeData" :key="i" :class="{ buy: t.dir === '买入', sell: t.dir === '卖出' }">
                   <td>{{ t.date }}</td>
                   <td>{{ t.stockName }}</td>
                   <td class="code-col" @mouseenter="showKLine($event, t.stockCode)" @mouseleave="hideKLine">
@@ -327,6 +329,8 @@
                 </tr>
               </tbody>
             </table>
+            <div v-if="loadingMoreTrades" class="load-more">加载中...</div>
+            <div v-else-if="hasMoreTrades" class="load-more">向下滚动加载更多</div>
           </div>
         </section>
       </div>
@@ -628,8 +632,8 @@ watch(activeTab, (tab, oldTab) => {
   if (!currentRunId.value) return
 
   if (tab === 'trades') {
-    tradePage.value = 1 // 切回第一页
-    loadTradePage(1)
+    tradeData.value = []; nextTradePage.value = 1; hasMoreTrades.value = false; tradeFilter.value = 'all'
+    loadTrades()
     if (isRunning.value) startDataPolling()
   } else if (tab === 'holdings') {
     rawSnapshots.value = []; snapshotData.value = []; lastSnapshotId = 0
@@ -647,7 +651,7 @@ function startDataPolling() {
     }
     // 只刷新当前活跃的页签数据（减少不必要的请求）
     if (activeTab.value === 'trades') {
-      await loadTradePage(tradePage.value).catch(() => {})
+      await loadTrades().catch(() => {})
     } else if (activeTab.value === 'holdings') {
       await loadSnapshots(currentRunId.value!, lastSnapshotId).catch(() => {})
     }
@@ -752,7 +756,7 @@ let lastSnapshotId = 0
 async function loadRunningResults(runId: number) {
   try {
     // 加载交易（第一页，展示最新产生的买卖记录）
-    await loadTradePage(1)
+    await loadTrades()
     // 加载快照（增量：仅拉取新记录，净值曲线逐步展示）
     await loadSnapshots(runId, lastSnapshotId)
   } catch (e) { /* 静默忽略中间加载失败 */ }
@@ -764,9 +768,20 @@ const statsData = ref<StatItem[]>([])
 
 interface TradeRow { date: string; stockName: string; stockCode: string; dir: string; price: string; qty: string; amount: string; fee: string; reason: string | null; pnl: string; pnlPct: string; pnlClass: string }
 const tradeData = ref<TradeRow[]>([])
-const tradePage = ref(1)
 const tradeTotal = ref(0)
-const tradeTotalPages = computed(() => Math.max(1, Math.ceil(tradeTotal.value / 20)))
+const nextTradePage = ref(1)
+const hasMoreTrades = ref(false)
+const loadingMoreTrades = ref(false)
+type TradeFilter = 'all' | 'buy' | 'sell' | 'profit' | 'loss'
+const tradeFilter = ref<TradeFilter>('all')
+const filteredTradeData = computed(() => {
+  if (tradeFilter.value === 'all') return tradeData.value
+  if (tradeFilter.value === 'buy') return tradeData.value.filter(t => t.dir === '买入')
+  if (tradeFilter.value === 'sell') return tradeData.value.filter(t => t.dir === '卖出')
+  if (tradeFilter.value === 'profit') return tradeData.value.filter(t => t.dir === '卖出' && t.pnlClass === 'pos')
+  if (tradeFilter.value === 'loss') return tradeData.value.filter(t => t.dir === '卖出' && t.pnlClass === 'neg')
+  return tradeData.value
+})
 
 const rawSnapshots = ref<strategyApi.DailySnapshot[]>([])
 const snapshotData = ref<{ date: string; strategy: number }[]>([])
@@ -774,7 +789,7 @@ const snapshotData = ref<{ date: string; strategy: number }[]>([])
 function clearResults() {
   stopDataPolling()
   statsData.value = []; tradeData.value = []; rawSnapshots.value = []; snapshotData.value = []
-  tradePage.value = 1; tradeTotal.value = 0; lastSnapshotId = 0
+  nextTradePage.value = 1; tradeTotal.value = 0; hasMoreTrades.value = false; lastSnapshotId = 0
   elapsedTime.value = ''; backtestLogs.value = []
 }
 
@@ -808,8 +823,8 @@ async function loadResults(runId: number) {
     addLog('info', `累计收益: ${run.total_return != null ? run.total_return.toFixed(2) + '%' : 'N/A'}，最大回撤: ${run.max_drawdown != null ? run.max_drawdown.toFixed(2) + '%' : 'N/A'}`)
 
     // 回测 100%：全量覆盖更新交易和持仓（非增量）
-    tradePage.value = 1
-    await loadTradePage(1)
+    tradeData.value = []; nextTradePage.value = 1; hasMoreTrades.value = false
+    await loadTrades()
     rawSnapshots.value = []; snapshotData.value = []; lastSnapshotId = 0
     await loadSnapshots(runId, 0)
   } catch (e: any) {
@@ -817,28 +832,61 @@ async function loadResults(runId: number) {
   }
 }
 
-async function loadTradePage(page: number) {
-  if (!currentRunId.value) return
+function mapTradeRow(t: strategyApi.BacktestTrade): TradeRow {
+  return {
+    date: t.trade_date,
+    stockName: t.stock_name || '',
+    stockCode: t.stock_code,
+    dir: t.trade_type === 1 ? '买入' : '卖出',
+    price: t.price.toFixed(2),
+    qty: String(t.quantity),
+    amount: t.amount.toLocaleString('zh-CN', { maximumFractionDigits: 0 }),
+    fee: t.trade_type === 2 ? `¥${(t.commission + t.stamp_tax).toFixed(2)}` : `¥${t.commission.toFixed(2)}`,
+    reason: t.exit_reason || null,
+    // 盈亏已包含手续费（后端 ProfitLoss = sellAmount - entryAmount - commission - stampTax）
+    pnl: t.profit_loss != null ? `${t.profit_loss >= 0 ? '+' : ''}¥${t.profit_loss.toFixed(0)}` : '—',
+    pnlPct: t.profit_loss_pct != null ? `${t.profit_loss_pct >= 0 ? '+' : ''}${t.profit_loss_pct.toFixed(2)}%` : '—',
+    pnlClass: t.profit_loss != null ? (t.profit_loss > 0 ? 'pos' : 'neg') : '',
+  }
+}
+
+/** 全量覆盖加载（首次或回测完成时） */
+async function loadTrades() {
+  if (!currentRunId.value || loadingMoreTrades.value) return
+  loadingMoreTrades.value = true
   try {
-    const res = await strategyApi.getBacktestTrades(currentRunId.value, page, 20)
-    tradeData.value = (res.items || []).map(t => ({
-      date: t.trade_date,
-      stockName: t.stock_name || '',
-      stockCode: t.stock_code,
-      dir: t.trade_type === 1 ? '买入' : '卖出',
-      price: t.price.toFixed(2),
-      qty: String(t.quantity),
-      amount: t.amount.toLocaleString('zh-CN', { maximumFractionDigits: 0 }),
-      fee: t.trade_type === 2 ? `¥${(t.commission + t.stamp_tax).toFixed(2)}` : `¥${t.commission.toFixed(2)}`,
-      reason: t.exit_reason || null,
-      // 盈亏已包含手续费（后端 ProfitLoss = sellAmount - entryAmount - commission - stampTax）
-      pnl: t.profit_loss != null ? `${t.profit_loss >= 0 ? '+' : ''}¥${t.profit_loss.toFixed(0)}` : '—',
-      pnlPct: t.profit_loss_pct != null ? `${t.profit_loss_pct >= 0 ? '+' : ''}${t.profit_loss_pct.toFixed(2)}%` : '—',
-      pnlClass: t.profit_loss != null ? (t.profit_loss > 0 ? 'pos' : 'neg') : '',
-    }))
-    tradePage.value = page
+    const res = await strategyApi.getBacktestTrades(currentRunId.value, 1, 20)
+    tradeData.value = (res.items || []).map(mapTradeRow)
+    nextTradePage.value = 2
     tradeTotal.value = res.total
+    hasMoreTrades.value = (nextTradePage.value - 1) * 20 < res.total
   } catch (e) { console.error('加载交易失败:', e) }
+  finally { loadingMoreTrades.value = false }
+}
+
+/** 增量追加（滚动加载更多） */
+async function loadMoreTrades() {
+  if (!currentRunId.value || loadingMoreTrades.value || !hasMoreTrades.value) return
+  loadingMoreTrades.value = true
+  try {
+    const res = await strategyApi.getBacktestTrades(currentRunId.value, nextTradePage.value, 20)
+    if (res.items?.length) {
+      tradeData.value.push(...res.items.map(mapTradeRow))
+      nextTradePage.value++
+      hasMoreTrades.value = (nextTradePage.value - 1) * 20 < tradeTotal.value
+    } else {
+      hasMoreTrades.value = false
+    }
+  } catch (e) { console.error('加载交易失败:', e) }
+  finally { loadingMoreTrades.value = false }
+}
+
+/** 滚动到底部时自动加载更多 */
+function onTradeScroll(e: Event) {
+  const el = e.target as HTMLElement
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 50) {
+    loadMoreTrades()
+  }
 }
 
 async function loadSnapshots(runId: number, afterId = 0) {
@@ -1090,6 +1138,18 @@ const areaPoints = computed(() => {
 .tab-content { min-height: 400px; }
 .tab-panel { animation: fade-in .15s ease-out; }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* ===== 交易筛选按钮 ===== */
+.trade-filters { display: flex; gap: 6px; }
+.btn-filter {
+  padding: 4px 12px; font-size: 12px; color: #666; background: #f5f5f5;
+  border: 1px solid #d9d9d9; border-radius: 4px; cursor: pointer; transition: .15s;
+}
+.btn-filter:hover { color: #1677ff; border-color: #1677ff; }
+.btn-filter.active { color: #fff; background: #1677ff; border-color: #1677ff; }
+
+/* ===== 加载更多 ===== */
+.load-more { text-align: center; padding: 12px; color: #999; font-size: 13px; }
 
 /* ===== 空状态 ===== */
 .empty-state { text-align: center; padding: 60px 20px; color: #999; }
