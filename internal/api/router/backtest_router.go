@@ -2,12 +2,16 @@ package router
 
 import (
 	"stock-ai/internal/backtest"
+	"stock-ai/internal/middleware"
+	"stock-ai/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
 // RegisterBacktestRoutes 注册回测路由
-func RegisterBacktestRoutes(rg *gin.RouterGroup, h *backtest.Handler) {
+func RegisterBacktestRoutes(rg *gin.RouterGroup, authSvc *service.AuthService, h *backtest.Handler) {
+	rg.Use(middleware.AuthRequired(authSvc))
+
 	// 策略回测
 	rg.POST("/strategies/:id/backtest", h.Initiate)
 	rg.GET("/strategies/:id/backtest/runs", h.GetRuns)
@@ -21,4 +25,7 @@ func RegisterBacktestRoutes(rg *gin.RouterGroup, h *backtest.Handler) {
 	// 回测管理
 	rg.POST("/backtest/runs/:id/stop", h.Stop)
 	rg.DELETE("/backtest/runs/:id", h.DeleteRun)
+
+	// 自选股
+	rg.POST("/backtest/batch/favorites", h.BatchAddToFavorites)
 }

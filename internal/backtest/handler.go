@@ -1,12 +1,16 @@
 package backtest
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"stock-ai/internal/adapter/eastmoney"
 	"stock-ai/internal/db"
 	"stock-ai/internal/model"
 
@@ -15,14 +19,20 @@ import (
 
 // Handler 回测 HTTP 处理器。
 type Handler struct {
-	factory *EngineFactory
-	dao     *DAO
+	factory   *EngineFactory
+	dao       *DAO
+	emAdapter *eastmoney.Adapter // 东财适配器（自选股 API，延迟注入）
 }
 
 // NewHandler 创建回测 Handler。
 // factory 每次 Initiate 调用时创建独立的 Engine，保证并发安全。
 func NewHandler(factory *EngineFactory) *Handler {
 	return &Handler{factory: factory, dao: NewDAO()}
+}
+
+// SetEMAdapter 设置东财适配器（由 main 注入）。
+func (h *Handler) SetEMAdapter(a *eastmoney.Adapter) {
+	h.emAdapter = a
 }
 
 // ============================================================================
@@ -145,6 +155,108 @@ func (h *Handler) Stop(c *gin.Context) {
 	}
 	CancelRun(runID)
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"status": "stopping"}})
+}
+
+// ============================================================================
+//  BatchAddToFavorites POST /api/v1/backtest/batch/favorites
+//  一键将选股结果加入东财自选分组
+// ============================================================================
+
+type batchAddFavoritesReq struct {
+	StrategyID uint64   `json:"strategy_id" binding:"required"` // 策略 ID
+	Date       string   `json:"date" binding:"required"`        // 日期 YYYYMMDD
+	StockCodes []string `json:"stock_codes" binding:"required"` // 股票代码列表
+}
+
+func (h *Handler) BatchAddToFavorites(c *gin.Context) {
+	if h.emAdapter == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "error": "东财适配器未初始化"})
+		return
+	}
+
+	var req batchAddFavoritesReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "error": err.Error()})
+		return
+	}
+
+	// 从 session 获取当前用户 ID
+	userID := c.GetUint("user_id")
+	if userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "error": "未登录"})
+		return
+	}
+
+	// 从 user_software_configs 获取东财 Cookie
+	cookie, err := getUserCookie(uint(userID), eastmoney.AdapterName)
+	if err != nil || cookie == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "error": "未配置东财 Cookie，请在个人主页中配置后再试"})
+		return
+	}
+
+	// 组合名: 策略{id}选{YYYYMMDD}（如 "策略13选20260628"）
+	groupName := fmt.Sprintf("策略%d选%s", req.StrategyID, req.Date)
+
+	ctx := c.Request.Context()
+	adapter := h.emAdapter
+
+	// 1. 查找现有分组，同名直接复用
+	gid, err := findOrCreateGroup(ctx, adapter, cookie, groupName)
+	if err != nil {
+		log.Printf("[Favor] findOrCreateGroup failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "error": fmt.Sprintf("创建/查找分组失败: %v", err)})
+		return
+	}
+
+	// 2. 逐只添加股票，失败跳过
+	var failed []string
+	for _, code := range req.StockCodes {
+		if err := adapter.AddToGroup(ctx, cookie, gid, code); err != nil {
+			log.Printf("[Favor] 添加 %s 到分组 %s 失败: %v", code, gid, err)
+			failed = append(failed, code)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"gid":    gid,
+			"gname":  groupName,
+			"total":  len(req.StockCodes),
+			"failed": failed,
+		},
+	})
+}
+
+// getUserCookie 从 user_software_configs 获取指定用户、指定软件的 Cookie。
+func getUserCookie(userID uint, softwareName string) (string, error) {
+	var cfg model.UserSoftwareConfig
+	if err := db.GetDB().Where("user_id = ? AND software_name = ? AND enabled = ?",
+		userID, softwareName, true).First(&cfg).Error; err != nil {
+		return "", err
+	}
+	return cfg.Cookie, nil
+}
+
+// findOrCreateGroup 查找同名分组，不存在则新建。返回 gid。
+func findOrCreateGroup(ctx context.Context, adapter *eastmoney.Adapter, cookie, groupName string) (string, error) {
+	groups, err := adapter.ListGroups(ctx, cookie)
+	if err != nil {
+		return "", fmt.Errorf("获取分组列表失败: %w", err)
+	}
+
+	trimmedName := strings.TrimSpace(groupName)
+	for _, g := range groups {
+		if strings.TrimSpace(g.GName) == trimmedName {
+			return g.GID, nil
+		}
+	}
+
+	result, err := adapter.CreateGroup(ctx, cookie, trimmedName)
+	if err != nil {
+		return "", fmt.Errorf("创建分组失败: %w", err)
+	}
+	return result.GID, nil
 }
 
 // GetTrades GET /api/v1/backtest/runs/:id/trades

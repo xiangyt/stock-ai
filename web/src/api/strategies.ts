@@ -313,3 +313,24 @@ export async function getBacktestRuns(strategyId: number, limit = 20): Promise<B
 export async function deleteBacktestRun(runId: number): Promise<void> {
   await request<void>(`${BACKTEST_BASE}/backtest/runs/${runId}`, { method: 'DELETE' })
 }
+
+// ========== 加入自选 ==========
+
+export interface BatchAddFavoritesResp {
+  gid: string
+  gname: string
+  total: number
+  failed: string[]
+}
+
+/** 一键加入东财自选分组 */
+export async function batchAddToFavorites(data: {
+  strategy_id: number
+  date: string       // YYYYMMDD
+  stock_codes: string[]
+}): Promise<BatchAddFavoritesResp> {
+  return request<BatchAddFavoritesResp>(`${BACKTEST_BASE}/backtest/batch/favorites`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}

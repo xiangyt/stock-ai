@@ -5,7 +5,8 @@
       <p>编辑你的账户信息</p>
     </header>
 
-    <div class="profile-card">
+    <div class="profile-cards">
+      <div class="profile-card">
       <!-- 基本信息 -->
       <section class="form-section">
         <h3>基本信息</h3>
@@ -55,18 +56,23 @@
       <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
       <p v-if="successMsg" class="success-msg">{{ successMsg }}</p>
     </div>
+
+    <!-- 软件配置：独立卡片 -->
+    <SoftwareConfigCard class="software-config-card" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import * as authApi from '../api/auth'
+import SoftwareConfigCard from './SoftwareConfigCard.vue'
 
 const props = defineProps<{
   currentUser?: { id: number; username: string; nickname: string; avatar: string; role: string } | null
 }>()
 
-const emit = defineEmits<{ saved: []; goBack: [] }>()
+const emit = defineEmits<{ saved: [user: { id: number; username: string; nickname: string; avatar: string; role: string }]; goBack: [] }>()
 
 const nickname = ref('')
 const avatar = ref('')
@@ -131,9 +137,27 @@ async function onSave() {
 
 <style scoped>
 .profile-page {}
-.profile-card {
-  max-width: 560px; background: #fff; border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.04); padding: 32px;
+
+.profile-cards {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.profile-card,
+.software-config-card {
+  flex: 1 1 420px;
+  min-width: 320px;
+  max-width: 560px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.04);
+  padding: 32px;
+}
+
+.software-config-card {
+  margin-top: 0;
 }
 
 .form-section { margin-bottom: 28px; }

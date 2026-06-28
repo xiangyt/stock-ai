@@ -62,6 +62,9 @@ func (a *Adapter) Name() string        { return AdapterName }
 func (a *Adapter) DisplayName() string { return "东方财富" }
 func (a *Adapter) Type() string        { return "web_crawl" }
 
+// GetCurrentCookie 返回当前使用的 Cookie 字符串（用于自选股等需要登录态的 API）。
+func (a *Adapter) GetCurrentCookie() string { return a.currentCookie }
+
 func (a *Adapter) Init(config map[string]interface{}) error {
 	a.config = config
 	// 从配置读取固定cookie（优先级最高）

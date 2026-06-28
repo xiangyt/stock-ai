@@ -21,6 +21,7 @@ import (
 	"stock-ai/internal/datacollect"
 	"stock-ai/internal/db"
 	"stock-ai/internal/holiday"
+	"stock-ai/internal/service"
 	"stock-ai/internal/subscription/monitor"
 subsched "stock-ai/internal/subscription/scheduler"
 )
@@ -69,6 +70,7 @@ func main() {
 	//  5. 注册数据源适配器（动态流程，wire 无法处理）
 	// ====================================================================
 	registry := adapter.GetRegistry()
+	var emAdapter *eastmoney.Adapter
 	for _, dsCfg := range cfg.DataSources {
 		if !dsCfg.Enabled {
 			log.Printf("跳过未启用的数据源: %s", dsCfg.Name)
@@ -79,6 +81,7 @@ func main() {
 		switch dsCfg.Provider {
 		case eastmoney.AdapterName:
 			ds = eastmoney.New()
+			emAdapter = ds.(*eastmoney.Adapter)
 			initConfig := map[string]interface{}{
 				"cookie": dsCfg.Cookie,
 			}
@@ -127,11 +130,26 @@ func main() {
 	log.Printf("已注册数据源: %v", registry.Names())
 
 	// ====================================================================
+	//  5.5 应用 admin 用户在个人主页保存的软件配置（覆盖配置文件中的 cookie）
+	// ====================================================================
+	softConfigSvc := service.NewSoftwareConfigService()
+	if err := softConfigSvc.LoadAndApplyAdminConfigs(); err != nil {
+		log.Printf("⚠️ 应用 admin 软件配置失败: %v", err)
+	} else {
+		log.Println("✅ admin 软件配置已应用")
+	}
+
+	// ====================================================================
 	//  6. Wire: 构建完整组件图
 	// ====================================================================
 	app, err := InitializeApp(cfg)
 	if err != nil {
 		log.Fatalf("初始化组件失败: %v", err)
+	}
+
+	// 注入东财适配器到回测 Handler（用于自选股一键加入等）
+	if emAdapter != nil {
+		app.BtHandler.SetEMAdapter(emAdapter)
 	}
 
 	// ====================================================================

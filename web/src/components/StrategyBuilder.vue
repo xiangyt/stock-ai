@@ -404,7 +404,9 @@
       </div>
 
       <div class="results-toolbar">
-        <button class="tb-tool">＋ 加自选</button>
+        <button class="btn-batch-fav" @click="batchAddFavorites" :disabled="isAddingFav || !filteredData.length">
+          {{ isAddingFav ? '⏳ 添加中...' : '＋ 一键加入自选' }}
+        </button>
         <select class="tb-select"><option>相关</option><option>涨跌</option><option>市值</option></select>
         <div class="tb-sort-tabs">
           <button class="st active">相关</button>
@@ -542,6 +544,9 @@
   <Teleport to="body">
     <transition name="toast-slide">
       <div v-if="saveSuccessMsg" class="save-toast">{{ saveSuccessMsg }}</div>
+    </transition>
+    <transition name="toast-slide">
+      <div v-if="favToastMsg" :class="['save-toast', favToastOk ? 'fav-toast-ok' : 'fav-toast-err']">{{ favToastMsg }}</div>
     </transition>
   </Teleport>
 </template>
@@ -1463,6 +1468,17 @@ async function doImport(rawSignals: any[]) {
 }
 // ========== 筛选执行 ==========
 const isScreening = ref(false)
+const isAddingFav = ref(false)
+const favToastMsg = ref('')
+const favToastOk = ref(true)
+let favToastTimer: ReturnType<typeof setTimeout> | null = null
+
+function showFavToast(msg: string, ok = true) {
+  favToastMsg.value = msg
+  favToastOk.value = ok
+  if (favToastTimer) clearTimeout(favToastTimer)
+  favToastTimer = setTimeout(() => { favToastMsg.value = '' }, 3500)
+}
 const screenResult = ref<{ passed: any[]; rejected: any[]; total: number } | null>(null)
 const screenError = ref('')
 
@@ -1633,6 +1649,38 @@ async function runFilter() {
     screenError.value = e.message || '筛选执行失败'
   } finally {
     isScreening.value = false
+  }
+}
+
+// ========== 一键加入自选 ==========
+async function batchAddFavorites() {
+  if (!editingId.value) { showFavToast('请先保存策略', false); return }
+  if (!screenResult.value?.passed.length) { showFavToast('请先运行筛选', false); return }
+
+  const codes = filteredData.value.map((s: any) => s.code)
+  const dateStr = runDate.value.replace(/-/g, '') // YYYY-MM-DD → YYYYMMDD
+
+  isAddingFav.value = true
+  try {
+    const resp = await strategyApi.batchAddToFavorites({
+      strategy_id: editingId.value,
+      date: dateStr,
+      stock_codes: codes,
+    })
+
+    if (resp.failed && resp.failed.length > 0) {
+      // 将失败 code 转为简称
+      const nameMap = new Map(screenResult.value.passed.map((s: any) => [s.code, s.name]))
+      const failedNames = resp.failed.map(c => `${c}(${nameMap.get(c) || '?'})`)
+      showFavToast(`已添加 ${resp.total - resp.failed.length}/${resp.total} 只到「${resp.gname}」，失败: ${failedNames.join(', ')}`, false)
+    } else {
+      showFavToast(`✅ 成功添加 ${resp.total} 只到「${resp.gname}」`)
+    }
+  } catch (e: any) {
+    console.error('加入自选失败:', e)
+    showFavToast('加入自选失败: ' + (e.message || '未知错误'), false)
+  } finally {
+    isAddingFav.value = false
   }
 }
 
@@ -2150,6 +2198,16 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
   position: absolute; right: 8px; pointer-events: none;
   font-size: 12.5px; color: #aaa; user-select: none;
 }
+.btn-batch-fav {
+  flex-shrink: 0; padding: 4px 14px;
+  border: 1px solid #d9d9d9; border-radius: 4px;
+  background: #fff; color: #1677ff; font-size: 12.5px;
+  cursor: pointer; transition: all .15s; white-space: nowrap;
+}
+.btn-batch-fav:hover:not(:disabled) { border-color: #1677ff; background: #f0f7ff; }
+.btn-batch-fav:disabled { opacity: .45; cursor: not-allowed; }
+.fav-toast-ok { background: #f6ffed; color: #389e0d; }
+.fav-toast-err { background: #fff1f0; color: #cf1322; }
 .tb-extra { font-size: 11.5px; color: #aaa; margin-left: 8px; }
 
 .results-table-wrap { flex: 1; overflow: auto; }

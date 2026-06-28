@@ -39,6 +39,7 @@
       <table class="strategy-table">
         <thead>
           <tr>
+            <th class="col-id">ID</th>
             <th class="col-name">策略名称</th>
             <th class="col-backtest">订阅数量</th>
             <th class="col-last-run">最后运行时间</th>
@@ -52,6 +53,7 @@
             v-for="s in displayStrategies"
             :key="s.id"
           >
+            <td class="col-id">{{ s.id }}</td>
             <td class="col-name">
               <div class="name-cell">
                 <template v-if="editingId === s.id">
@@ -476,6 +478,7 @@ function getCategoryLabel(s: SavedStrategy): string {
 .strategy-table tbody td { padding: 10px 14px; vertical-align: middle; color: #333; font-size: 13.5px; text-align: center; }
 
 /* 列宽分配 */
+.col-id { width: 50px; font-family: 'SF Mono', Monaco, monospace; font-size: 12.5px; color: #999; }
 .col-name { text-align: left !important; width: 25%; }
 .strategy-table th.col-name { text-align: left; }
 .col-backtest { width: 80px; }

@@ -76,7 +76,7 @@ func SetupRouter(runner *datacollect.DataCollectRunner) *gin.Engine {
 
 		// 回测路由（通过 BacktestHandlerRef 注入）
 		if BacktestHandlerRef != nil {
-			RegisterBacktestRoutes(apiV1, BacktestHandlerRef)
+			RegisterBacktestRoutes(apiV1, authSvc, BacktestHandlerRef)
 		}
 	}
 
