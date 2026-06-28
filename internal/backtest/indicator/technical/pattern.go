@@ -72,7 +72,7 @@ func NewSignal513() *Signal513 {
 		BaseSignal: indicator.NewBaseSignal(
 			"01",
 			"513战法",
-			"513战法",
+			"5连阳后放量异动阳线，随后缩量横盘不破异动阳线开盘价",
 			indicator.ValNumber,
 			[]indicator.OperatorOption{},
 			nil,

@@ -125,12 +125,26 @@ func (h *Handler) GetRunStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "error": "invalid run id"})
 		return
 	}
+	// 记录前端活跃时间（用于断连检测）
+	CheckInRun(runID)
+
 	run, err := h.dao.GetRun(runID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"code": 404, "error": "run not found"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"status": run.Status, "progress_pct": run.ProgressPct}})
+}
+
+// Stop POST /api/v1/backtest/runs/:id/stop
+func (h *Handler) Stop(c *gin.Context) {
+	runID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "error": "invalid run id"})
+		return
+	}
+	CancelRun(runID)
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"status": "stopping"}})
 }
 
 // GetTrades GET /api/v1/backtest/runs/:id/trades

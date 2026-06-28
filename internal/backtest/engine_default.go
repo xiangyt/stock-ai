@@ -59,10 +59,23 @@ func (e *defaultEngine) Initiate(ctx context.Context, req RunRequest) (uint64, e
 	if err != nil {
 		return 0, err
 	}
-	// 使用 Background context，避免 HTTP 请求结束后 ctx 被取消
-	// 导致异步 goroutine 中数据库写入失败（context canceled）。
-	go e.runAsync(context.Background(), runID, req)
+
+	// 创建可取消的 context，用于手动停止和断连检测
+	runCtx, cancel := context.WithCancel(context.Background())
+	RegisterRun(runID, cancel)
+
+	go e.runAsync(runCtx, runID, req)
 	return runID, nil
+}
+
+// Cancel 实现 Engine，取消正在运行的回测。
+func (e *defaultEngine) Cancel(runID uint64) {
+	CancelRun(runID)
+}
+
+// CheckIn 实现 Engine，记录前端活跃时间。
+func (e *defaultEngine) CheckIn(runID uint64) {
+	CheckInRun(runID)
 }
 
 // ============================================================================

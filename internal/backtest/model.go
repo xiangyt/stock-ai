@@ -95,6 +95,7 @@ const (
 	StatusRunning RunStatus = "running"
 	StatusDone    RunStatus = "done"
 	StatusFailed  RunStatus = "failed"
+	StatusStopped RunStatus = "stopped" // 手动或前端断连停止
 )
 
 // BacktestRun 回测运行记录

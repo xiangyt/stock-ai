@@ -2,10 +2,26 @@ package backtest
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"stock-ai/utils"
 )
+
+// runIDCtxKey 是传递 runID 到 Run 方法的 context key。
+type runIDCtxKey struct{}
+
+// WithRunID 将 runID 注入 context，供 Run 方法内断连检测使用。
+func WithRunID(ctx context.Context, runID uint64) context.Context {
+	return context.WithValue(ctx, runIDCtxKey{}, runID)
+}
+
+// runIDFromCtx 从 context 提取 runID。
+func runIDFromCtx(ctx context.Context) (uint64, bool) {
+	id, ok := ctx.Value(runIDCtxKey{}).(uint64)
+	return id, ok
+}
 
 // ============================================================================
 //  Run — 同步执行完整回测
@@ -33,7 +49,26 @@ func (e *defaultEngine) Run(ctx context.Context, req RunRequest) (*RunResult, er
 	total := len(tradingDays)
 	prevEquity := req.InitialCapital
 	for i, date := range tradingDays {
-		prevEquity = e.processDay(ctx, rc, date, req, prevEquity)
+		// 检查手动停止
+		select {
+		case <-ctx.Done():
+			return nil, context.Canceled
+		default:
+		}
+		// 每日完成后检查前端活跃度（第一日跳过，给前端首次轮询留时间）
+		if i > 0 {
+			if rid, ok := runIDFromCtx(ctx); ok {
+				if time.Since(LastActivity(rid)) > frontendActivityTimeout {
+					CancelRun(rid)
+					return nil, context.Canceled
+				}
+			}
+		}
+		var err error
+		prevEquity, err = e.processDay(ctx, rc, date, req, prevEquity)
+		if err != nil {
+			return nil, err
+		}
 		pct := (i + 1) * 100 / total
 		e.updateProgress(ctx, 0, pct)
 	}
@@ -51,17 +86,40 @@ func (e *defaultEngine) Run(ctx context.Context, req RunRequest) (*RunResult, er
 // ============================================================================
 
 // processDay 处理单个交易日，返回当日权益。
+// 注意：内部在耗时步骤间检查 ctx 是否已取消，以支持快速停止。
 func (e *defaultEngine) processDay(
 	ctx context.Context, rc *runContext, date string,
 	req RunRequest, prevEquity float64,
-) float64 {
+) (float64, error) {
+	// 快速检查：是否已请求停止
+	select {
+	case <-ctx.Done():
+		return prevEquity, ctx.Err()
+	default:
+	}
+
 	acct := e.positionManager.Account()
 
 	snapshots, bars := e.loadDay(ctx, date, req.StockPool, acct.Holdings)
+
+	// 加载行情后再次检查
+	select {
+	case <-ctx.Done():
+		return prevEquity, ctx.Err()
+	default:
+	}
+
 	e.checkExits(rc, bars, date)
 
 	if len(snapshots) > 0 && len(req.EntryConfigs) > 0 {
 		e.checkEntries(ctx, rc, snapshots, bars, req.EntryConfigs, date)
+	}
+
+	// 选股后再次检查
+	select {
+	case <-ctx.Done():
+		return prevEquity, ctx.Err()
+	default:
 	}
 
 	prices := barPrices(bars)
@@ -69,7 +127,7 @@ func (e *defaultEngine) processDay(
 	totalEquity := acct.Cash + marketValue
 
 	e.recordDay(rc, acct, date, totalEquity, marketValue, prevEquity, req.InitialCapital)
-	return totalEquity
+	return totalEquity, nil
 }
 
 // recordDay 记录当日快照。
@@ -336,18 +394,28 @@ func (e *defaultEngine) forceClose(rc *runContext, lastDate string, pool []strin
 
 // runAsync 异步执行回测（goroutine 内），含 panic 恢复。
 func (e *defaultEngine) runAsync(ctx context.Context, runID uint64, req RunRequest) {
+	defer CleanupRun(runID)
+
+	// 取消/panic 后需用独立 ctx 写 DB（原 ctx 可能已取消）
+	dbCtx := context.Background()
+
 	defer func() {
 		if r := recover(); r != nil {
 			if rec, ok := e.tradeRecorder.(*DBTradeRecorder); ok {
-				rec.FailRun(ctx, runID, fmt.Sprintf("panic: %v", r))
+				rec.FailRun(dbCtx, runID, fmt.Sprintf("panic: %v", r))
 			}
 		}
 	}()
 
-	result, err := e.Run(ctx, req)
+	result, err := e.Run(WithRunID(ctx, runID), req)
 	if err != nil {
 		if rec, ok := e.tradeRecorder.(*DBTradeRecorder); ok {
-			rec.FailRun(ctx, runID, err.Error())
+			// ctx 取消 → 手动/断连停止；其他 → 失败
+			if errors.Is(err, context.Canceled) {
+				rec.StopRun(dbCtx, runID, "回测已停止")
+			} else {
+				rec.FailRun(dbCtx, runID, err.Error())
+			}
 		}
 		return
 	}
@@ -355,6 +423,6 @@ func (e *defaultEngine) runAsync(ctx context.Context, runID uint64, req RunReque
 	// 持久化最终指标到 DB
 	_ = result
 	if e.tradeRecorder != nil {
-		e.tradeRecorder.RecordMetrics(ctx, runID, *result)
+		e.tradeRecorder.RecordMetrics(dbCtx, runID, *result)
 	}
 }

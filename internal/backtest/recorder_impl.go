@@ -116,6 +116,15 @@ func (r *DBTradeRecorder) FailRun(ctx context.Context, runID uint64, msg string)
 		Where("id = ?", runID).Updates(updates)
 }
 
+// StopRun 标记回测已停止（手动或断连）。
+func (r *DBTradeRecorder) StopRun(ctx context.Context, runID uint64, msg string) {
+	updates := map[string]any{
+		"status": "stopped", "error_message": msg, "updated_at": time.Now(),
+	}
+	db.GetDB().WithContext(ctx).Table("backtest_runs").
+		Where("id = ?", runID).Updates(updates)
+}
+
 // RecordTrade 写入 backtest_trades 表，并更新 run 的 trade_count。
 func (r *DBTradeRecorder) RecordTrade(
 	ctx context.Context, _ uint64, trade Trade,

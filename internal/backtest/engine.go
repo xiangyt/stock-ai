@@ -34,6 +34,13 @@ type Engine interface {
 
 	// Run 同步执行完整回测（供测试和命令行使用）。
 	Run(ctx context.Context, req RunRequest) (*RunResult, error)
+
+	// Cancel 取消正在运行的回测。
+	// runID 不存在或已结束则静默返回。
+	Cancel(runID uint64)
+
+	// CheckIn 记录前端最近一次拉取进度的时间，用于断连检测。
+	CheckIn(runID uint64)
 }
 
 // ============================================================================

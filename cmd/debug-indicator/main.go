@@ -4,19 +4,15 @@
 //
 //	go run ./cmd/debug-indicator/
 //
-// 修改 signalIDs 和 stockCode 后重新运行。
+// 修改 signalIDs、stockCode、tradeDate 后重新运行。
+// 所有数据从 DB 加载，K 线按 tradeDate 截断（模拟该日收市后视角）。
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
-	"strconv"
-	"strings"
 
-	"stock-ai/internal/adapter"
-	"stock-ai/internal/adapter/eastmoney"
 	"stock-ai/internal/config"
 	"stock-ai/internal/db"
 	"stock-ai/internal/backtest/indicator"
@@ -60,9 +56,6 @@ var maxConcurrency = 1
 // klineLoadLimit K线加载条数，0 由 DAO 兜底为 250，设大值取全量
 const klineLoadLimit = 100000
 
-// emAdapter 东方财富数据源（日K从东财API获取，不复用DB）
-var emAdapter *eastmoney.Adapter
-
 func main() {
 	// 初始化：加载配置 + 连接数据库 + 注册全部指标
 	reg, err := initAll(configPath)
@@ -85,8 +78,8 @@ func main() {
 	}
 	fmt.Println("==============================\n")
 
-	// 构造全量数据源（日K从东财获取，其他从DB）
-	src := newEagerSource(stockCode, date, emAdapter)
+	// 构造数据源（全部从 DB 加载，日K 按 tradeDate 截断）
+	src := newEagerSource(stockCode, date)
 	src.printLoadReport()
 	fmt.Println()
 
@@ -146,7 +139,7 @@ type eagerSource struct {
 	shareChangeStatus loadStatus
 }
 
-func newEagerSource(code string, tradeDate int, adapter *eastmoney.Adapter) *eagerSource {
+func newEagerSource(code string, tradeDate int) *eagerSource {
 	s := &eagerSource{code: code, tradeDate: tradeDate}
 
 	// 1. 股票基本信息
@@ -158,8 +151,8 @@ func newEagerSource(code string, tradeDate int, adapter *eastmoney.Adapter) *eag
 		s.name = detail.Name
 	}
 
-	// 2. K 线 — 日K从东财API获取，周/月/年从DB
-	s.dailyKlines, s.dailyStatus = loadDailyKlinesFromEastMoney(adapter, code)
+	// 2. K 线 — 全部从 DB 加载，按 tradeDate 截断
+	s.dailyKlines, s.dailyStatus = loadDailyKlines(code, tradeDate)
 	s.weeklyKlines, s.weeklyStatus = loadWeeklyKlines(code, tradeDate)
 	s.monthlyKlines, s.monthlyStatus = loadMonthlyKlines(code, tradeDate)
 	s.yearlyKlines, s.yearlyStatus = loadYearlyKlines(code, tradeDate)
@@ -340,58 +333,16 @@ func (s *eagerSource) GetShareholderCount() (*model.ShareholderCount, error) {
 
 // --- 加载函数 ---
 
-// --- 日K: 从东方财富 API 获取 ---
-
-func loadDailyKlinesFromEastMoney(a *eastmoney.Adapter, code string) ([]*model.DailyKline, loadStatus) {
-	if a == nil {
-		log.Println("[EAGER] 东方财富适配器未初始化，跳过日K")
-		return nil, loadErr
-	}
-
-	ctx := context.Background()
-	data, err := a.GetDailyKLine(ctx, code, adapter.AdjQFQ)
+func loadDailyKlines(code string, date int) ([]*model.DailyKline, loadStatus) {
+	data, err := db.FindDailyKlines(code, date, klineLoadLimit)
 	if err != nil {
-		log.Printf("[EAGER] 东财日K加载失败: %v", err)
+		log.Printf("[EAGER] 日K加载失败: %v", err)
 		return nil, loadErr
 	}
 	if len(data) == 0 {
 		return nil, loadEmpty
 	}
-
-	klines, err := convertStockPriceDaily(data)
-	if err != nil {
-		log.Printf("[EAGER] 东财日K转换失败: %v", err)
-		return nil, loadErr
-	}
-
-	log.Printf("[EAGER] 东财日K加载成功: %d条", len(klines))
-	return klines, loadOK
-}
-
-// convertStockPriceDaily 将适配器返回的 StockPriceDaily 转为 model.DailyKline。
-// 返回 newest-first（[0]=最新），与 DB 查询的排序一致。
-func convertStockPriceDaily(data []adapter.StockPriceDaily) ([]*model.DailyKline, error) {
-	n := len(data)
-	result := make([]*model.DailyKline, n)
-	for i, d := range data {
-		date, err := strconv.Atoi(strings.ReplaceAll(d.Date, "-", ""))
-		if err != nil {
-			return nil, err
-		}
-		// 反转: data[0]=最旧 → result[n-1-i]=最新
-		result[n-1-i] = &model.DailyKline{
-			StockCode:    d.Code,
-			TradeDate:    date,
-			Open:         int(d.Open),
-			High:         int(d.High),
-			Low:          int(d.Low),
-			Close:        int(d.Close),
-			Volume:       d.Volume,
-			Amount:       d.Amount,
-			TurnoverRate: d.Turnover,
-		}
-	}
-	return result, nil
+	return data, loadOK
 }
 
 func loadWeeklyKlines(code string, date int) ([]*model.WeeklyKline, loadStatus) {
@@ -510,23 +461,6 @@ func initAll(cfgPath string) (*indicator.Registry, error) {
 	)
 	reg := indicator.NewRegistry(allIndicators)
 	log.Printf("[INFO] 已注册 %d 个指标", len(allIndicators))
-
-	// 初始化东方财富适配器（日K从API获取）
-	emAdapter = eastmoney.New()
-	for _, ds := range cfg.DataSources {
-		if ds.Provider == eastmoney.AdapterName && ds.Enabled {
-			initCfg := map[string]interface{}{"cookie": ds.Cookie}
-			for k, v := range ds.Extra {
-				initCfg[k] = v
-			}
-			if err := emAdapter.Init(initCfg); err != nil {
-				log.Printf("[WARN] 东方财富适配器初始化失败: %v", err)
-			} else {
-				log.Println("[INFO] 东方财富适配器已就绪")
-			}
-			break
-		}
-	}
 
 	return reg, nil
 }

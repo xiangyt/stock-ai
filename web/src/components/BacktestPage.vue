@@ -73,6 +73,12 @@
         <button class="btn-primary" :disabled="isRunning || !selectedStrategy" @click="runBacktest">
           {{ isRunning ? '运行中...' : '📊 模拟交易' }}
         </button>
+        <button
+          v-if="isRunning && currentRunId"
+          class="btn-stop"
+          :disabled="stopping"
+          @click="stopBacktest"
+        >{{ stopping ? '停止中...' : '⏹ 停止回测' }}</button>
 
         <div class="toolbar-right">
           <!-- 回测历史选择 -->
@@ -427,6 +433,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 let startTime = 0
 
 const isRunning = computed(() => runStatus.value === 'pending' || runStatus.value === 'running')
+const stopping = ref(false)
 const statusText = computed(() => {
   switch (runStatus.value) {
     case 'pending': return '排队中...'
@@ -469,7 +476,7 @@ function formatHistoryLabel(r: strategyApi.BacktestRun): string {
 }
 
 function statusLabel(status: string): string {
-  const map: Record<string, string> = { done: '✅', running: '⏳', pending: '🕐', failed: '❌' }
+  const map: Record<string, string> = { done: '✅', running: '⏳', pending: '🕐', failed: '❌', stopped: '🛑' }
   return map[status] || status
 }
 
@@ -600,7 +607,7 @@ async function loadAllStrategies() {
 }
 
 onMounted(loadAllStrategies)
-onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
+onUnmounted(() => { stopAllPolling() })
 
 // ========== Tab ==========
 type TabKey = 'overview' | 'trades' | 'holdings' | 'logs'
@@ -612,12 +619,49 @@ const tabs: { key: TabKey; label: string; icon: string }[] = [
   { key: 'logs', label: '运行日志', icon: '📝' },
 ]
 
-// 切换到数据页时，若回测已完成或运行中则立即加载
-watch(activeTab, (tab) => {
+// ========== 页签数据轮询 ==========
+let dataPollTimer: ReturnType<typeof setInterval> | null = null
+
+// 切换到交易详情/每日持仓时：立即全量加载 + 运行中则启动增量轮询
+watch(activeTab, (tab, oldTab) => {
+  stopDataPolling()
   if (!currentRunId.value) return
-  if (tab === 'trades') loadTradePage(1)
-  else if (tab === 'holdings') loadSnapshots(currentRunId.value, 0)
+
+  if (tab === 'trades') {
+    tradePage.value = 1 // 切回第一页
+    loadTradePage(1)
+    if (isRunning.value) startDataPolling()
+  } else if (tab === 'holdings') {
+    rawSnapshots.value = []; snapshotData.value = []; lastSnapshotId = 0
+    loadSnapshots(currentRunId.value, 0)
+    if (isRunning.value) startDataPolling()
+  }
 })
+
+function startDataPolling() {
+  stopDataPolling()
+  dataPollTimer = setInterval(async () => {
+    if (!currentRunId.value || !isRunning.value) {
+      stopDataPolling()
+      return
+    }
+    // 只刷新当前活跃的页签数据（减少不必要的请求）
+    if (activeTab.value === 'trades') {
+      await loadTradePage(tradePage.value).catch(() => {})
+    } else if (activeTab.value === 'holdings') {
+      await loadSnapshots(currentRunId.value!, lastSnapshotId).catch(() => {})
+    }
+  }, 3000)
+}
+
+function stopDataPolling() {
+  if (dataPollTimer) { clearInterval(dataPollTimer); dataPollTimer = null }
+}
+
+function stopAllPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  stopDataPolling()
+}
 
 // ========== 日志 ==========
 interface LogEntry { time: string; level: string; message: string }
@@ -653,6 +697,20 @@ async function runBacktest() {
   }
 }
 
+async function stopBacktest() {
+  if (!currentRunId.value || stopping.value) return
+  stopping.value = true
+  try {
+    addLog('info', '正在停止回测...')
+    await strategyApi.stopBacktest(currentRunId.value)
+    addLog('info', '回测已停止')
+  } catch (e: any) {
+    addLog('error', `停止失败: ${e?.message || '未知错误'}`)
+  } finally {
+    stopping.value = false
+  }
+}
+
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer)
   pollTimer = setInterval(async () => {
@@ -666,11 +724,17 @@ function startPolling() {
       if (status.status === 'done') {
         runStatus.value = 'done'
         clearInterval(pollTimer!); pollTimer = null
+        stopDataPolling()
         addLog('info', '回测完成，加载结果...')
         await loadResults(currentRunId.value)
-      } else if (status.status === 'failed') {
+      } else if (status.status === 'failed' || status.status === 'stopped') {
         runStatus.value = 'failed'
         clearInterval(pollTimer!); pollTimer = null
+        stopDataPolling()
+        if (status.status === 'stopped') {
+          errorMessage.value = '回测已停止'
+          addLog('info', '回测已停止')
+        }
         await loadRunError(currentRunId.value)
       } else {
         // 运行中：逐步加载交易和快照（进度每前进 5% 刷新一次）
@@ -708,6 +772,7 @@ const rawSnapshots = ref<strategyApi.DailySnapshot[]>([])
 const snapshotData = ref<{ date: string; strategy: number }[]>([])
 
 function clearResults() {
+  stopDataPolling()
   statsData.value = []; tradeData.value = []; rawSnapshots.value = []; snapshotData.value = []
   tradePage.value = 1; tradeTotal.value = 0; lastSnapshotId = 0
   elapsedTime.value = ''; backtestLogs.value = []
@@ -742,9 +807,9 @@ async function loadResults(runId: number) {
 
     addLog('info', `累计收益: ${run.total_return != null ? run.total_return.toFixed(2) + '%' : 'N/A'}，最大回撤: ${run.max_drawdown != null ? run.max_drawdown.toFixed(2) + '%' : 'N/A'}`)
 
-    // 加载交易（第一页）
+    // 回测 100%：全量覆盖更新交易和持仓（非增量）
+    tradePage.value = 1
     await loadTradePage(1)
-    // 全量加载快照（回测完成）
     rawSnapshots.value = []; snapshotData.value = []; lastSnapshotId = 0
     await loadSnapshots(runId, 0)
   } catch (e: any) {
@@ -988,6 +1053,12 @@ const areaPoints = computed(() => {
 }
 .btn-primary:hover:not(:disabled) { background: #0958d9; }
 .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+.btn-stop {
+  display: inline-flex; align-items: center; gap: 4px; padding: 7px 18px; font-size: 13px; font-weight: 600;
+  color: #fff; background: #ff4d4f; border: 1px solid #ff4d4f; border-radius: 5px; cursor: pointer; transition: .15s;
+}
+.btn-stop:hover:not(:disabled) { background: #d9363e; }
+.btn-stop:disabled { opacity: .5; cursor: not-allowed; }
 .btn-outline {
   padding: 7px 14px; font-size: 13px; font-weight: 500; color: #555; background: #fff;
   border: 1px solid #d9d9d9; border-radius: 5px; cursor: pointer; transition: .15s;

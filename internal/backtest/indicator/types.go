@@ -514,15 +514,20 @@ func (b *BaseIndicator) AllSignals() []Signal {
 // --- Setter ---
 
 // registerSignals 将信号列表注册到 Signal 映射表，并赋值给目标切片字段。
-// 内部公共方法，供 SetBuiltInSignals / SetCustomSignals 复用，
-// 消除两处完全相同的 for+map 赋值逻辑。
+// 内部公共方法，供 SetBuiltInSignals / SetCustomSignals 复用。
+// 若存在重复的完整 SignalID 则 panic，避免启动时静默覆盖。
 func (b *BaseIndicator) registerSignals(sigs []Signal, target *[]Signal, sourceCode string) {
 	if b.Signal == nil {
 		b.Signal = make(map[string]Signal, len(sigs))
 	}
 
 	for _, sig := range sigs {
-		b.Signal[b.ID()+sourceCode+sig.Seq()] = sig
+		fullID := b.ID() + sourceCode + sig.Seq()
+		if existing, ok := b.Signal[fullID]; ok {
+			panic(fmt.Sprintf("信号ID冲突: %s (已有 %q, 新注册 %q)",
+				fullID, existing.Name(), sig.Name()))
+		}
+		b.Signal[fullID] = sig
 	}
 	*target = sigs
 }

@@ -19,5 +19,6 @@ func RegisterBacktestRoutes(rg *gin.RouterGroup, h *backtest.Handler) {
 	rg.GET("/backtest/runs/:id/snapshots", h.GetSnapshots)
 
 	// 回测管理
+	rg.POST("/backtest/runs/:id/stop", h.Stop)
 	rg.DELETE("/backtest/runs/:id", h.DeleteRun)
 }
