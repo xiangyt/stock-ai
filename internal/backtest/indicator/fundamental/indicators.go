@@ -12,5 +12,10 @@ func All() []indicator.Indicator {
 		NewFloatShares(),
 		NewTotalMarketCap(),
 		NewCirculateMarketCap(),
+		NewFloatRatio(),
+		NewFreeHoldRatio(),
+		NewHoldRatio(),
+		NewHolderNum(),
+		NewAvgHoldShares(),
 	}
 }
