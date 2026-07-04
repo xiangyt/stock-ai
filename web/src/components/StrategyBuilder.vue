@@ -334,7 +334,7 @@
               </div>
             </div>
 
-            <div v-for="(rule, ri) in exitRules.rules" :key="rule.type" class="rule-row">
+            <div v-for="rule in exitRules.rules" :key="rule.type" class="rule-row">
               <label class="rule-check">
                 <input type="checkbox" v-model="rule.enabled" @change="markRulesDirty" />
                 <span class="rule-label">{{ ruleName(rule.type) }}</span>
@@ -446,7 +446,9 @@
           </colgroup>
           <thead>
             <tr>
-              <th class="col-cb"><input type="checkbox" :checked="allSelected" :indeterminate.prop="someSelected" @change="toggleAll" /></th>
+              <th class="col-cb">
+                <input type="checkbox" :checked="allSelected" :indeterminate="getIndeterminate()" @change="toggleAll" />
+              </th>
               <th class="col-idx">序号</th>
               <th class="col-code">股票代码</th>
               <th class="col-name">股票简称</th>
@@ -558,7 +560,7 @@
           <button class="pag-btn" :disabled="currentPage <= 1" @click="prevPage">‹ 上一页</button>
           <template v-for="p in visiblePages" :key="p">
             <span v-if="p === '...'" class="pag-ellipsis">...</span>
-            <button v-else :class="['pag-btn', { active: p === currentPage }]" @click="goPage(p)">{{ p }}</button>
+            <button v-else :class="['pag-btn', { active: p === currentPage }]" @click="typeof p === 'number' && goPage(p)">{{ p }}</button>
           </template>
           <button class="pag-btn" :disabled="currentPage >= totalPage" @click="nextPage">下一页 ›</button>
         </div>
@@ -855,12 +857,7 @@ const logicalOp = ref<'AND' | 'OR'>('AND')
 const strategyName = ref('')
 const isEditingName = ref(false)
 const nameInputRef = ref<HTMLInputElement | null>(null)
-const importFileRef = ref<HTMLInputElement | null>(null)
-const editingIdx = ref<number | null>(null)
-const editParams = reactive<Record<string, any>>({})
-const expandedJSON = reactive(new Set<number>())
 const addSuccessMsg = ref('')
-let successTimer: ReturnType<typeof setTimeout> | null = null
 const saveSuccessMsg = ref('')
 let saveSuccessTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -901,7 +898,6 @@ const editingId = ref<number | null>(null) // 后端数字 ID，null = 新建模
 const isDirty = ref(false)
 
 // ===== 卖出规则 & 仓位管理 =====
-const showRulesPanel = ref(true)
 const rulesDirty = ref(false)
 const exitRules = reactive<strategyApi.ExitRules>({
   rules: [
@@ -977,8 +973,6 @@ function removeActiveTabSignal(idx: number) {
   }
   markDirty()
 }
-function rulesToJSON(): string { return JSON.stringify({ ...exitRules }) }
-function posRulesToJSON(): string { return JSON.stringify({ ...positionRules }) }
 
 /** 标记脏状态 */
 function markDirty() { isDirty.value = true }
@@ -1168,35 +1162,6 @@ function addBuiltinSignal(sig: SignalDef) {
   emit('addSignals', [newSig])
 }
 
-/** 内置信号的简短描述（从 default_config 提取，枚举值用 label 替代） */
-function formatBuiltinDesc(sig: SignalDef): string {
-  const cfg = sig.default_config
-  if (!cfg) return ''
-  if (!sig.operators) return cfg.operator || ''
-  const op = sig.operators.find(o => o.operator === cfg.operator)
-  const opLabel = op?.label ?? cfg.operator
-  const params = cfg.params || {}
-  // 枚举型：提取 values 并映射为 label
-  if (params.values && Array.isArray(params.values)) {
-    const vals = params.values as string[]
-    // 从操作符参数定义中找枚举选项
-    const enumOpts = op?.params?.find(p =>
-      p.type === 'multi_select' || p.type === 'select_multi' || p.type === 'select'
-    )?.options
-    if (enumOpts && enumOpts.length > 0) {
-      const valToLabel = new Map(enumOpts.map(o => [o.value, o.label]))
-      const labels = vals.map(v => valToLabel.get(v) || v)
-      return `${opLabel} ${labels.join(',')}`
-    }
-    return `${opLabel} ${vals.join(',')}`
-  }
-  // 数值型：取 threshold
-  if (params.threshold != null) return `${opLabel} ${params.threshold}`
-  // range 型
-  if (params.min != null && params.max != null) return `${opLabel} ${params.min}~${params.max}`
-  return opLabel
-}
-
 /** 添加自定义信号（从表单收集操作符+参数） */
 function addCustomSignal() {
   if (!expandedInd.value || !currentCustomSig.value) return
@@ -1257,12 +1222,6 @@ function addCustomSignal() {
   markDirty()
   emit('addSignals', [newSig])
   clearParams()
-}
-
-function showAddSuccess(msg: string) {
-  addSuccessMsg.value = msg
-  if (successTimer) clearTimeout(successTimer)
-  successTimer = setTimeout(() => { addSuccessMsg.value = '' }, 2500)
 }
 function clearParams() {
   for (const k of Object.keys(paramValues)) delete paramValues[k]
@@ -1435,7 +1394,7 @@ function enrichSignal(raw: any): Sig {
       name: raw.signal_id,
       category: 'technical',
       operator: raw.operator,
-      opSym: operatorSymbols[raw.operator] || raw.operator,
+      opSym: (operatorSymbols as Record<string, string>)[raw.operator as string] || raw.operator,
       opLbl: raw.operator,
       params: { ...raw.params },
       paramText: JSON.stringify(raw.params),
@@ -1450,7 +1409,7 @@ function enrichSignal(raw: any): Sig {
     name: findSignalName(ind, raw.signal_id),
     category: ind.category,
     operator: raw.operator,
-    opSym: operatorSymbols[raw.operator] || raw.operator,
+    opSym: (operatorSymbols as Record<string, string>)[raw.operator as string] || raw.operator,
     opLbl: findOpLabel(ind, raw.operator),
     params: { ...raw.params },
     paramText: text,
@@ -1543,7 +1502,14 @@ const selectedRows = ref<Set<number>>(new Set())
 const allSelected = computed(() =>
   screenResult.value && screenResult.value.passed.length > 0 && selectedRows.value.size === screenResult.value.passed.length
 )
-const someSelected = computed(() => selectedRows.value.size > 0 && !allSelected.value)
+const someSelected = computed((): boolean => selectedRows.value.size > 0 && !!allSelected.value === false)
+/** someSelected 的非空值（用于模板中 indeterminate 属性） */
+const _indeterminate = ref(false)
+watch(someSelected, (v) => { _indeterminate.value = Boolean(v) }, { immediate: true })
+/** 获取 indeterminate 值（绕过 Vue 类型推断 bug） */
+function getIndeterminate(): boolean {
+  return _indeterminate.value
+}
 
 function toggleAll() {
   if (!screenResult.value) return
@@ -1747,16 +1713,16 @@ async function batchAddFavorites() {
 function acceptAISignals(aiSignals: any[]) {
   for (const s of aiSignals) { signals.value.push({
     uid: ++uidCounter,
-    indicator_id: s.indicatorID || s.indicator_id,
-    signal_id: s.signalID || s.signal_id,
-    name: s.indicatorName || s.name,
-    category: s.category as Category,
-    operator: s.operator as CompareOperator,
-    opSym: operatorSymbols[s.operator as CompareOperator] || s.operatorSymbol || s.operator,
-    opLbl: s.operatorLabel || s.operator,
-    params: s.params || {},
-    paramText: s.paramSummary || '',
-  }) }
+    indicator_id: String(s.indicatorID || s.indicator_id),
+    signal_id: String(s.signalID || s.signal_id),
+    name: String(s.indicatorName || s.name),
+    category: (s.category as Category) ?? 'technical',
+    operator: (s.operator as CompareOperator) ?? 'gt',
+    opSym: (operatorSymbols as Record<string, string>)[String(s.operator)] || String(s.operatorSymbol || s.operator),
+    opLbl: String(s.operatorLabel || s.operator),
+    params: (s.params && typeof s.params === 'object') ? s.params : {},
+    paramText: String(s.paramSummary || ''),
+  } as Sig) }
   markDirty()
 }
 /** 从策略列表加载策略到编辑器 */
