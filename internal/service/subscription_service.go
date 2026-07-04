@@ -74,22 +74,21 @@ type CreateSubscriptionReq struct {
 	CustomStocks     []string `json:"custom_stocks"`
 	PresetType       string   `json:"preset_type"`
 	CronExpr         string   `json:"cron_expr"`
-	TradingHoursOnly *bool    `json:"trading_hours_only"`
+	TradingHoursOnly bool     `json:"trading_hours_only"`
 	Template         string   `json:"template"`
 	BotIDs           []uint   `json:"bot_ids"`
 }
 
 // UpdateSubscriptionReq 更新订阅请求
 type UpdateSubscriptionReq struct {
-	Name             *string `json:"name"`
-	StrategyID       *uint   `json:"strategy_id"`
-	Scope            *string `json:"scope"`
+	Name             string   `json:"name"`
+	StrategyID       uint     `json:"strategy_id"`
+	Scope            string   `json:"scope"`
 	CustomStocks     []string `json:"custom_stocks"`
-	PresetType       *string `json:"preset_type"`
-	CronExpr         *string `json:"cron_expr"`
-	TradingHoursOnly *bool   `json:"trading_hours_only"`
-	IsActive         *bool   `json:"is_active"`
-	Template         *string `json:"template"`
+	PresetType       string   `json:"preset_type"`
+	CronExpr         string   `json:"cron_expr"`
+	TradingHoursOnly bool     `json:"trading_hours_only"`
+	Template         string   `json:"template"`
 }
 
 // SubscriptionDetail 订阅详情响应
@@ -238,11 +237,6 @@ func (s *SubscriptionService) Create(req *CreateSubscriptionReq, uid uint) (*Sub
 	}
 
 	// 构建订阅
-	tradingHoursOnly := true
-	if req.TradingHoursOnly != nil {
-		tradingHoursOnly = *req.TradingHoursOnly
-	}
-
 	sub := &model.Subscription{
 		UID:              uid,
 		Name:             req.Name,
@@ -251,7 +245,7 @@ func (s *SubscriptionService) Create(req *CreateSubscriptionReq, uid uint) (*Sub
 		CustomStocks:     customStocksJSON,
 		PresetType:       presetType,
 		CronExpr:         req.CronExpr,
-		TradingHoursOnly: tradingHoursOnly,
+		TradingHoursOnly: req.TradingHoursOnly,
 		IsActive:         true,
 		Template:         req.Template,
 	}
@@ -408,11 +402,11 @@ func (s *SubscriptionService) Update(id, uid uint, req *UpdateSubscriptionReq) (
 	}
 
 	// 更新字段
-	if req.Name != nil && *req.Name != "" {
-		sub.Name = *req.Name
+	if req.Name != "" {
+		sub.Name = req.Name
 	}
-	if req.StrategyID != nil {
-		strategy, err := db.GetStrategyByID(*req.StrategyID)
+	if req.StrategyID != 0 {
+		strategy, err := db.GetStrategyByID(req.StrategyID)
 		if err != nil {
 			if errors.Is(err, db.ErrRecordNotFound) {
 				return nil, fmt.Errorf("策略不存在")
@@ -422,10 +416,10 @@ func (s *SubscriptionService) Update(id, uid uint, req *UpdateSubscriptionReq) (
 		if strategy.UID != uid {
 			return nil, fmt.Errorf("无权使用该策略")
 		}
-		sub.StrategyID = *req.StrategyID
+		sub.StrategyID = req.StrategyID
 	}
-	if req.Scope != nil {
-		scope := model.MonitorScope(*req.Scope)
+	if req.Scope != "" {
+		scope := model.MonitorScope(req.Scope)
 		if scope != model.ScopeAll && scope != model.ScopeHeld && scope != model.ScopeCustom {
 			return nil, fmt.Errorf("scope 必须是 all / held / custom 之一")
 		}
@@ -440,29 +434,24 @@ func (s *SubscriptionService) Update(id, uid uint, req *UpdateSubscriptionReq) (
 		bytes, _ := json.Marshal(req.CustomStocks)
 		sub.CustomStocks = string(bytes)
 	}
-	if req.PresetType != nil {
-		presetType := model.PresetType(*req.PresetType)
+	if req.PresetType != "" {
+		presetType := model.PresetType(req.PresetType)
 		if !isValidPresetType(presetType) {
 			return nil, fmt.Errorf("preset_type 无效")
 		}
 		sub.PresetType = presetType
 	}
-	if req.CronExpr != nil {
-		if sub.PresetType == model.PresetCustom && *req.CronExpr != "" {
-			if !isValidCronExpr(*req.CronExpr) {
+	if req.CronExpr != "" {
+		if sub.PresetType == model.PresetCustom {
+			if !isValidCronExpr(req.CronExpr) {
 				return nil, fmt.Errorf("cron 表达式无效")
 			}
 		}
-		sub.CronExpr = *req.CronExpr
+		sub.CronExpr = req.CronExpr
 	}
-	if req.TradingHoursOnly != nil {
-		sub.TradingHoursOnly = *req.TradingHoursOnly
-	}
-	if req.IsActive != nil {
-		sub.IsActive = *req.IsActive
-	}
-	if req.Template != nil {
-		sub.Template = *req.Template
+	sub.TradingHoursOnly = req.TradingHoursOnly
+	if req.Template != "" {
+		sub.Template = req.Template
 	}
 
 	if err := db.UpdateSubscription(sub); err != nil {

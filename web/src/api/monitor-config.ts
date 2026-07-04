@@ -114,13 +114,12 @@ export interface CreateMonitorConfigReq {
 
 /** 更新监控配置请求（部分字段） */
 export interface UpdateMonitorConfigReq {
-  name?: string
-  scope?: MonitorScope
+  name: string
+  scope: MonitorScope
   stocks?: string[]
-  rule?: MonitorRule
-  cooldown?: MonitorCooldown
-  template?: string
-  is_active?: boolean
+  rule: MonitorRule
+  cooldown: MonitorCooldown
+  template: string
 }
 
 /** 列表响应 */

@@ -74,13 +74,12 @@ type CreateMonitorConfigReq struct {
 
 // UpdateMonitorConfigReq 更新监控配置请求
 type UpdateMonitorConfigReq struct {
-	Name     *string               `json:"name"`
-	Scope    *string               `json:"scope"`
-	Stocks   []string              `json:"stocks"`
-	Rule     *model.MonitorRule   `json:"rule"`
+	Name     string                 `json:"name"`
+	Scope    string                 `json:"scope"`
+	Stocks   []string               `json:"stocks"`
+	Rule     *model.MonitorRule     `json:"rule"`
 	Cooldown *model.MonitorCooldown `json:"cooldown"`
-	Template *string               `json:"template"`
-	IsActive *bool                 `json:"is_active"`
+	Template string                 `json:"template"`
 }
 
 // MonitorConfigDetail 监控配置详情响应
@@ -207,11 +206,11 @@ func (s *MonitorConfigService) Update(id, uid uint, req *UpdateMonitorConfigReq)
 	}
 
 	// 2. 按字段更新
-	if req.Name != nil {
-		cfg.Name = strings.TrimSpace(*req.Name)
+	if req.Name != "" {
+		cfg.Name = strings.TrimSpace(req.Name)
 	}
-	if req.Scope != nil {
-		scope := model.MonitorScope(*req.Scope)
+	if req.Scope != "" {
+		scope := model.MonitorScope(req.Scope)
 		if scope != model.ScopeHeld && scope != model.ScopeCustom {
 			return nil, fmt.Errorf("无效的监控范围: %s", scope)
 		}
@@ -240,11 +239,8 @@ func (s *MonitorConfigService) Update(id, uid uint, req *UpdateMonitorConfigReq)
 		b, _ := json.Marshal(req.Cooldown)
 		cfg.Cooldown = string(b)
 	}
-	if req.Template != nil {
-		cfg.Template = strings.TrimSpace(*req.Template)
-	}
-	if req.IsActive != nil {
-		cfg.IsActive = *req.IsActive
+	if req.Template != "" {
+		cfg.Template = strings.TrimSpace(req.Template)
 	}
 
 	// 3. 保存

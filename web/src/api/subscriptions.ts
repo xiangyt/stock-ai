@@ -88,16 +88,15 @@ export interface CreateSubscriptionReq {
   bot_ids?: number[]
 }
 
-/** 更新订阅请求（部分更新，null 字段不更新） */
+/** 更新订阅请求 */
 export interface UpdateSubscriptionReq {
-  name?: string
-  strategy_id?: number
-  scope?: MonitorScope
+  name: string
+  strategy_id: number
+  scope: MonitorScope
   custom_stocks?: string[]
-  preset_type?: PresetType
-  cron_expr?: string
-  trading_hours_only?: boolean
-  is_active?: boolean
+  preset_type: PresetType
+  cron_expr: string
+  trading_hours_only: boolean
   template?: string
 }
 

@@ -105,23 +105,18 @@ func (s *DataCollectTaskService) UpdateTask(id uint, req *model.DCUpdateTaskReq)
 
 	updates := make(map[string]interface{})
 
-	if req.CronExpr != nil {
-		if *req.CronExpr == "" {
-			return nil, fmt.Errorf("cron 表达式不能为空")
-		}
-		updates["cron_expr"] = *req.CronExpr
+	if req.CronExpr != "" {
+		updates["cron_expr"] = req.CronExpr
 	}
 
-	if req.Params != nil {
-		if !json.Valid([]byte(*req.Params)) {
+	if req.Params != "" {
+		if !json.Valid([]byte(req.Params)) {
 			return nil, fmt.Errorf("参数格式无效，必须是合法 JSON")
 		}
-		updates["params"] = *req.Params
+		updates["params"] = req.Params
 	}
 
-	if req.IsActive != nil {
-		updates["is_active"] = *req.IsActive
-	}
+	updates["is_active"] = req.IsActive
 
 	if len(updates) == 0 {
 		return s.GetByID(id)
@@ -133,14 +128,10 @@ func (s *DataCollectTaskService) UpdateTask(id uint, req *model.DCUpdateTaskReq)
 
 	// 通知 Scheduler 变更
 	if s.notifyChangeFn != nil {
-		if req.IsActive != nil {
-			if *req.IsActive {
-				s.notifyChangeFn(datacollect.ChangeEnabled, id)
-			} else {
-				s.notifyChangeFn(datacollect.ChangeDisabled, id)
-			}
+		if req.IsActive {
+			s.notifyChangeFn(datacollect.ChangeEnabled, id)
 		} else {
-			s.notifyChangeFn(datacollect.ChangeUpdated, id)
+			s.notifyChangeFn(datacollect.ChangeDisabled, id)
 		}
 	}
 

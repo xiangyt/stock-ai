@@ -89,7 +89,7 @@ type updateBotReq struct {
 }
 
 type toggleStatusReq struct {
-	Status *int `json:"status"`
+	Status int `json:"status"`
 }
 
 type botItem struct {
@@ -291,11 +291,7 @@ func (h *BotHandler) ToggleStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数格式错误"})
 		return
 	}
-	if req.Status == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 status 参数"})
-		return
-	}
-	s := *req.Status
+	s := req.Status
 	if s != 0 && s != 1 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "status 只能是 0 或 1"})
 		return

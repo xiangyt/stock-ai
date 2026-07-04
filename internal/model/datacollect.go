@@ -88,9 +88,9 @@ type DCTaskItem struct {
 
 // DCUpdateTaskReq 更新任务请求
 type DCUpdateTaskReq struct {
-	CronExpr *string `json:"cron_expr"`
-	Params   *string `json:"params"`
-	IsActive *bool   `json:"is_active"`
+	CronExpr string `json:"cron_expr"`
+	Params   string `json:"params"`
+	IsActive bool   `json:"is_active"`
 }
 
 // DCUpdateBotsReq 更新关联机器人请求

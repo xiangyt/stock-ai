@@ -43,9 +43,9 @@ export interface DataCollectTaskItem {
 
 /** 更新任务请求 */
 export interface UpdateTaskReq {
-  cron_expr?: string
-  params?: string
-  is_active?: boolean
+  cron_expr: string
+  params: string
+  is_active: boolean
 }
 
 // ========== API 函数 ==========
