@@ -80,11 +80,12 @@
             </td>
             <td class="col-created">{{ formatTimeFull(s.createdAt) }}</td>
             <td class="actions-cell" @click.stop>
+              <!-- 别人的公开策略 / 自己的策略 均可复制 -->
               <button
-                v-if="s.isPublic && s.uid !== currentUserId"
+                v-if="s.isPublic || s.uid === currentUserId"
                 class="btn-sm btn-ok"
                 @click="emit('copy', s.id)"
-                title="复制为自己的策略"
+                :title="s.uid === currentUserId ? '复制为新策略' : '复制为自己的策略'"
               >复制</button>
               <template v-if="s.uid === currentUserId">
                 <button class="btn-sm btn-ok" @click="startEditName(s)" title="重命名">重命名</button>
@@ -234,7 +235,7 @@ export interface SavedStrategy {
   createdAt: string
   updatedAt: string
   logicalOp?: string            // "and" | "or"
-  signals?: any[]              // 策略信号列表（从后端加载）
+  signals: any[]                // 策略信号列表（从后端加载）
 }
 
 const props = defineProps<{
@@ -301,7 +302,7 @@ function cancelRename() { editingId.value = null; editingName.value = '' }
 // ========== 删除 ==========
 const deleteConfirm = reactive({ show: false, ids: [] as number[], count: 0 })
 
-function handleDeleteSingle(id: number, name: string) {
+function handleDeleteSingle(id: number, _name: string) {
   deleteConfirm.ids = [id]
   deleteConfirm.count = 1
   deleteConfirm.show = true
@@ -573,7 +574,7 @@ function getCategoryLabel(s: SavedStrategy): string {
 .pag-jump-input {
   width: 44px; height: 26px; padding: 0 4px; text-align: center;
   border: 1px solid #d9d9d9; border-radius: 4px; font-size: 12.5px;
-  outline: none; color: #333; -moz-appearance: textfield;
+  outline: none; color: #333; -moz-appearance: textfield; appearance: textfield;
 }
 .pag-jump-input::-webkit-inner-spin-button, .pag-jump-input::-webkit-outer-spin-button { -webkit-appearance: none; }
 .pag-go-btn {

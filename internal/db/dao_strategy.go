@@ -24,9 +24,18 @@ func CopyStrategy(originalID, newUID uint) (*model.Strategy, error) {
 		Description:  original.Description,
 		LogicalOp:    original.LogicalOp,
 		Conditions:   original.Conditions,
+		ExitRules:    original.ExitRules,
+		PositionRules: original.PositionRules,
 		BacktestCount: 0,
 		IsPublic:     false,
 		StarCount:    0,
+	}
+	// JSON 类型列不允许空字符串，原策略为空时设为 "{}"
+	if copy.ExitRules == "" {
+		copy.ExitRules = "{}"
+	}
+	if copy.PositionRules == "" {
+		copy.PositionRules = "{}"
 	}
 
 	if err := GetDB().Create(&copy).Error; err != nil {

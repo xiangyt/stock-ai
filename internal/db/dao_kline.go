@@ -279,6 +279,17 @@ func FindDailyKlines(code string, tradeDate, limit int) ([]*model.DailyKline, er
 	return list, err
 }
 
+// FindDailyKlinesAfterDate 按 trade_date ASC 取某股票在指定日期之后的日K线（最多 limit 条）。
+// 用于查询选股后未来 N 个交易日的走势数据。
+func FindDailyKlinesAfterDate(code string, afterDate, limit int) ([]*model.DailyKline, error) {
+	var list []*model.DailyKline
+	err := GetDB().Where("stock_code = ? AND trade_date > ?", code, afterDate).
+		Order("trade_date ASC").
+		Limit(limit).
+		Find(&list).Error
+	return list, err
+}
+
 // FindWeeklyKlines 按 trade_date DESC 取最近 limit 条周K
 func FindWeeklyKlines(code string, tradeDate, limit int) ([]*model.WeeklyKline, error) {
 	var list []*model.WeeklyKline
