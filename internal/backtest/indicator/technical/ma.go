@@ -88,6 +88,8 @@ func NewMa() *Ma {
 
 	// 自定义信号：非交叉信号 + 交叉信号配置表循环生成
 	customSigs := append(bareSigs, buildMaCrossSignals(customMaCrossDefs)...)
+	// 高低点信号仅作为自定义信号
+	customSigs = append(customSigs, NewSignalHHPushUp("04"), NewSignalHHPushDown("05"))
 	i.SetCustomSignals(customSigs)
 	return i
 }
@@ -145,6 +147,18 @@ func (i *Ma) Evaluate(stock indicator.StockSource, config []*indicator.SignalCon
 					return res
 				}
 			case *SignalPriceAboveMA5:
+				if res := vv.Evaluate(lines, klines, v); res.Result == indicator.ResultPassed {
+					continue
+				} else {
+					return res
+				}
+			case *SignalHHPushUp:
+				if res := vv.Evaluate(lines, klines, v); res.Result == indicator.ResultPassed {
+					continue
+				} else {
+					return res
+				}
+			case *SignalHHPushDown:
 				if res := vv.Evaluate(lines, klines, v); res.Result == indicator.ResultPassed {
 					continue
 				} else {
@@ -699,6 +713,131 @@ func (s *SignalPriceAboveMA5) Evaluate(lines MALines, klines []*model.DailyKline
 				Result:   indicator.ResultRejected,
 				SignalID: config.SignalID,
 				Message:  fmt.Sprintf("%d天前收盘价(%.2f)未站上MA5(%.2f)", i, price/100, ma5/100),
+			}
+		}
+	}
+
+	return &indicator.EvaluatedStock{Result: indicator.ResultPassed, SignalID: config.SignalID}
+}
+
+// ============================================================================
+//  SignalHHPushUp — 高低点上移（自定义信号）
+//
+//  判定规则：
+//    时间窗口内每一天的 OHLC 都高于前一天的 OHLC（第一天不限制）。
+//  语义：窗口内所有日均需满足（AND 逻辑），任一日不满足即拒绝。
+//  索引方向：klines[0]=最新，klines[N]=N天前。
+// ============================================================================
+
+type SignalHHPushUp struct {
+	indicator.BaseSignal
+}
+
+func NewSignalHHPushUp(seq string) *SignalHHPushUp {
+	return &SignalHHPushUp{
+		BaseSignal: indicator.NewBaseSignal(
+			seq,
+			"高低点上移",
+			"窗口内每日OHLC均高于前一日，代表逐日突破",
+			indicator.ValSeries,
+			[]indicator.OperatorOption{{
+				Operator: indicator.OpCustom,
+				Label:    "参数设置",
+				Params: []indicator.ParamDef{
+					signalutil.ParamLookbackStart(3, "天前"),
+					signalutil.ParamLookbackEnd(0, "天前"),
+				},
+			}},
+			&indicator.SignalConfig{
+				Operator: indicator.OpCustom,
+				Params: map[string]any{
+					indicator.ParamKeyLookbackStart: float64(3),
+					indicator.ParamKeyLookbackEnd:   float64(0),
+				},
+			},
+		),
+	}
+}
+
+func (s *SignalHHPushUp) Evaluate(lines MALines, klines []*model.DailyKline, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	return evalHHPush(klines, config, true)
+}
+
+// ============================================================================
+//  SignalHHPushDown — 高低点下移（自定义信号）
+//
+//  与上移相反：窗口内每一天的 OHLC 都低于前一天的 OHLC。
+// ============================================================================
+
+type SignalHHPushDown struct {
+	indicator.BaseSignal
+}
+
+func NewSignalHHPushDown(seq string) *SignalHHPushDown {
+	return &SignalHHPushDown{
+		BaseSignal: indicator.NewBaseSignal(
+			seq,
+			"高低点下移",
+			"窗口内每日OHLC均低于前一日，代表逐日下行",
+			indicator.ValSeries,
+			[]indicator.OperatorOption{{
+				Operator: indicator.OpCustom,
+				Label:    "参数设置",
+				Params: []indicator.ParamDef{
+					signalutil.ParamLookbackStart(3, "天前"),
+					signalutil.ParamLookbackEnd(0, "天前"),
+				},
+			}},
+			&indicator.SignalConfig{
+				Operator: indicator.OpCustom,
+				Params: map[string]any{
+					indicator.ParamKeyLookbackStart: float64(3),
+					indicator.ParamKeyLookbackEnd:   float64(0),
+				},
+			},
+		),
+	}
+}
+
+func (s *SignalHHPushDown) Evaluate(lines MALines, klines []*model.DailyKline, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	return evalHHPush(klines, config, false)
+}
+
+// evalHHPush 高低点上下移通用评估逻辑。
+// up=true 表示上移（cur >= prev），false 表示下移（cur <= prev）。
+func evalHHPush(klines []*model.DailyKline, config *indicator.SignalConfig, up bool) *indicator.EvaluatedStock {
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 3))
+	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
+
+	if start < end {
+		start, end = end, start
+	}
+	if start >= len(klines) {
+		return &indicator.EvaluatedStock{
+			Result:   indicator.ResultRejected,
+			SignalID: config.SignalID,
+			Message:  fmt.Sprintf("参数越界：回看起点 %d 超出 K 线范围（共 %d 根）", start, len(klines)),
+		}
+	}
+
+	dir := "上移"
+	op := func(a, b int64) bool { return a >= b }
+	if !up {
+		dir = "下移"
+		op = func(a, b int64) bool { return a <= b }
+	}
+
+	for i := end; i < start; i++ {
+		cur, prev := klines[i], klines[i+1]
+		if !(op(int64(cur.Open), int64(prev.Open)) &&
+			op(int64(cur.High), int64(prev.High)) &&
+			op(int64(cur.Low), int64(prev.Low)) &&
+			op(int64(cur.Close), int64(prev.Close))) {
+			return &indicator.EvaluatedStock{
+				Result:   indicator.ResultRejected,
+				SignalID: config.SignalID,
+				Message:  fmt.Sprintf("%d天前 OHLC 未全面%s: O(%d→%d) H(%d→%d) L(%d→%d) C(%d→%d)",
+					i, dir, prev.Open, cur.Open, prev.High, cur.High, prev.Low, cur.Low, prev.Close, cur.Close),
 			}
 		}
 	}
