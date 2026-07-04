@@ -11,5 +11,6 @@ func All() []indicator.Indicator {
 		NewAmount(),
 		NewVolumeRatio(),
 		NewChangePct(),
+		NewLimitUp(),
 	}
 }

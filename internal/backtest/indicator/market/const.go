@@ -11,4 +11,5 @@ const (
 	IndAmountSeq      = "002" // 成交额
 	IndVolumeRatioSeq = "003" // 量比
 	IndChangePctSeq   = "004" // 涨跌幅
+	IndLimitUpSeq     = "005" // 涨停
 )
