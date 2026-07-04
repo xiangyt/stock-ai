@@ -407,14 +407,9 @@
         <button class="btn-batch-fav" @click="batchAddFavorites" :disabled="isAddingFav || !filteredData.length">
           {{ isAddingFav ? '⏳ 添加中...' : '＋ 一键加入自选' }}
         </button>
-        <select class="tb-select"><option>相关</option><option>涨跌</option><option>市值</option></select>
         <div class="tb-sort-tabs">
-          <button class="st active">相关</button>
-          <button class="st">概览</button>
-          <button class="st">表现</button>
-          <button class="st">技术</button>
-          <button class="st">估值</button>
-          <button class="st">财务</button>
+          <button :class="['st', { active: tableTab === 'overview' }]" @click="tableTab = 'overview'">概览</button>
+          <button :class="['st', { active: tableTab === 'financial' }]" @click="tableTab = 'financial'">财务</button>
         </div>
         <div class="tb-search">
           <input type="text" placeholder="代码/名称" class="tb-search-in" v-model.trim="searchKeyword" />
@@ -422,24 +417,66 @@
         </div>
       </div>
 
-      <div class="results-table-wrap">
+      <div class="results-table-wrap" :class="{ 'financial-mode': tableTab === 'financial' }">
         <table class="results-table">
+          <colgroup>
+            <col class="col-cb" />
+            <col class="col-idx" />
+            <col class="col-code" />
+            <col class="col-name" />
+            <!-- 概览列 -->
+            <col class="col-price" />
+            <col class="col-pct" />
+            <col class="col-num" />
+            <col class="col-num" />
+            <col class="col-num" />
+            <col class="col-industry" />
+            <col class="col-sector" />
+            <col class="col-links" />
+            <!-- 财务列（9列） -->
+            <col class="col-fin-bvps" />
+            <col class="col-fin-eps" />
+            <col class="col-fin-roe" />
+            <col class="col-fin-roa" />
+            <col class="col-fin-gm" />
+            <col class="col-fin-nm" />
+            <col class="col-fin-dr" />
+            <col class="col-fin-ps" />
+            <col class="col-fin-pb" />
+          </colgroup>
           <thead>
             <tr>
               <th class="col-cb"><input type="checkbox" :checked="allSelected" :indeterminate.prop="someSelected" @change="toggleAll" /></th>
-              <th>序号</th>
-              <th>股票代码</th>
-              <th>股票简称</th>
-              <th>现价(元)</th>
-              <th>涨跌幅(%)</th>
-              <th>外部链接</th>
-              <th>匹配信号</th>
+              <th class="col-idx">序号</th>
+              <th class="col-code">股票代码</th>
+              <th class="col-name">股票简称</th>
+
+              <!-- 概览表头（v-show 避免 DOM 重建抖动） -->
+              <th v-show="tableTab === 'overview'" class="col-price">现价(元)</th>
+              <th v-show="tableTab === 'overview'" class="col-pct">涨跌幅(%)</th>
+              <th v-show="tableTab === 'overview'" class="col-num">市盈率TTM</th>
+              <th v-show="tableTab === 'overview'" class="col-num">流通市值(亿)</th>
+              <th v-show="tableTab === 'overview'" class="col-num">总市值(亿)</th>
+              <th v-show="tableTab === 'overview'" class="col-industry">所属东财行业</th>
+              <th v-show="tableTab === 'overview'" class="col-sector">细分行业</th>
+              <th v-show="tableTab === 'overview'" class="col-links">外部链接</th>
+
+              <!-- 财务表头（v-show） -->
+              <th v-show="tableTab === 'financial'">每股净资产(元)</th>
+              <th v-show="tableTab === 'financial'">基本每股收益(元)</th>
+              <th v-show="tableTab === 'financial'">净资产收益率(%)</th>
+              <th v-show="tableTab === 'financial'">总资产收益率(%)</th>
+              <th v-show="tableTab === 'financial'">毛利率(%)</th>
+              <th v-show="tableTab === 'financial'">净利率(%)</th>
+              <th v-show="tableTab === 'financial'">资产负债率(%)</th>
+              <th v-show="tableTab === 'financial'">市销率TTM</th>
+              <th v-show="tableTab === 'financial'">市净率</th>
             </tr>
           </thead>
           <tbody>
             <!-- 筛选中 -->
             <tr v-if="isScreening">
-              <td colspan="8" style="text-align:center; padding:40px 20px; color:#999;">
+              <td :colspan="13" style="text-align:center; padding:40px 20px; color:#999;">
                 <span class="loading-spinner"></span> 正在筛选 {{ screenResult?.total ?? 0 }} 只股票...
               </td>
             </tr>
@@ -447,42 +484,61 @@
             <template v-else-if="screenResult && screenResult.passed.length > 0 && paginatedData.length > 0">
               <tr v-for="(stock, idx) in paginatedData" :key="stock.code">
                 <td class="col-cb"><input type="checkbox" :checked="selectedRows.has((currentPage - 1) * pageSize + idx)" @change="toggleRow((currentPage - 1) * pageSize + idx)" /></td>
-                <td>{{ (currentPage - 1) * pageSize + idx + 1 }}</td>
-                <td class="code-col">{{ stock.code }}</td>
-                <td class="name-col" @mouseenter="showKLine($event, stock)" @mouseleave="hideKLine">
-                  <span class="stock-name-hover" :title="stock.name + ' — 悬浮查看K线图'">{{ stock.name }}</span>
+                <td class="col-idx">{{ (currentPage - 1) * pageSize + idx + 1 }}</td>
+              <td class="col-code">{{ stock.code }}</td>
+              <td class="col-name" @mouseenter="showKLine($event, stock)" @mouseleave="hideKLine">
+                <span class="stock-name-hover" :title="stock.name + ' — 悬浮查看K线图'">{{ stock.name }}</span>
+              </td>
+
+                <!-- 概览列（v-show 避免 DOM 重建抖动） -->
+                <td v-show="tableTab === 'overview'" class="col-price">{{ stock.price?.toFixed(2) ?? '-' }}</td>
+                <td v-show="tableTab === 'overview'" :class="['col-pct', stock.change_pct > 0 ? 'up' : stock.change_pct < 0 ? 'down' : '']">
+                  {{ stock.change_pct != null ? (stock.change_pct > 0 ? '+' : '') + stock.change_pct.toFixed(2) + '%' : '-' }}
                 </td>
-                <td>{{ stock.price?.toFixed(2) ?? '-' }}</td>
-                <td>-</td>
-                <td class="links-col">
+                <td v-show="tableTab === 'overview'" class="col-num">{{ stock.pe_ttm > 0 ? stock.pe_ttm.toFixed(2) : '-' }}</td>
+                <td v-show="tableTab === 'overview'" class="col-num">{{ stock.circulate_market_cap > 0 ? (stock.circulate_market_cap / 1e8).toFixed(2) : '-' }}</td>
+                <td v-show="tableTab === 'overview'" class="col-num">{{ stock.total_market_cap > 0 ? (stock.total_market_cap / 1e8).toFixed(2) : '-' }}</td>
+                <td v-show="tableTab === 'overview'" class="col-industry">{{ stock.industry || '-' }}</td>
+                <td v-show="tableTab === 'overview'" class="col-sector">{{ stock.sector || '-' }}</td>
+                <td v-show="tableTab === 'overview'" class="col-links">
                   <a :href="getEastMoneyUrl(stock.code)" target="_blank" class="ext-link" title="东方财富">东财</a>
                   <a :href="getTHSUrl(stock.code)" target="_blank" class="ext-link" title="同花顺">同花顺</a>
                   <a :href="getTencentUrl(stock.code)" target="_blank" class="ext-link" title="腾讯自选股">腾讯</a>
                 </td>
-                <td><span class="match-tag" :title="stock.message">✓ {{ stock.message || '通过' }}</span></td>
+
+                <!-- 财务列（v-show） -->
+                <td v-show="tableTab === 'financial'">{{ stock.bvps > 0 ? stock.bvps.toFixed(2) : '-' }}</td>
+                <td v-show="tableTab === 'financial'">{{ stock.basic_eps != 0 ? stock.basic_eps.toFixed(3) : '-' }}</td>
+                <td v-show="tableTab === 'financial'">{{ stock.roe != 0 ? stock.roe.toFixed(2) + '%' : '-' }}</td>
+                <td v-show="tableTab === 'financial'">{{ stock.roa != 0 ? stock.roa.toFixed(2) + '%' : '-' }}</td>
+                <td v-show="tableTab === 'financial'">{{ stock.gross_margin != 0 ? stock.gross_margin.toFixed(2) + '%' : '-' }}</td>
+                <td v-show="tableTab === 'financial'">{{ stock.net_margin != 0 ? stock.net_margin.toFixed(2) + '%' : '-' }}</td>
+                <td v-show="tableTab === 'financial'">{{ stock.debt_ratio != 0 ? stock.debt_ratio.toFixed(2) + '%' : '-' }}</td>
+                <td v-show="tableTab === 'financial'">{{ stock.ps_ttm > 0 ? stock.ps_ttm.toFixed(2) : '-' }}</td>
+                <td v-show="tableTab === 'financial'">{{ stock.pb > 0 ? stock.pb.toFixed(2) : '-' }}</td>
               </tr>
             </template>
             <!-- 搜索无匹配 -->
             <tr v-else-if="screenResult && screenResult.passed.length > 0 && paginatedData.length === 0">
-              <td colspan="8" style="text-align:center; padding:40px 20px; color:#bbb;">
+              <td :colspan="13" style="text-align:center; padding:40px 20px; color:#bbb;">
                 🔍 未找到与「{{ searchKeyword }}」匹配的股票
               </td>
             </tr>
             <!-- 无结果 -->
             <tr v-else-if="screenResult && !screenError">
-              <td colspan="8" style="text-align:center; padding:40px 20px; color:#bbb;">
+              <td :colspan="13" style="text-align:center; padding:40px 20px; color:#bbb;">
                 {{ screenResult.total > 0 ? '😔 没有符合条件的股票，请尝试调整条件' : '🔍 运行筛选后显示结果' }}
               </td>
             </tr>
             <!-- 错误 -->
             <tr v-else-if="screenError">
-              <td colspan="8" style="text-align:center; padding:30px; color:#cf1322;">
+              <td :colspan="13" style="text-align:center; padding:30px; color:#cf1322;">
                 ⚠️ {{ screenError }}
               </td>
             </tr>
             <!-- 初始状态 -->
             <tr v-else>
-              <td colspan="8" style="text-align:center; padding:60px 20px; color:#bbb; font-size:14px;">
+              <td :colspan="13" style="text-align:center; padding:60px 20px; color:#bbb; font-size:14px;">
                 🔍 运行筛选后显示结果
               </td>
             </tr>
@@ -1511,6 +1567,9 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const pageSizes = [10, 20, 50, 100]
 
+// 表格视图：overview=概览 financial=财务（与信号 activeTab 区分）
+const tableTab = ref<'overview' | 'financial'>('overview')
+
 // ========== K 线图悬浮 ==========
 const klineVisible = ref(false)
 const klineStockCode = ref('')
@@ -2210,23 +2269,52 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .fav-toast-err { background: #fff1f0; color: #cf1322; }
 .tb-extra { font-size: 11.5px; color: #aaa; margin-left: 8px; }
 
-.results-table-wrap { flex: 1; overflow: auto; }
-.results-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.results-table-wrap { flex: 1; overflow-x: auto; }
+.results-table { width: 100%; border-collapse: collapse; font-size: 12.5px; table-layout: auto; }
 .results-table thead th {
-  padding: 9px 12px; text-align: left; font-weight: 600; color: #555;
+  padding: 9px 12px; text-align: center; font-weight: 600; color: #555;
   background: #fafafa; border-bottom: 1.5px solid #eee; white-space: nowrap; font-size: 11.5px;
   position: sticky; top: 0; z-index: 2;
 }
 .results-table tbody td {
-  padding: 8px 12px; border-bottom: 1px solid #f5f5f5; white-space: nowrap; color: #444;
+  padding: 8px 12px; border-bottom: 1px solid #f5f5f5; white-space: nowrap; color: #444; text-align: center;
+  height: 40px; overflow: hidden; text-overflow: ellipsis;
 }
 .results-table tbody tr:nth-child(even) { background: #fafbfc; }
 .results-table tbody tr:hover { background: #f0f7ff; }
-.col-cb { width: 38px; text-align: center; }
+.col-cb { width: 38px; }
+.col-idx { width: 50px; }
+.col-code { width: 80px; }
+.col-name { width: 100px; }
+
+/* 数据列按列序号定位固定 */
+.col-price { min-width: 90px; }
+.col-pct { min-width: 90px; }
+.col-num { min-width: 90px; }
+.col-industry { min-width: 120px; }   /* 概况：所属东财行业 */
+.col-sector { min-width: 150px; }
+.col-links { min-width: 160px; }
+
+/* 财务列宽度分配（根据数据长度合理分配） */
+.col-fin-bvps { min-width: 100px; }  /* 每股净资产(元) */
+.col-fin-eps { min-width: 110px; }   /* 基本每股收益(元) */
+.col-fin-roe { min-width: 105px; }   /* 净资产收益率(%) */
+.col-fin-roa { min-width: 110px; }   /* 总资产收益率(%) */
+.col-fin-gm { min-width: 85px; }     /* 毛利率(%) */
+.col-fin-nm { min-width: 80px; }     /* 净利率(%) */
+.col-fin-dr { min-width: 100px; }    /* 资产负债率(%) */
+.col-fin-ps { min-width: 95px; }     /* 市销率TTM */
+.col-fin-pb { min-width: 80px; }     /* 市净率 */
+
+/* 链接列不截断 */
+.col-links { overflow: visible; }
+.results-table td.col-links { text-overflow: clip; }
+
+/* 财务模式无需额外处理：v-show 隐藏后 table-layout:auto 自动分配宽度 */
+
+.col-cb { text-align: center; }
 .col-cb input[type="checkbox"] { accent-color: #1677ff; width: 14px; height: 14px; cursor: pointer; }
-.code-col { font-family: 'SF Mono', Monaco, monospace; font-weight: 600; color: #333; }
-.name-col { font-weight: 600; color: #1a1a2e; cursor: pointer; }
-.links-col { white-space: nowrap; }
+.results-table thead th.col-idx, .results-table tbody td.col-idx { text-align: center; }
 .ext-link {
   display: inline-block;
   padding: 2px 8px;

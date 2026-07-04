@@ -96,6 +96,21 @@ func FindSnapshotByStockAndDate(code string, tradeDate int) (*model.StockDailySn
 	return &snap, err
 }
 
+// FindLatestSnapshotBefore 查询指定股票在指定日期之前（含当日）最近一条快照。
+// tradeDate <= targetDate，按 trade_date DESC 取第一条。
+func FindLatestSnapshotBefore(code string, targetDate int) (*model.StockDailySnapshot, error) {
+	var snap model.StockDailySnapshot
+	err := GetDB().
+		Where("stock_code = ? AND trade_date <= ?", code, targetDate).
+		Order("trade_date DESC").
+		Limit(1).
+		First(&snap).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &snap, err
+}
+
 // FindSnapshotsByDate 查询指定日期的所有股票快照
 func FindSnapshotsByDate(tradeDate int, offset, limit int) ([]model.StockDailySnapshot, error) {
 	var snaps []model.StockDailySnapshot

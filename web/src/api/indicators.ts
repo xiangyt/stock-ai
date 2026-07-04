@@ -261,6 +261,32 @@ export interface EvaluatedStock {
   result: number // 0=passed, 1=rejected, 2=pending
   signal_id?: string
   message?: string
+
+  // K线
+  change_pct: number // 涨跌幅(%)
+
+  // 估值
+  pe_ttm: number               // 市盈率TTM
+  ps_ttm: number               // 市销率TTM
+  pb: number                   // 市净率
+  circulate_market_cap: number // 流通市值(元)
+  total_market_cap: number     // 总市值(元)
+
+  // 盈利
+  roe: number         // 净资产收益率(%)
+  roa: number         // 总资产收益率(%)
+  gross_margin: number // 毛利率(%)
+  net_margin: number   // 净利率(%)
+
+  // 每股
+  bvps: number     // 每股净资产
+  basic_eps: number // 基本每股收益
+
+  // 偿债
+  debt_ratio: number // 资产负债率(%)
+
+  industry: string // 所属东财行业
+  sector: string   // 细分行业
 }
 
 /** 选股执行响应 */

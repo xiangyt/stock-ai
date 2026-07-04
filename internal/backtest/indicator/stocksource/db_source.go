@@ -166,19 +166,11 @@ func (s *DBStock) GetShareholderCount() (*model.ShareholderCount, error) {
 func (s *DBStock) GetDailySnapshot() (*model.StockDailySnapshot, error) {
 	if s.snapshotVal == nil {
 		var err error
-		// DailySnapshot 依赖最新交易日，先取 DailyKline 获取日期
-		klines, err := s.GetDailyKline()
+		s.snapshotVal, err = db.FindLatestSnapshotBefore(s.code, s.tradeDate)
 		if err != nil {
-			return nil, err
-		}
-		if len(klines) > 0 {
-			s.snapshotVal, err = db.FindSnapshotByStockAndDate(s.code, klines[0].TradeDate)
-			if err != nil {
-				return nil, indicator.ErrDatabase
-			} else if s.snapshotVal == nil {
-				return nil, indicator.ErrDataEmpty
-			}
-
+			return nil, indicator.ErrDatabase
+		} else if s.snapshotVal == nil {
+			return nil, indicator.ErrDataEmpty
 		}
 	}
 	return s.snapshotVal, nil
