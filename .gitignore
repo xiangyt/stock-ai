@@ -13,6 +13,7 @@ __debug_bin*
 /sync-kline
 /server
 
+
 # Output of go coverage
 *.out
 
@@ -49,3 +50,5 @@ config.yaml
 # Temp
 tmp/
 /debug-indicator
+.playwright-cli/
+.vscode/
