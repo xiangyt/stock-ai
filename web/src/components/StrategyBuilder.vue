@@ -384,14 +384,15 @@
       </div>
     </section>
 
-    <!-- ========== Section 3: 结果预览表 ========== -->
+    <!-- ========== Section 3: 结果预览区 ========== -->
     <section class="sec-results">
+      <!-- 头部工具栏（共享） -->
       <div class="results-head">
         <div class="results-left">
           <h3 class="results-title">选出股票 <strong>{{ screenResult ? screenResult.passed.length : 0 }}</strong> / {{ screenResult?.total ?? 0 }}</h3>
           <div class="results-tabs">
-            <button :class="['rtab', { active: !screenError }]" @click="screenError = ''">≡ 股票列表</button>
-            <button class="rtab dim">⊞ 多股同列</button>
+            <button :class="['rtab', { active: resultViewMode === 'list' }]" @click="resultViewMode = 'list'">≡ 股票列表</button>
+            <button :class="['rtab', { active: resultViewMode === 'multiKline', dim: !screenResult?.passed.length }]" @click="screenResult?.passed.length && (resultViewMode = 'multiKline')">⊞ 多股同列</button>
           </div>
         </div>
         <div class="results-right">
@@ -403,19 +404,42 @@
         </div>
       </div>
 
+      <!-- 共享工具栏（一键加入自选 + 搜索 + 视图切换） -->
       <div class="results-toolbar">
-        <button class="btn-batch-fav" @click="batchAddFavorites" :disabled="isAddingFav || !filteredData.length">
+        <button class="btn-batch-fav" @click="batchAddFavorites"
+          :disabled="isAddingFav || !(resultViewMode === 'list' ? filteredData.length : screenResult?.passed.length)">
           {{ isAddingFav ? '⏳ 添加中...' : '＋ 一键加入自选' }}
         </button>
-        <div class="tb-sort-tabs">
+        <!-- 列表模式：概览/财务切换 -->
+        <div v-if="resultViewMode === 'list'" class="tb-sort-tabs">
           <button :class="['st', { active: tableTab === 'overview' }]" @click="tableTab = 'overview'">概览</button>
           <button :class="['st', { active: tableTab === 'financial' }]" @click="tableTab = 'financial'">财务</button>
         </div>
+        <!-- K线模式：周期切换 -->
+        <template v-else>
+          <div class="tb-sort-tabs mk-period-tabs-inline">
+            <button class="mk-tab-sm" :class="{ active: multiKlinePeriod === 'daily' }"
+              @click="multiKlinePeriod = 'daily'">日K</button>
+            <button class="mk-tab-sm" :class="{ active: multiKlinePeriod === 'weekly' }"
+              @click="multiKlinePeriod = 'weekly'">周K</button>
+            <button class="mk-tab-sm" :class="{ active: multiKlinePeriod === 'monthly' }"
+              @click="multiKlinePeriod = 'monthly'">月K</button>
+          </div>
+        </template>
         <div class="tb-search">
+          <!-- K线模式：列数选择（搜索框左侧） -->
+          <select v-if="resultViewMode === 'multiKline'" v-model.number="multiKlineColumns" class="mk-col-select-inline">
+            <option :value="2">2 列</option>
+            <option :value="3">3 列</option>
+            <option :value="4">4 列</option>
+          </select>
           <input type="text" placeholder="代码/名称" class="tb-search-in" v-model.trim="searchKeyword" />
           <span class="tb-search-icon">🔍</span>
         </div>
       </div>
+
+      <!-- ====== 视图 A：股票列表 ====== -->
+      <template v-if="resultViewMode === 'list'">
 
       <div class="results-table-wrap" :class="{ 'financial-mode': tableTab === 'financial' }">
         <table class="results-table">
@@ -547,8 +571,27 @@
           </tbody>
         </table>
       </div>
+      </template>
 
-      <!-- 分页栏 -->
+      <!-- ====== 视图 B：多股同列K线 ====== -->
+      <MultiStockKLine
+        v-else-if="resultViewMode === 'multiKline'"
+        :stocks="screenResult?.passed.map((s: any) => ({ code: s.code, name: s.name })) ?? []"
+        :period="multiKlinePeriod"
+        :columns="multiKlineColumns"
+        :key="screenResult?.passed.map((s: any) => s.code).join(',') || 'empty'"
+      />
+
+      <!-- 空状态（无数据时切换到多股同列） -->
+      <div v-else-if="resultViewMode === 'multiKline'" class="multi-kline-empty">
+        <div class="mk-empty-content">
+          <span class="mk-empty-icon">📊</span>
+          <p>暂无股票数据</p>
+          <p class="mk-empty-hint">请先运行选股筛选，再切换到多股同列视图</p>
+        </div>
+      </div>
+
+      <!-- 分页栏（两种模式完全一致） -->
       <div v-if="screenResult && screenResult.passed.length > 0" class="pagination-bar">
         <div class="pag-left">
           <select class="page-size-select" :value="pageSize" @change="onPageSizeChange">
@@ -613,6 +656,7 @@
 import { reactive, ref, computed, nextTick, onMounted, watch } from 'vue'
 import * as indicatorsApi from '../api/indicators'
 import KLineTooltip from './KLineTooltip.vue'
+import MultiStockKLine from './MultiStockKLine.vue'
 import type {
   IndicatorMeta, Category, CompareOperator,
   SignalDef, SignalConfig, SignalOperatorOption, ParamDef, EnumOption,
@@ -1536,6 +1580,14 @@ const pageSizes = [10, 20, 50, 100]
 // 表格视图：overview=概览 financial=财务（与信号 activeTab 区分）
 const tableTab = ref<'overview' | 'financial'>('overview')
 
+// 结果视图模式：list=股票列表 multiKline=多股同列
+const resultViewMode = ref<'list' | 'multiKline'>('list')
+
+// 多股同列周期（与工具栏联动）
+const multiKlinePeriod = ref<'daily' | 'weekly' | 'monthly'>('daily')
+// 多股同列列数（与工具栏联动）
+const multiKlineColumns = ref(2)
+
 // ========== K 线图悬浮 ==========
 const klineVisible = ref(false)
 const klineStockCode = ref('')
@@ -2172,6 +2224,7 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 
 /* ========== Section 3: 结果预览表 ========== */
 .sec-results { background: #fff; border: 1px solid #e8e8e8; border-radius: 10px; overflow: hidden; flex: 1; display: flex; flex-direction: column; min-height: 360px; }
+.sec-results--kline { min-height: 500px; } /* 多股同列需要更高 */
 
 .results-head {
   display: flex; justify-content: space-between; align-items: flex-start;
@@ -2453,4 +2506,51 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .btn-level-del { padding: 0 4px; border: none; background: transparent; color: #cf1322; cursor: pointer; font-size: 12px; }
 .btn-level-add { padding: 4px 12px; border: 1px dashed #bae0ff; border-radius: 6px; background: #f0f7ff; color: #1677ff; cursor: pointer; font-size: 12px; transition: .15s; white-space: nowrap; flex-shrink: 0; }
 .btn-level-add:hover { border-color: #1677ff; background: #e6f4ff; }
+
+/* ====== 多股同列空状态 ====== */
+.multi-kline-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+.mk-empty-content { text-align: center; }
+.mk-empty-icon { font-size: 48px; display: block; margin-bottom: 10px; }
+.mk-empty-content p { font-size: 14px; color: #bbb; margin: 4px 0; }
+.mk-empty-hint { font-size: 12.5px !important; color: #ccc !important; }
+
+/* ====== K线模式内嵌周期切换 ====== */
+.mk-period-tabs-inline {
+  display: flex;
+  gap: 2px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.mk-tab-sm {
+  padding: 4px 14px;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #666;
+  transition: .15s;
+}
+.mk-tab-sm.active {
+  background: #1677ff;
+  color: #fff;
+  font-weight: 600;
+}
+.mk-tab-sm:not(.active):hover { color: #333; background: #eee; }
+/* K线模式内嵌列数选择 */
+.mk-col-select-inline {
+  padding: 4px 8px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+  background: #fff;
+  margin-right: 8px;
+}
 </style>
