@@ -183,10 +183,10 @@ func (c *AlertChecker) checkVolumeRatio(rule model.MonitorRule, data *model.Quot
 		return nil
 	}
 
-	// 10:00 前数据量不足，量比严重虚高，跳过检测
+	// 10:30 前数据量不足，量比严重虚高，跳过检测
 	if len(data.Minutes) > 0 {
 		lastTime := data.Minutes[len(data.Minutes)-1].Time
-		if parseMinute(lastTime) < 10*60 {
+		if parseMinute(lastTime) < 10*60+30 {
 			return nil
 		}
 	}

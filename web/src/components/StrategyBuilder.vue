@@ -2358,8 +2358,8 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
 .stock-name-hover:hover {
   color: #1677ff;
 }
-.up { color: #cf1322; font-weight: 600; } /* 中国红涨 */
-.down { color: #52c41a; font-weight: 600; } /* 中国绿跌 */
+.up { color: #cf1322 !important; font-weight: 600; } /* 中国红涨 */
+.down { color: #52c41a !important; font-weight: 600; } /* 中国绿跌 */
 
 .match-tags { display: flex; flex-wrap: wrap; gap: 3px; }
 .match-tag {
