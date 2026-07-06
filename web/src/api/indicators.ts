@@ -354,15 +354,20 @@ export function formatSignalConfig(
     case 'in': case 'not_in':
       return `{${(config.params.values as string[])?.join(',') || ''}}`
     case 'custom': {
-      const start = config.params.lookback_start
-      const end = config.params.lookback_end
-      const startMeta = findParamMeta(ind, 'lookback_start')
-      const endMeta = findParamMeta(ind, 'lookback_end')
-      const sLabel = startMeta?.label ?? '起始天数'
-      const eLabel = endMeta?.label ?? '结束天数'
-      const sUnit = startMeta?.unit || '天前'
-      const eUnit = endMeta?.unit || '天前'
-      return `${sLabel}${start ?? 0}${sUnit}, ${eLabel}${end ?? 0}${eUnit}`
+      // 遍历信号定义中所有 param，拼接 label + value + unit
+      const parts: string[] = []
+      for (const sig of indicator.signals) {
+        for (const op of sig.operators) {
+          if (!op.params) continue
+          for (const p of op.params) {
+            const val = config.params[p.key]
+            const label = p.label || p.key
+            const unit = p.unit || ''
+            parts.push(`${label}${val ?? p.default ?? ''}${unit}`)
+          }
+        }
+      }
+      return parts.length > 0 ? parts.join(', ') : Object.entries(config.params).map(([k, v]) => `${k}=${v}`).join(', ')
     }
     default:
       return Object.entries(config.params).map(([k, v]) => `${k}=${v}`).join(', ')

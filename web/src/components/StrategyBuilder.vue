@@ -1352,23 +1352,23 @@ function formatSignalParamText(cfg: SignalConfig, ind: IndicatorMeta): string {
       return `{${vals.join(',')}}`
     }
     case 'custom': {
-      const start = params.lookback_start
-      const end = params.lookback_end
-      // 从信号定义中动态读取参数的 label 和 unit
-      let sLabel = '起始天数', eLabel = '结束天数'
-      let sUnit = '天前', eUnit = '天前'
+      // 遍历信号定义中的所有 param，拼接 label + value + unit
+      const parts: string[] = []
       for (const sig of ind.signals) {
         if (sig.signal_id === cfg.signal_id) {
           for (const op of sig.operators) {
             if (!op.params) continue
             for (const p of op.params) {
-              if (p.key === 'lookback_start') { if (p.label) sLabel = p.label; if (p.unit) sUnit = p.unit }
-              if (p.key === 'lookback_end')   { if (p.label) eLabel = p.label; if (p.unit) eUnit = p.unit }
+              const val = params[p.key]
+              const label = p.label || p.key
+              const unit = p.unit || ''
+              parts.push(`${label}${val ?? p.default ?? ''}${unit}`)
             }
           }
+          break
         }
       }
-      return `${sLabel}${start ?? 0}${sUnit}, ${eLabel}${end ?? 0}${eUnit}`
+      return parts.length > 0 ? parts.join(', ') : Object.entries(params).map(([k, v]) => `${k}=${v}`).join(', ')
     }
     default:
       return Object.entries(params).map(([k, v]) => `${k}=${v}`).join(', ')

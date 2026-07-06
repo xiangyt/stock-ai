@@ -30,6 +30,8 @@ vendor/
 .codebuddy/
 *.swp
 *.swo
+.playwright-cli/
+scripts/
 
 # OS
 .DS_Store
@@ -50,5 +52,4 @@ config.yaml
 # Temp
 tmp/
 /debug-indicator
-.playwright-cli/
-.vscode/
+
