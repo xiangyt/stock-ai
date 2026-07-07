@@ -471,7 +471,7 @@
           <thead>
             <tr>
               <th class="col-cb">
-                <input type="checkbox" :checked="allSelected" :indeterminate="getIndeterminate()" @change="toggleAll" />
+                <input type="checkbox" :checked="allSelected" :indeterminate="indeterminate" @change="toggleAll" />
               </th>
               <th class="col-idx">序号</th>
               <th class="col-code">股票代码</th>
@@ -576,10 +576,10 @@
       <!-- ====== 视图 B：多股同列K线 ====== -->
       <MultiStockKLine
         v-else-if="resultViewMode === 'multiKline'"
-        :stocks="screenResult?.passed.map((s: any) => ({ code: s.code, name: s.name })) ?? []"
+        :stocks="paginatedData.map((s: any) => ({ code: s.code, name: s.name }))"
         :period="multiKlinePeriod"
         :columns="multiKlineColumns"
-        :key="screenResult?.passed.map((s: any) => s.code).join(',') || 'empty'"
+        :key="`${searchKeyword}-${currentPage}-${pageSize}-${multiKlineColumns}`"
       />
 
       <!-- 空状态（无数据时切换到多股同列） -->
@@ -1547,13 +1547,8 @@ const allSelected = computed(() =>
   screenResult.value && screenResult.value.passed.length > 0 && selectedRows.value.size === screenResult.value.passed.length
 )
 const someSelected = computed((): boolean => selectedRows.value.size > 0 && !!allSelected.value === false)
-/** someSelected 的非空值（用于模板中 indeterminate 属性） */
-const _indeterminate = ref(false)
-watch(someSelected, (v) => { _indeterminate.value = Boolean(v) }, { immediate: true })
-/** 获取 indeterminate 值（绕过 Vue 类型推断 bug） */
-function getIndeterminate(): boolean {
-  return _indeterminate.value
-}
+/** indeterminate 状态（绕过 Vue 模板类型推断） */
+const indeterminate = computed(() => Boolean(someSelected.value))
 
 function toggleAll() {
   if (!screenResult.value) return
@@ -1574,8 +1569,8 @@ function toggleRow(idx: number) {
 // ========== 前端分页 ==========
 const searchKeyword = ref('')
 const currentPage = ref(1)
-const pageSize = ref(20)
-const pageSizes = [10, 20, 50, 100]
+const pageSize = ref(12)
+const pageSizes = [12, 24, 48, 96]
 
 // 表格视图：overview=概览 financial=财务（与信号 activeTab 区分）
 const tableTab = ref<'overview' | 'financial'>('overview')
