@@ -203,6 +203,8 @@ func (r *DataCollectRunner) handleStockDetailSync(ctx context.Context, task *mod
 		}
 
 		s := ToStockModel(stock.Code, detail)
+		// 保留退市日期：优先从 name_changes 获取，否则保留 DB 中已有值
+		s.DelistDate = getDelistDate(stock.Code)
 		if db.UpsertStock(s) == 0 {
 			newCount++
 		} else {
@@ -737,6 +739,35 @@ func ToStockModel(code string, detail *adapter.StockBasic) model.Stock {
 		Industry:     detail.Industry,
 		Sector:  detail.Sector,
 	}
+}
+
+// getDelistDate 获取股票的退市日期。
+//
+// 优先从 name_changes 表判断：若最新名称变更记录包含"退"且原因为"进入退市整理"，
+// 则返回对应的变更日期作为退市日期。否则保留 DB 中已有的 delist_date，避免被空值覆盖。
+func getDelistDate(code string) string {
+	// 1. 查 name_changes 最新记录判断是否退市
+	latest, err := db.FindLatestNameChange(code)
+	if err == nil && latest.ChangeDate > 0 {
+		if isDelistNameChange(latest.SecurityName, latest.ChangeReason) {
+			// change_date 格式为 YYYYMMDD (int)，转为 YYYY-MM-DD
+			return formatDate8To10(latest.ChangeDate)
+		}
+	}
+
+	// 2. 非退市情况：保留 DB 中已有的 delist_date
+	exist, err := db.FindStockByCode(code)
+	if err == nil && exist.DelistDate != "" {
+		return exist.DelistDate
+	}
+
+	return ""
+}
+
+// formatDate8To10 将 YYYYMMDD (int) 转为 "YYYY-MM-DD" 字符串
+func formatDate8To10(d int) string {
+	s := fmt.Sprintf("%08d", d)
+	return s[:4] + "-" + s[4:6] + "-" + s[6:]
 }
 
 // GetExchangeName 获取交易所中文名

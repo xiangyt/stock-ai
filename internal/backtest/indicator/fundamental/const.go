@@ -17,4 +17,5 @@ const (
 	IndHoldRatioSeq         = "008" // 十大股东持股比例
 	IndHolderNumSeq         = "009" // 股东户数
 	IndAvgHoldSharesSeq     = "010" // 户均持股数
+	IndStSeq                = "011" // ST股
 )

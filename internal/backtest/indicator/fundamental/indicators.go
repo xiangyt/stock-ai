@@ -17,5 +17,6 @@ func All() []indicator.Indicator {
 		NewHoldRatio(),
 		NewHolderNum(),
 		NewAvgHoldShares(),
+		NewIsSt(),
 	}
 }

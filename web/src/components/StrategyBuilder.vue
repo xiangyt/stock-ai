@@ -521,7 +521,7 @@
                 <td v-show="tableTab === 'overview'" :class="['col-pct', stock.change_pct > 0 ? 'up' : stock.change_pct < 0 ? 'down' : '']">
                   {{ stock.change_pct != null ? (stock.change_pct > 0 ? '+' : '') + stock.change_pct.toFixed(2) + '%' : '-' }}
                 </td>
-                <td v-show="tableTab === 'overview'" class="col-num">{{ stock.pe_ttm > 0 ? stock.pe_ttm.toFixed(2) : '-' }}</td>
+                <td v-show="tableTab === 'overview'" class="col-num">{{ stock.pe_ttm != null ? stock.pe_ttm.toFixed(2) : '-' }}</td>
                 <td v-show="tableTab === 'overview'" class="col-num">{{ stock.circulate_market_cap > 0 ? (stock.circulate_market_cap / 1e8).toFixed(2) : '-' }}</td>
                 <td v-show="tableTab === 'overview'" class="col-num">{{ stock.total_market_cap > 0 ? (stock.total_market_cap / 1e8).toFixed(2) : '-' }}</td>
                 <td v-show="tableTab === 'overview'" class="col-industry">{{ stock.industry || '-' }}</td>

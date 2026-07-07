@@ -216,7 +216,7 @@ func RunNameChanges(ctx context.Context, adp adapter.DataSource, code string) (*
 	latest := changes[0]
 	latestName := extractNewName(latest.SecurityName)
 	delistDate := ""
-	if strings.Contains(latestName, "退") && strings.Contains(latest.ChangeReason, "进入退市整理") {
+	if isDelistNameChange(latestName, latest.ChangeReason) {
 		delistDate = latest.ChangeDate // 已是 YYYY-MM-DD 格式
 	}
 	_ = db.UpdateStockName(code, latestName, delistDate)
@@ -258,7 +258,7 @@ func RunNameChangesBatch(ctx context.Context, adp adapter.DataSource) (*CollectR
 		latest := changes[0]
 		latestName := extractNewName(latest.SecurityName)
 		delistDate := ""
-		if strings.Contains(latestName, "退") && strings.Contains(latest.ChangeReason, "进入退市整理") {
+		if isDelistNameChange(latestName, latest.ChangeReason) {
 			delistDate = latest.ChangeDate // 已是 YYYY-MM-DD 格式
 		}
 		if err := db.UpdateStockName(stock.Code, latestName, delistDate); err != nil {
@@ -286,6 +286,13 @@ func extractNewName(raw string) string {
 		return strings.TrimSpace(raw[idx+len("→"):])
 	}
 	return strings.TrimSpace(raw)
+}
+
+// isDelistNameChange 判断名称变更记录是否表明股票退市。
+//
+// 条件：变更后名称包含"退"且变更原因为"进入退市整理"。
+func isDelistNameChange(name, reason string) bool {
+	return strings.Contains(name, "退") && strings.Contains(reason, "进入退市整理")
 }
 
 // buildSince 查询 DB 中该股票最近一次名称变更日期，返回 "YYYY-MM-DD" 格式；无记录时返回空串（全量拉取）
