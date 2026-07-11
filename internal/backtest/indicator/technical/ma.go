@@ -45,17 +45,19 @@ func ParamSelect(key, label string, required bool, defaultVal float64, options .
 
 // MALines 均线预计算结果，供该指标下所有信号复用
 type MALines struct {
-	MA5  []float64 // 近 maSeriesDays 日的 MA5 序列，[0]=最新
-	MA10 []float64
-	MA20 []float64
-	MA30 []float64
-	MA60 []float64
+	MA5   []float64 // 近 maSeriesDays 日的 MA5 序列，[0]=最新
+	MA10  []float64
+	MA20  []float64
+	MA30  []float64
+	MA60  []float64
+	MA120 []float64 // 半年线，用于均线依次上穿信号
 }
 
 // maSeriesDays 预计算的均线序列长度（近 N 日）
 const maSeriesDays = 30
 
 // minKlineLen 计算 MA60 所需的最少 K 线根数
+// 注：MA120 需要更多 K 线（120+maSeriesDays-1=149），信号层自行校验
 const minKlineLen = 60
 
 type Ma struct {
@@ -74,22 +76,33 @@ func NewMa() *Ma {
 	}
 
 	// 内置信号：非交叉信号 + 交叉信号配置表循环生成
-	bareSigs := []indicator.Signal{
-		NewSignalMaBullish("01"),   // 多头排列 (MA5/10/20/30/60)
-		NewSignalMaBullish2("02"),  // 多头排列2 (MA10/20/30/60)
-		NewSignalMaBullish3("03"),  // 多头排列3 (MA10/20/30)
+	builtInSigs := []indicator.Signal{
+		NewSignalMaBullish("01"),  // 多头排列 (MA5/10/20/30/60)
+		NewSignalMaBullish2("02"), // 多头排列2 (MA10/20/30/60)
+		NewSignalMaBullish3("03"), // 多头排列3 (MA10/20/30)
 		// 04~05 预留
-		NewSignalMaSticky("06"),        // 均线粘合
-		NewSignalPriceAboveMA5("10"),   // 站上5日线
-		// 07~09, 11~14 预留
+		NewSignalMaSticky("06"),      // 均线粘合
+		NewSignalPriceAboveMA5("10"), // 站上5日线
+		// 07~09, 11~19 预留
+
 	}
-	builtInSigs := append(bareSigs, buildMaCrossSignals(maCrossDefs)...)
+	builtInSigs = append(builtInSigs, buildMaCrossSignals(maCrossDefs)...)
+	builtInSigs = append(builtInSigs, NewSignalMaSeqCrossMA120("20")) // 短期均线依次上穿MA120
 	i.SetBuiltInSignals(builtInSigs)
 
 	// 自定义信号：非交叉信号 + 交叉信号配置表循环生成
-	customSigs := append(bareSigs, buildMaCrossSignals(customMaCrossDefs)...)
-	// 高低点信号仅作为自定义信号
-	customSigs = append(customSigs, NewSignalHHPushUp("04"), NewSignalHHPushDown("05"))
+	customSigs := []indicator.Signal{
+		NewSignalMaBullish("01"),     // 多头排列
+		NewSignalMaBullish2("02"),    // 多头排列2
+		NewSignalMaBullish3("03"),    // 多头排列3
+		NewSignalMaSticky("06"),      // 均线粘合
+		NewSignalPriceAboveMA5("10"), // 站上5日线
+	}
+	customSigs = append(customSigs, buildMaCrossSignals(customMaCrossDefs)...)
+	customSigs = append(customSigs,
+		NewSignalMaSeqCrossMA120("20"),                     // 短期均线依次上穿MA120
+		NewSignalHHPushUp("04"), NewSignalHHPushDown("05"), // 高低点信号仅作为自定义信号
+	)
 	i.SetCustomSignals(customSigs)
 	return i
 }
@@ -152,6 +165,12 @@ func (i *Ma) Evaluate(stock indicator.StockSource, config []*indicator.SignalCon
 				} else {
 					return res
 				}
+			case *SignalMaSeqCrossMA120:
+				if res := vv.Evaluate(lines, klines, v); res.Result == indicator.ResultPassed {
+					continue
+				} else {
+					return res
+				}
 			case *SignalHHPushUp:
 				if res := vv.Evaluate(lines, klines, v); res.Result == indicator.ResultPassed {
 					continue
@@ -178,17 +197,18 @@ func (i *Ma) Evaluate(stock indicator.StockSource, config []*indicator.SignalCon
 	return &indicator.EvaluatedStock{Result: indicator.ResultPassed}
 }
 
-// buildMALines 计算 MA5/10/20/60 近 maSeriesDays 日序列。
+// buildMALines 计算 MA5/10/20/30/60/120 近 maSeriesDays 日序列。
 // klines[0] 为最新K线，Close 以"分"为单位。
 // 返回的切片 [0] 对应最新一日，[maSeriesDays-1] 对应最早一日。
-// MA 以高精度 float64 存储，比较时通过 floorMA() 向下取整。
+// MA120 计算时若数据不足则对应位置为 0（信号层会自行校验）。
 func buildMALines(klines []*model.DailyKline) MALines {
 	lines := MALines{
-		MA5:  make([]float64, maSeriesDays),
-		MA10: make([]float64, maSeriesDays),
-		MA20: make([]float64, maSeriesDays),
-		MA30: make([]float64, maSeriesDays),
-		MA60: make([]float64, maSeriesDays),
+		MA5:   make([]float64, maSeriesDays),
+		MA10:  make([]float64, maSeriesDays),
+		MA20:  make([]float64, maSeriesDays),
+		MA30:  make([]float64, maSeriesDays),
+		MA60:  make([]float64, maSeriesDays),
+		MA120: make([]float64, maSeriesDays),
 	}
 	for day := 0; day < maSeriesDays; day++ {
 		lines.MA5[day] = calcSMA(klines[day:], 5)
@@ -196,6 +216,7 @@ func buildMALines(klines []*model.DailyKline) MALines {
 		lines.MA20[day] = calcSMA(klines[day:], 20)
 		lines.MA30[day] = calcSMA(klines[day:], 30)
 		lines.MA60[day] = calcSMA(klines[day:], 60)
+		lines.MA120[day] = calcSMA(klines[day:], 120)
 	}
 	return lines
 }
@@ -836,7 +857,7 @@ func evalHHPush(klines []*model.DailyKline, config *indicator.SignalConfig, up b
 			return &indicator.EvaluatedStock{
 				Result:   indicator.ResultRejected,
 				SignalID: config.SignalID,
-				Message:  fmt.Sprintf("%d天前 OHLC 未全面%s: O(%d→%d) H(%d→%d) L(%d→%d) C(%d→%d)",
+				Message: fmt.Sprintf("%d天前 OHLC 未全面%s: O(%d→%d) H(%d→%d) L(%d→%d) C(%d→%d)",
 					i, dir, prev.Open, cur.Open, prev.High, cur.High, prev.Low, cur.Low, prev.Close, cur.Close),
 			}
 		}
@@ -900,12 +921,12 @@ type SignalMaCross struct {
 
 // maCrossDef 均线交叉信号配置
 type maCrossDef struct {
-	Seq      string          // 信号序号
-	Name     string          // 信号名称
-	Desc     string          // 信号描述
-	Fast     maLineSelector  // 快线
-	Slow     maLineSelector  // 慢线
-	IsGolden bool            // true=金叉, false=死叉
+	Seq      string         // 信号序号
+	Name     string         // 信号名称
+	Desc     string         // 信号描述
+	Fast     maLineSelector // 快线
+	Slow     maLineSelector // 慢线
+	IsGolden bool           // true=金叉, false=死叉
 }
 
 // maCrossDefs 内置均线交叉信号配置表
@@ -930,6 +951,7 @@ func buildMaCrossSignals(defs []maCrossDef) []indicator.Signal {
 	}
 	return sigs
 }
+
 // newSignalMaCross 创建均线交叉信号的工厂函数。
 func newSignalMaCross(id, name, desc string, fast, slow maLineSelector, isGolden bool) *SignalMaCross {
 	label := "金叉"
@@ -1063,4 +1085,141 @@ func signalCrossOp(isGolden bool) string {
 		return "金叉"
 	}
 	return "死叉"
+}
+
+// ============================================================================
+//  SignalMaSeqCrossMA120 — 短期均线依次上穿MA120(半年线)
+//
+//  判别规则:
+//    在时间窗口 [lookback_start, lookback_end] 内，MA5、MA10、MA20、MA30
+//    依次上穿 MA120（半年线）。依次指按时间先后：MA5 先穿上，然后 MA10，
+//    再 MA20，最后 MA30。各均线允许同日或不同日穿上。
+//
+//  内置信号默认窗口: lookback_start=25, lookback_end=2
+//  自定义信号默认同上
+//
+//  数据需求: klines 至少需要 start + 120 根 K 线
+// ============================================================================
+
+type SignalMaSeqCrossMA120 struct {
+	indicator.BaseSignal
+}
+
+// NewSignalMaSeqCrossMA120 创建短期均线依次上穿MA120信号
+func NewSignalMaSeqCrossMA120(seq string) *SignalMaSeqCrossMA120 {
+	return &SignalMaSeqCrossMA120{
+		BaseSignal: indicator.NewBaseSignal(
+			seq,
+			"均线依次上穿半年线",
+			"MA5、MA10、MA20、MA30在时间窗口内依次上穿MA120(半年线)",
+			indicator.ValSeries,
+			[]indicator.OperatorOption{
+				{
+					Operator: indicator.OpCustom,
+					Label:    "依次上穿",
+					Params: []indicator.ParamDef{
+						signalutil.ParamLookbackStart(25, "天前"),
+						signalutil.ParamLookbackEnd(2, "天前"),
+					},
+				},
+			},
+			&indicator.SignalConfig{
+				Operator: indicator.OpCustom,
+				Params: map[string]any{
+					indicator.ParamKeyLookbackStart: float64(25),
+					indicator.ParamKeyLookbackEnd:   float64(2),
+				},
+			},
+		),
+	}
+}
+
+// Evaluate 检查短期均线是否在时间窗口内依次上穿MA120。
+//
+// lines.MA5[i] 为 i 天前的 MA5 值，MA120 已由 buildMALines 预计算。
+func (s *SignalMaSeqCrossMA120) Evaluate(
+	lines MALines,
+	_ []*model.DailyKline,
+	config *indicator.SignalConfig,
+) *indicator.EvaluatedStock {
+	if !config.IsCustom() {
+		config = s.DefaultConfig()
+	}
+
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, 25))
+	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 2))
+	if start < end {
+		start, end = end, start
+	}
+
+	// 检查 MA120 是否有效（数据不足时 buildMALines 返回 0）
+	if start >= len(lines.MA120) || lines.MA120[start] == 0 {
+		return &indicator.EvaluatedStock{
+			Result:   indicator.ResultRejected,
+			SignalID: config.SignalID,
+			Message:  "K线数据不足，无法计算MA120(半年线)",
+		}
+	}
+	if start >= maSeriesDays || end >= maSeriesDays {
+		return &indicator.EvaluatedStock{
+			Result:   indicator.ResultRejected,
+			SignalID: config.SignalID,
+			Message:  fmt.Sprintf("时间窗口超出MA预计算范围(max=%d天前)", maSeriesDays-1),
+		}
+	}
+
+	// MA 列表，按检查顺序：MA5 → MA10 → MA20 → MA30
+	type maEntry struct {
+		label   string
+		maSlice []float64
+	}
+	mas := []maEntry{
+		{"MA5", lines.MA5},
+		{"MA10", lines.MA10},
+		{"MA20", lines.MA20},
+		{"MA30", lines.MA30},
+	}
+
+	// 逐个均线检查，找到首次上穿 MA120 的日期。
+	// 数据由新到旧([0]=最新)，依次上穿指 MA5 先穿上(最旧)，而后 MA10/20/30 依次穿上(更新)。
+	// 因此扫描从旧到新(start→end)，后续交叉日必须比前一条更小(更新)。
+	lastCrossDay := start + 1 // 初始值大于窗口最大值，确保第一个均线无约束
+	for _, ma := range mas {
+		foundDay := -1
+		for day := start; day >= end; day-- {
+			if day >= lastCrossDay {
+				continue // 后续均线交叉日必须比前一个更小(更新)
+			}
+
+			// 需要前一日数据判断上穿
+			if day+1 >= maSeriesDays {
+				continue
+			}
+
+			maToday := floorMA(ma.maSlice[day])
+			maPrev := floorMA(ma.maSlice[day+1])
+			ma120Today := floorMA(lines.MA120[day])
+			ma120Prev := floorMA(lines.MA120[day+1])
+
+			if maPrev < ma120Prev && maToday >= ma120Today {
+				foundDay = day
+				break
+			}
+		}
+
+		if foundDay < 0 {
+			return &indicator.EvaluatedStock{
+				Result:   indicator.ResultRejected,
+				SignalID: config.SignalID,
+				Message:  fmt.Sprintf("%s未在[%d天前,%d天前]窗口内上穿MA120", ma.label, start, end),
+			}
+		}
+		lastCrossDay = foundDay
+	}
+
+	return &indicator.EvaluatedStock{
+		Result:   indicator.ResultPassed,
+		SignalID: config.SignalID,
+		Message:  fmt.Sprintf("MA5/10/20/30在[%d天前,%d天前]窗口内依次上穿MA120 ✓", start, end),
+	}
 }

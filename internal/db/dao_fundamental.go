@@ -85,7 +85,7 @@ func FindLatestShareholderCount(code string, endDate int) (*model.ShareholderCou
 	var sc model.ShareholderCount
 	db := GetDB().Where("stock_code = ?", code)
 	if endDate > 0 {
-		db = db.Where("trade_date <= ?", endDate)
+		db = db.Where("end_date <= ?", endDate)
 	}
 	err := db.Order("end_date DESC").First(&sc).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
