@@ -478,25 +478,25 @@
               <th class="col-name">股票简称</th>
 
               <!-- 概览表头（v-show 避免 DOM 重建抖动） -->
-              <th v-show="tableTab === 'overview'" class="col-price">现价(元)</th>
+              <th v-show="tableTab === 'overview'" class="col-price sortable" :class="{ active: sortField === 'price', [sortOrder]: sortField === 'price' }" @click="toggleSort('price')">现价(元)<span class="sort-icon">{{ sortField === 'price' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</span></th>
               <th v-show="tableTab === 'overview'" class="col-pct">涨跌幅(%)</th>
-              <th v-show="tableTab === 'overview'" class="col-num">市盈率TTM</th>
-              <th v-show="tableTab === 'overview'" class="col-num">流通市值(亿)</th>
-              <th v-show="tableTab === 'overview'" class="col-num">总市值(亿)</th>
+              <th v-show="tableTab === 'overview'" class="col-num sortable" :class="{ active: sortField === 'pe_ttm', [sortOrder]: sortField === 'pe_ttm' }" @click="toggleSort('pe_ttm')">市盈率TTM<span class="sort-icon">{{ sortField === 'pe_ttm' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</span></th>
+              <th v-show="tableTab === 'overview'" class="col-num sortable" :class="{ active: sortField === 'circulate_market_cap', [sortOrder]: sortField === 'circulate_market_cap' }" @click="toggleSort('circulate_market_cap')">流通市值(亿)<span class="sort-icon">{{ sortField === 'circulate_market_cap' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</span></th>
+              <th v-show="tableTab === 'overview'" class="col-num sortable" :class="{ active: sortField === 'total_market_cap', [sortOrder]: sortField === 'total_market_cap' }" @click="toggleSort('total_market_cap')">总市值(亿)<span class="sort-icon">{{ sortField === 'total_market_cap' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</span></th>
               <th v-show="tableTab === 'overview'" class="col-industry">所属东财行业</th>
               <th v-show="tableTab === 'overview'" class="col-sector">细分行业</th>
               <th v-show="tableTab === 'overview'" class="col-links">外部链接</th>
 
               <!-- 财务表头（v-show） -->
-              <th v-show="tableTab === 'financial'">每股净资产(元)</th>
-              <th v-show="tableTab === 'financial'">基本每股收益(元)</th>
+              <th v-show="tableTab === 'financial'" class="sortable" :class="{ active: sortField === 'bvps', [sortOrder]: sortField === 'bvps' }" @click="toggleSort('bvps')">每股净资产(元)<span class="sort-icon">{{ sortField === 'bvps' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</span></th>
+              <th v-show="tableTab === 'financial'" class="sortable" :class="{ active: sortField === 'basic_eps', [sortOrder]: sortField === 'basic_eps' }" @click="toggleSort('basic_eps')">基本每股收益(元)<span class="sort-icon">{{ sortField === 'basic_eps' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</span></th>
               <th v-show="tableTab === 'financial'">净资产收益率(%)</th>
               <th v-show="tableTab === 'financial'">总资产收益率(%)</th>
               <th v-show="tableTab === 'financial'">毛利率(%)</th>
               <th v-show="tableTab === 'financial'">净利率(%)</th>
               <th v-show="tableTab === 'financial'">资产负债率(%)</th>
               <th v-show="tableTab === 'financial'">市销率TTM</th>
-              <th v-show="tableTab === 'financial'">市净率</th>
+              <th v-show="tableTab === 'financial'" class="sortable" :class="{ active: sortField === 'pb', [sortOrder]: sortField === 'pb' }" @click="toggleSort('pb')">市净率<span class="sort-icon">{{ sortField === 'pb' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</span></th>
             </tr>
           </thead>
           <tbody>
@@ -1566,7 +1566,25 @@ function toggleRow(idx: number) {
   }
 }
 
-// ========== 前端分页 ==========
+// ========== 前端排序 & 分页 ==========
+const sortField = ref<string>('')
+const sortOrder = ref<'asc' | 'desc'>('asc')
+
+/** 切换排序：同一字段三次循环 (asc → desc → 无排序) */
+function toggleSort(field: string) {
+  if (sortField.value === field) {
+    if (sortOrder.value === 'asc') {
+      sortOrder.value = 'desc'
+    } else {
+      sortField.value = ''
+      sortOrder.value = 'asc'
+    }
+  } else {
+    sortField.value = field
+    sortOrder.value = 'asc'
+  }
+}
+
 const searchKeyword = ref('')
 const currentPage = ref(1)
 const pageSize = ref(12)
@@ -1643,7 +1661,7 @@ function getTencentUrl(code: string): string {
   return `https://gu.qq.com/${getExchangePrefix(code)}${code}/gp`
 }
 
-/** 先过滤，后分页 */
+/** 先过滤，后排序 */
 const filteredData = computed(() => {
   if (!screenResult.value) return []
   const kw = searchKeyword.value.toLowerCase()
@@ -1653,9 +1671,55 @@ const filteredData = computed(() => {
   )
 })
 
+/** 过滤后再排序 */
+const sortedData = computed(() => {
+  const list = [...filteredData.value]
+  if (!sortField.value) return list
+
+  return list.sort((a: any, b: any) => {
+    let va: any, vb: any
+    switch (sortField.value) {
+      case 'price':
+        va = a.price ?? 0
+        vb = b.price ?? 0
+        break
+      case 'pe_ttm':
+        va = a.pe_ttm ?? Number.MAX_VALUE
+        vb = b.pe_ttm ?? Number.MAX_VALUE
+        break
+      case 'circulate_market_cap':
+        va = a.circulate_market_cap ?? 0
+        vb = b.circulate_market_cap ?? 0
+        break
+      case 'total_market_cap':
+        va = a.total_market_cap ?? 0
+        vb = b.total_market_cap ?? 0
+        break
+      case 'bvps':
+        va = a.bvps ?? 0
+        vb = b.bvps ?? 0
+        break
+      case 'basic_eps':
+        va = a.basic_eps ?? Number.MIN_SAFE_INTEGER
+        vb = b.basic_eps ?? Number.MIN_SAFE_INTEGER
+        break
+      case 'pb':
+        va = a.pb ?? Number.MAX_VALUE
+        vb = b.pb ?? Number.MAX_VALUE
+        break
+      default:
+        return 0
+    }
+    if (typeof va === 'number' && typeof vb === 'number') {
+      return sortOrder.value === 'asc' ? va - vb : vb - va
+    }
+    return 0
+  })
+})
+
 const paginatedData = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
-  return filteredData.value.slice(start, start + pageSize.value)
+  return sortedData.value.slice(start, start + pageSize.value)
 })
 
 const totalPage = computed(() => {
@@ -2290,6 +2354,32 @@ defineExpose({ acceptAISignals, loadStrategyFromOutside, resetAllSignals })
   background: #fafafa; border-bottom: 1.5px solid #eee; white-space: nowrap; font-size: 11.5px;
   position: sticky; top: 0; z-index: 2;
 }
+
+/* ====== 排序样式 ====== */
+.results-table thead th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: background .15s, color .15s;
+}
+.results-table thead th.sortable:hover {
+  background: #e6f4ff;
+  color: #1677ff;
+}
+.results-table thead th.sortable.active {
+  color: #1677ff;
+  font-weight: 700;
+  background: #f0f5ff;
+}
+.sort-icon {
+  margin-left: 4px;
+  font-size: 10px;
+  opacity: 0.45;
+}
+.results-table thead th.sortable:hover .sort-icon,
+.results-table thead th.sortable.active .sort-icon {
+  opacity: 1;
+}
+
 .results-table tbody td {
   padding: 8px 12px; border-bottom: 1px solid #f5f5f5; white-space: nowrap; color: #444; text-align: center;
   height: 40px; overflow: hidden; text-overflow: ellipsis;
