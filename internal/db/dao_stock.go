@@ -34,12 +34,12 @@ func UpsertStock(stock model.Stock) int64 {
 }
 
 // LoadAllStockCodes 从数据库加载全量股票代码列表（排除已退市和B股：delist_date 为空字符串）
-// B股代码规则：深B 200xxx，沪B 900xxx
+// B股代码规则：深B 20xxxx，沪B 90xxxx
 func LoadAllStockCodes() []model.Stock {
 	var stocks []model.Stock
 	GetDB().
 		Where("delist_date = ?", "").
-		Where("code NOT LIKE '200%' AND code NOT LIKE '900%'").
+		Where("code NOT LIKE '20%' AND code NOT LIKE '90%'").
 		Find(&stocks)
 	return stocks
 }
