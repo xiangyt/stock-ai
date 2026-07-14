@@ -58,9 +58,18 @@ type Scheduler interface {
 //  TaskRunner — 任务执行器（按 TaskID 分发到具体 Handler）
 // ============================================================================
 
+// TaskResult 统一的任务执行结果，包含摘要文本和失败股票代码列表。
+//
+// Summary 为成功或部分成功的执行摘要文本；
+// FailedCodes 记录本次执行中具体失败的股票代码（用于企微通知）。
+type TaskResult struct {
+	Summary     string   // 执行结果摘要文本
+	FailedCodes []string // 失败的股票代码列表（无失败时为 nil）
+}
+
 // TaskHandler 单个采集任务的处理函数。
-// 返回结果描述信息（用于推送到机器人），不返回 error 视为执行成功。
-type TaskHandler func(ctx context.Context, task *model.DataCollectTask) (summary string, err error)
+// 返回 TaskResult（含摘要和失败代码列表），error 表示整个任务是否异常终止。
+type TaskHandler func(ctx context.Context, task *model.DataCollectTask) (*TaskResult, error)
 
 // TaskRunner 任务执行器接口（策略模式，方便测试时替换）
 type TaskRunner interface {
@@ -151,21 +160,64 @@ func (r *DataCollectRunner) Run(ctx context.Context, task *model.DataCollectTask
 		return fmt.Errorf("未知任务 %d(%s)，无对应 Handler", task.ID, task.Name)
 	}
 
-	summary, err := handler(ctx, task)
+	result, err := handler(ctx, task)
 	if err != nil {
-		errMsg := fmt.Sprintf("❌ [%s] 执行失败\n错误: %v", task.Name, err)
-		log.Printf("[DataCollect] 任务 %d 执行失败: %v", task.ID, err)
+		msg := r.formatFailureMessage(task.Name, err, result)
+		log.Printf("[DataCollect] 任务 %d(%s) 执行失败: %v", task.ID, task.Name, err)
 		if len(bots) > 0 {
-			r.notifier.Push(ctx, bots, errMsg)
+			r.notifier.Push(ctx, bots, msg)
 		}
 		return err
 	}
 
-	log.Printf("[DataCollect] 任务 %d 执行成功: %s", task.ID, summary)
-	if len(bots) > 0 && summary != "" {
-		r.notifier.Push(ctx, bots, fmt.Sprintf("✅ [%s] 执行完成\n%s", task.Name, summary))
+	log.Printf("[DataCollect] 任务 %d(%s) 执行成功: %s", task.ID, task.Name, result.Summary)
+	if len(bots) > 0 && result.Summary != "" {
+		r.notifier.Push(ctx, bots, r.formatSuccessMessage(task.Name, result))
 	}
 	return nil
+}
+
+// formatSuccessMessage 格式化成功通知（含部分失败场景）。
+//
+// 当存在失败股票时，在成功摘要下方追加失败代码列表。
+func (r *DataCollectRunner) formatSuccessMessage(taskName string, result *TaskResult) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "✅ [%s] 执行完成\n\n%s", taskName, result.Summary)
+
+	if len(result.FailedCodes) > 0 {
+		fmt.Fprintf(&sb, "\n%s", formatFailedCodes(result.FailedCodes))
+	}
+	return sb.String()
+}
+
+// formatFailureMessage 格式化失败通知，包含错误原因和可用的失败股票代码。
+func (r *DataCollectRunner) formatFailureMessage(taskName string, err error, result *TaskResult) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "❌ [%s] 执行失败\n\n错误: %v", taskName, err)
+
+	if result != nil && len(result.FailedCodes) > 0 {
+		fmt.Fprintf(&sb, "\n%s", formatFailedCodes(result.FailedCodes))
+	}
+	return sb.String()
+}
+
+// maxFailedCodesInMsg 企微消息中展示的最大失败股票数量（超出则截断）。
+const maxFailedCodesInMsg = 30
+
+// formatFailedCodes 将失败股票代码列表格式化为文本行。
+// 超过 maxFailedCodesInMsg 时截断并标注总数。
+func formatFailedCodes(codes []string) string {
+	n := len(codes)
+	if n == 0 {
+		return ""
+	}
+
+	header := "失败股票:"
+	if n <= maxFailedCodesInMsg {
+		return fmt.Sprintf("%s %s", header, strings.Join(codes, " "))
+	}
+	truncated := codes[:maxFailedCodesInMsg]
+	return fmt.Sprintf("%s %s ...共%d只", header, strings.Join(truncated, " "), n)
 }
 
 // ============================================================================
@@ -175,30 +227,32 @@ func (r *DataCollectRunner) Run(ctx context.Context, task *model.DataCollectTask
 // handleStockDetailSync 处理【股票列表同步】(Task 1)
 // 参数 JSON: {"source":"tencentstock"} — 可选，默认按优先级自动选源
 // 流程: 数据源 → 获取全量股票列表 → 遍历获取详情 → upsert入库
-func (r *DataCollectRunner) handleStockDetailSync(ctx context.Context, task *model.DataCollectTask) (string, error) {
+func (r *DataCollectRunner) handleStockDetailSync(ctx context.Context, task *model.DataCollectTask) (*TaskResult, error) {
 	sourceName := parseSourceFromParams(task.Params)
 	registry := adapter.GetRegistry()
 
 	adp, err := ResolveAdapter(registry, sourceName)
 	if err != nil {
-		return "", fmt.Errorf("获取数据源失败: %w", err)
+		return nil, fmt.Errorf("获取数据源失败: %w", err)
 	}
 
 	log.Printf("[DataCollect] 开始股票列表同步, source=%s", adp.Name())
 
 	allStocks, err := adp.GetStockList(ctx)
 	if err != nil {
-		return "", fmt.Errorf("获取股票列表失败: %w", err)
+		return nil, fmt.Errorf("获取股票列表失败: %w", err)
 	}
 
 	total := len(allStocks)
 	newCount, updCount, failCount := 0, 0, 0
+	var failCodes []string
 
 	for i, stock := range allStocks {
 		detail, detailErr := adp.GetStockDetail(ctx, stock.Code)
 		if detailErr != nil {
 			log.Printf("[DataCollect] 获取详情失败 [%s]: %v", stock.Code, detailErr)
 			failCount++
+			failCodes = append(failCodes, stock.Code)
 			continue
 		}
 
@@ -216,12 +270,16 @@ func (r *DataCollectRunner) handleStockDetailSync(ctx context.Context, task *mod
 		}
 	}
 
-	return fmt.Sprintf("total=%d, 新增=%d, 更新=%d, 失败=%d", total, newCount, updCount, failCount), nil
+	result := &TaskResult{
+		Summary: formatStockSummary(total, newCount, updCount, failCount),
+		FailedCodes: failCodes,
+	}
+	return result, nil
 }
 
 // handleDailyKlineInc 处理【每日增量同步K线数据】(Task 2)
 // 参数 JSON: {"periods":"daily"} — 可选，默认 daily
-func (r *DataCollectRunner) handleDailyKlineInc(ctx context.Context, task *model.DataCollectTask) (string, error) {
+func (r *DataCollectRunner) handleDailyKlineInc(ctx context.Context, task *model.DataCollectTask) (*TaskResult, error) {
 	periods := parsePeriodsFromParams(task.Params)
 	results := GetSyncKLineService().SyncDailyForAll(ctx, periods)
 	return formatSyncResults(periods, results), nil
@@ -230,22 +288,22 @@ func (r *DataCollectRunner) handleDailyKlineInc(ctx context.Context, task *model
 // handleEastmoneyFull 处理【东财数据全量补全】(Task 3)
 // 参数 JSON: {"periods":"daily"} — 可选，默认 daily
 // 避开三个增量同步时间点：日线(周一至五 18:00)、周线(周六 01:00)、月线(每月1号 01:30)
-func (r *DataCollectRunner) handleEastmoneyFull(ctx context.Context, task *model.DataCollectTask) (string, error) {
+func (r *DataCollectRunner) handleEastmoneyFull(ctx context.Context, task *model.DataCollectTask) (*TaskResult, error) {
 	now := time.Now()
 	if utils.IsTradingDay() && now.Hour() > 6 && now.Hour() < 16 {
-		return "", nil
+		return &TaskResult{Summary: "交易时段跳过"}, nil
 	}
 	// 避开日线增量同步 (周一至五 18:00)
 	if now.Hour() == 18 && now.Minute() == 0 && now.Weekday() >= time.Monday && now.Weekday() <= time.Friday {
-		return "", nil
+		return &TaskResult{Summary: "避开日线增量时段，跳过"}, nil
 	}
 	// 避开周线增量同步 (周六 01:00)
 	if now.Hour() == 1 && now.Minute() == 0 && now.Weekday() == time.Saturday {
-		return "", nil
+		return &TaskResult{Summary: "避开周线增量时段，跳过"}, nil
 	}
 	// 避开月线增量同步 (每月 1 号 01:30)
 	if now.Day() == 1 && now.Hour() == 1 && now.Minute() == 30 {
-		return "", nil
+		return &TaskResult{Summary: "避开月线增量时段，跳过"}, nil
 	}
 	periods := parsePeriodsFromParams(task.Params)
 	results := GetSyncKLineService().FillMissingAmount(ctx, periods)
@@ -254,90 +312,107 @@ func (r *DataCollectRunner) handleEastmoneyFull(ctx context.Context, task *model
 
 // handleFinanceReportSync 处理【财报同步】(Task 4)
 // 参数 JSON: {"source":"tencentstock"} — 可选，默认按优先级自动选源
-func (r *DataCollectRunner) handleFinanceReportSync(ctx context.Context, task *model.DataCollectTask) (string, error) {
+func (r *DataCollectRunner) handleFinanceReportSync(ctx context.Context, task *model.DataCollectTask) (*TaskResult, error) {
 	sourceName := parseSourceFromParams(task.Params)
 	adp, err := ResolveAdapter(adapter.GetRegistry(), sourceName)
 	if err != nil {
-		return "", fmt.Errorf("获取数据源失败: %w", err)
+		return nil, fmt.Errorf("获取数据源失败: %w", err)
 	}
 	res, err := RunPerformanceReportsBatch(ctx, adp)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return fmt.Sprintf("total=%d, 新增=%d, 更新=%d, 失败=%d", res.Total, res.NewCount, res.UpdCount, res.FailCount), nil
+	return &TaskResult{
+		Summary:     formatCollectSummary(res.Total, res.NewCount, res.UpdCount, res.FailCount),
+		FailedCodes: res.FailedCodes,
+	}, nil
 }
 
 // handleShareChangeSync 处理【股本变动同步】(Task 5)
-func (r *DataCollectRunner) handleShareChangeSync(ctx context.Context, task *model.DataCollectTask) (string, error) {
+func (r *DataCollectRunner) handleShareChangeSync(ctx context.Context, task *model.DataCollectTask) (*TaskResult, error) {
 	sourceName := parseSourceFromParams(task.Params)
 	adp, err := ResolveAdapter(adapter.GetRegistry(), sourceName)
 	if err != nil {
-		return "", fmt.Errorf("获取数据源失败: %w", err)
+		return nil, fmt.Errorf("获取数据源失败: %w", err)
 	}
 	res, err := RunShareChangesBatch(ctx, adp)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return fmt.Sprintf("total=%d, 新增=%d, 更新=%d, 失败=%d", res.Total, res.NewCount, res.UpdCount, res.FailCount), nil
+	return &TaskResult{
+		Summary:     formatCollectSummary(res.Total, res.NewCount, res.UpdCount, res.FailCount),
+		FailedCodes: res.FailedCodes,
+	}, nil
 }
 
 // handleShareholderSync 处理【股东户数同步】(Task 6)
-func (r *DataCollectRunner) handleShareholderSync(ctx context.Context, task *model.DataCollectTask) (string, error) {
+func (r *DataCollectRunner) handleShareholderSync(ctx context.Context, task *model.DataCollectTask) (*TaskResult, error) {
 	sourceName := parseSourceFromParams(task.Params)
 	adp, err := ResolveAdapter(adapter.GetRegistry(), sourceName)
 	if err != nil {
-		return "", fmt.Errorf("获取数据源失败: %w", err)
+		return nil, fmt.Errorf("获取数据源失败: %w", err)
 	}
 	res, err := RunShareholderCountsBatch(ctx, adp)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return fmt.Sprintf("total=%d, 新增=%d, 更新=%d, 失败=%d", res.Total, res.NewCount, res.UpdCount, res.FailCount), nil
+	return &TaskResult{
+		Summary:     formatCollectSummary(res.Total, res.NewCount, res.UpdCount, res.FailCount),
+		FailedCodes: res.FailedCodes,
+	}, nil
 }
 
 // handleDailySnapshotSync 处理【每日快照计算】(Task 7)
-func (r *DataCollectRunner) handleDailySnapshotSync(ctx context.Context, task *model.DataCollectTask) (string, error) {
+func (r *DataCollectRunner) handleDailySnapshotSync(ctx context.Context, task *model.DataCollectTask) (*TaskResult, error) {
 	res := GetSnapshotService().calcAllStocksAllDates(ctx)
-	return fmt.Sprintf("股票:总数=%d 成功=%d 失败=%d | 快照:总数=%d 写入成功=%d 写入失败=%d | 耗时=%.1fs",
-		res.TotalStocks, res.SuccessStocks, res.FailStocks,
-		res.TotalSnapshots, res.SuccessSnapshots, res.FailSnapshots,
-		res.CostSeconds), nil
+	return &TaskResult{
+		Summary: fmt.Sprintf(
+			"  扫描股票 : %s    成功 : %s    失败 : %s\n  快照写入 : 成功=%s条 失败=%s条\n  耗时     : %.1fs",
+			formatInt(res.TotalStocks), formatInt(res.SuccessStocks), formatInt(res.FailStocks),
+			formatInt(res.SuccessSnapshots), formatInt(res.FailSnapshots),
+			res.CostSeconds,
+		),
+		FailedCodes: res.FailedCodes,
+	}, nil
 }
 
 // handleWeeklyKlineInc 处理【每周增量同步K线数据】(Task 8)
 // cron: 0 0 1 * * 6（每周六凌晨 1:00）
 // 参数 JSON: {"periods":"weekly"} — 固定 weekly，params 中的 periods 字段将被忽略
-func (r *DataCollectRunner) handleWeeklyKlineInc(ctx context.Context, task *model.DataCollectTask) (string, error) {
+func (r *DataCollectRunner) handleWeeklyKlineInc(ctx context.Context, task *model.DataCollectTask) (*TaskResult, error) {
 	results := GetSyncKLineService().SyncDailyForAll(ctx, []db.KLinePeriod{db.KLinePeriodWeekly})
 	return formatSyncResults([]db.KLinePeriod{db.KLinePeriodWeekly}, results), nil
 }
 
 // handleMonthlyKlineInc 处理【每月增量同步K线数据】(Task 9)
 // cron: 0 30 1 1 * ?（每月 1 号凌晨 1:30）
-func (r *DataCollectRunner) handleMonthlyKlineInc(ctx context.Context, task *model.DataCollectTask) (string, error) {
+func (r *DataCollectRunner) handleMonthlyKlineInc(ctx context.Context, task *model.DataCollectTask) (*TaskResult, error) {
 	results := GetSyncKLineService().SyncDailyForAll(ctx, []db.KLinePeriod{db.KLinePeriodMonthly})
 	return formatSyncResults([]db.KLinePeriod{db.KLinePeriodMonthly}, results), nil
 }
 
 // handleDividendSync 处理【分红历史同步】(Task 10)
-func (r *DataCollectRunner) handleDividendSync(ctx context.Context, task *model.DataCollectTask) (string, error) {
+func (r *DataCollectRunner) handleDividendSync(ctx context.Context, task *model.DataCollectTask) (*TaskResult, error) {
 	sourceName := parseSourceFromParams(task.Params)
 	adp, err := ResolveAdapter(adapter.GetRegistry(), sourceName)
 	if err != nil {
-		return "", fmt.Errorf("获取数据源失败: %w", err)
+		return nil, fmt.Errorf("获取数据源失败: %w", err)
 	}
 	res, err := RunDividendHistoryBatch(ctx, adp)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return fmt.Sprintf("total=%d, 新增=%d, 更新=%d, 失败=%d", res.Total, res.NewCount, res.UpdCount, res.FailCount), nil
+	return &TaskResult{
+		Summary:     formatCollectSummary(res.Total, res.NewCount, res.UpdCount, res.FailCount),
+		FailedCodes: res.FailedCodes,
+	}, nil
 }
 
 // handleDividendKlineSync 处理【除权K线同步】(Task 11)
 // 遍历所有股票，对每只股票检查最新除权日是否与今天在同一周期（日/周/月）。
 // 若在同一周期，则以 dividend 模式同步该股票的对应周期 K 线数据。
 // 仅处理日/周/月三个周期。
-func (r *DataCollectRunner) handleDividendKlineSync(ctx context.Context, task *model.DataCollectTask) (string, error) {
+func (r *DataCollectRunner) handleDividendKlineSync(ctx context.Context, task *model.DataCollectTask) (*TaskResult, error) {
 	periods := parseDividendPeriods(task.Params)
 	stocks := db.LoadAllStockCodes()
 	today := utils.TodayTradeDate()
@@ -364,38 +439,50 @@ func (r *DataCollectRunner) handleDividendKlineSync(ctx context.Context, task *m
 	}
 
 	if len(hits) == 0 {
-		return "无股票处于除权周期，跳过", nil
+		return &TaskResult{Summary: "无股票处于除权周期，跳过"}, nil
 	}
 
 	// 第二遍：执行 dividend 模式同步
 	svc := GetSyncKLineService()
 	success, fail := 0, 0
+	var failCodes []string
 	for _, h := range hits {
 		sr := svc.SyncSingleDividend(ctx, h.code, h.period)
 		if sr.Error != nil {
 			fail++
+			failCodes = append(failCodes, h.code)
 			log.Printf("[DataCollect] 除权同步失败 %s(%s): %v", h.code, db.KLineLabel(h.period), sr.Error)
 		} else {
 			success++
 		}
 	}
 
-	return fmt.Sprintf("除权命中=%d, 成功=%d, 失败=%d", len(hits), success, fail), nil
+	result := &TaskResult{
+		Summary: fmt.Sprintf(
+			"  除权命中 : %d个    成功 : %d个    失败 : %d个",
+			len(hits), success, fail,
+		),
+		FailedCodes: failCodes,
+	}
+	return result, nil
 }
 
 // handleNameChangeSync 处理【名称变更同步】(Task 12)
 // 参数 JSON: {"source":"eastmoney"} — 可选，默认按优先级自动选源
-func (r *DataCollectRunner) handleNameChangeSync(ctx context.Context, task *model.DataCollectTask) (string, error) {
+func (r *DataCollectRunner) handleNameChangeSync(ctx context.Context, task *model.DataCollectTask) (*TaskResult, error) {
 	sourceName := parseSourceFromParams(task.Params)
 	adp, err := ResolveAdapter(adapter.GetRegistry(), sourceName)
 	if err != nil {
-		return "", fmt.Errorf("获取数据源失败: %w", err)
+		return nil, fmt.Errorf("获取数据源失败: %w", err)
 	}
 	res, err := RunNameChangesBatch(ctx, adp)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return fmt.Sprintf("total=%d, 新增=%d, 更新=%d, 失败=%d", res.Total, res.NewCount, res.UpdCount, res.FailCount), nil
+	return &TaskResult{
+		Summary:     formatCollectSummary(res.Total, res.NewCount, res.UpdCount, res.FailCount),
+		FailedCodes: res.FailedCodes,
+	}, nil
 }
 
 // parseDividendPeriods 从 params JSON 中解析除权同步的周期列表。
@@ -479,13 +566,78 @@ func parsePeriodsFromParams(paramsJSON string) []db.KLinePeriod {
 	return []db.KLinePeriod{db.KLinePeriod(periodsStr)}
 }
 
-// formatSyncResults 格式化批量同步结果，每个周期一行，用 \n 拼接。
-func formatSyncResults(periods []db.KLinePeriod, results []SyncBatchResult) string {
-	lines := make([]string, 0, len(results))
+// formatSyncResults 格式化 K 线批量同步结果，返回 *TaskResult。
+//
+// 每个周期一行，键值对齐；同时从 SyncBatchResult.Details 中提取失败股票代码。
+func formatSyncResults(periods []db.KLinePeriod, results []SyncBatchResult) *TaskResult {
+	var lines []string
+	var allFailCodes []string
+
 	for i, r := range results {
-		lines = append(lines, fmt.Sprintf("[%s]成功=%d 跳过=%d 失败=%d", periods[i], r.Success, r.SkipNoDelta, r.Fail))
+		label := db.KLineLabel(periods[i])
+		lines = append(lines, fmt.Sprintf("  [%-6s] 同步=%s只  跳过=%s只  失败=%s只",
+			label,
+			formatInt(r.Success),
+			formatInt(r.SkipNoDelta),
+			formatInt(r.Fail),
+		))
+
+		// 从 Details 中提取失败股票代码
+		for _, detail := range r.Details {
+			if detail.Error != nil {
+				allFailCodes = append(allFailCodes, detail.Code)
+			}
+		}
 	}
-	return strings.Join(lines, "\n")
+
+	summary := strings.Join(lines, "\n")
+	return &TaskResult{Summary: summary, FailedCodes: allFailCodes}
+}
+
+// formatStockSummary 格式化"股票维度 + 数据条数维度"双行汇总。
+//
+// 适用于每只股票对应一条记录的场景（如股票列表同步），
+// 输出示例：
+//
+//	扫描股票 : 5,000    成功 : 4,990    失败 : 10
+//	新增数据 : 10       更新 : 4,980
+func formatStockSummary(total, newCount, updCount, failCount int) string {
+	successStocks := total - failCount
+	return fmt.Sprintf(
+		"  扫描股票 : %s    成功 : %s    失败 : %d\n  新增数据 : %d       更新 : %d",
+		formatInt(total), formatInt(successStocks), failCount,
+		newCount, updCount,
+	)
+}
+
+// formatCollectSummary 将通用批量采集结果（财报/股本/股东户数/分红等）格式化为双行文本。
+//
+// 第一行为股票维度（扫描/成功/失败），第二行为数据记录维度（新增/更新）。
+// 一只股票可能产生多条数据记录，因此两个维度的数值通常不同。
+func formatCollectSummary(total, newCount, updCount, failCount int) string {
+	successStocks := total - failCount
+	return fmt.Sprintf(
+		"  扫描股票 : %s    成功 : %s    失败 : %d\n  新增数据 : %s      更新 : %s",
+		formatInt(total), formatInt(successStocks), failCount,
+		formatInt(newCount), formatInt(updCount),
+	)
+}
+
+// formatInt 格式化整数，添加千分位分隔符。
+func formatInt(n int) string {
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+	s := fmt.Sprintf("%d", n)
+	runes := []rune(s)
+	var result []rune
+	for i, r := range runes {
+		if (len(runes)-i)%3 == 0 && i > 0 {
+			result = append(result, ',')
+		}
+		result = append(result, r)
+	}
+	return string(result)
 }
 
 // ============================================================================
@@ -805,10 +957,10 @@ func GetBoardName(board string) string {
 // ============================================================================
 
 // handleReloadHighPriority 每日 8:00 委托 watchlist.Manager 重置并重新加载高优先级。
-func (r *DataCollectRunner) handleReloadHighPriority(ctx context.Context, task *model.DataCollectTask) (string, error) {
+func (r *DataCollectRunner) handleReloadHighPriority(ctx context.Context, task *model.DataCollectTask) (*TaskResult, error) {
 	if r.watchlistMgr == nil {
-		return "watchlist Manager 未注入，跳过", nil
+		return &TaskResult{Summary: "watchlist Manager 未注入，跳过"}, nil
 	}
 	r.watchlistMgr.ReloadAll()
-	return "优先级已重置并重新加载", nil
+	return &TaskResult{Summary: "优先级已重置并重新加载"}, nil
 }

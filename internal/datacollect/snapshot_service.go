@@ -38,6 +38,7 @@ type SnapshotBatchResult struct {
 	SuccessSnapshots   int          `json:"success_snapshots"`   // 成功写入的快照条数
 	FailSnapshots      int          `json:"fail_snapshots"`      // 写入失败的快照条数
 	CostSeconds        float64      `json:"cost_seconds"`
+	FailedCodes        []string     `json:"failed_codes"`        // 失败的股票代码列表
 }
 
 // ========== 服务入口 ==========
@@ -240,6 +241,10 @@ func (s *SnapshotService) calcAllStocksAllDates(ctx context.Context) SnapshotBat
 		result.TotalSnapshots += br.TotalSnapshots
 		result.SuccessSnapshots += br.SuccessSnapshots
 		result.FailSnapshots += br.FailSnapshots
+
+		if br.FailStocks > 0 {
+			result.FailedCodes = append(result.FailedCodes, stock.Code)
+		}
 	}
 
 	result.CostSeconds = time.Since(allStart).Seconds()

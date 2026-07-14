@@ -17,11 +17,12 @@ import (
 
 // CollectResult 批量采集结果汇总
 type CollectResult struct {
-	Total        int `json:"total"`          // 总股票数/总条数
-	NewCount     int `json:"new_count"`      // 新增记录数
-	UpdCount     int `json:"upd_count"`      // 更新记录数
-	NameUpdCount int `json:"name_upd_count"` // UpdateStockName 成功数（仅名称变更采集使用）
-	FailCount    int `json:"fail_count"`     // 失败股票数
+	Total        int      `json:"total"`          // 总股票数/总条数
+	NewCount     int      `json:"new_count"`      // 新增记录数
+	UpdCount     int      `json:"upd_count"`      // 更新记录数
+	NameUpdCount int      `json:"name_upd_count"` // UpdateStockName 成功数（仅名称变更采集使用）
+	FailCount    int      `json:"fail_count"`     // 失败股票数
+	FailedCodes  []string `json:"failed_codes"`   // 失败的股票代码列表
 }
 
 // ============================================================================
@@ -94,6 +95,7 @@ func RunPerformanceReportsBatch(ctx context.Context, adp adapter.DataSource) (*C
 		if fetchErr != nil {
 			log.Printf("[采集-财报] 获取失败 [%s]: %v", stock.Code, fetchErr)
 			result.FailCount++
+			result.FailedCodes = append(result.FailedCodes, stock.Code)
 			continue
 		}
 		partial := upsertPerformanceReports(stock.Code, reports)
@@ -125,6 +127,7 @@ func RunShareholderCountsBatch(ctx context.Context, adp adapter.DataSource) (*Co
 		if fetchErr != nil {
 			log.Printf("[采集-股东户数] 获取失败 [%s]: %v", stock.Code, fetchErr)
 			result.FailCount++
+			result.FailedCodes = append(result.FailedCodes, stock.Code)
 			continue
 		}
 		partial := upsertShareholderCounts(stock.Code, counts)
@@ -156,6 +159,7 @@ func RunShareChangesBatch(ctx context.Context, adp adapter.DataSource) (*Collect
 		if fetchErr != nil {
 			log.Printf("[采集-股本变动] 获取失败 [%s]: %v", stock.Code, fetchErr)
 			result.FailCount++
+			result.FailedCodes = append(result.FailedCodes, stock.Code)
 			continue
 		}
 		partial := upsertShareChanges(stock.Code, changes)
@@ -187,6 +191,7 @@ func RunDividendHistoryBatch(ctx context.Context, adp adapter.DataSource) (*Coll
 		if fetchErr != nil {
 			log.Printf("[采集-分红] 获取失败 [%s]: %v", stock.Code, fetchErr)
 			result.FailCount++
+			result.FailedCodes = append(result.FailedCodes, stock.Code)
 			continue
 		}
 		partial := upsertDividendHistory(stock.Code, dividends)
@@ -243,6 +248,7 @@ func RunNameChangesBatch(ctx context.Context, adp adapter.DataSource) (*CollectR
 		if fetchErr != nil {
 			log.Printf("[采集-名称变更] 获取失败 [%s]: %v", stock.Code, fetchErr)
 			result.FailCount++
+			result.FailedCodes = append(result.FailedCodes, stock.Code)
 			continue
 		}
 		if len(changes) == 0 {
