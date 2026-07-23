@@ -57,9 +57,36 @@ const (
 	CyqMinKlines        = 60  // 最少K线根数
 )
 
+// 筹码峰检测参数
+const (
+	// cyqSignificanceRatio 显著性阈值：峰高至少达到全局最高的此比例才算候选峰
+	cyqSignificanceRatio = 0.15
+	// cyqPeakWidthRatio 峰宽判定：从峰顶向两侧延伸，筹码量 >= 峰顶×此比例 的区域算作峰体
+	cyqPeakWidthRatio = 0.5
+	// cyqMinPeakWidth 最小峰宽（档位），窄于此值的候选视为噪声
+	cyqMinPeakWidth = 3
+	// cyqValleyDepthRatio 谷深要求：相邻两峰之间的谷底必须低于较低峰顶 × 此比例
+	cyqValleyDepthRatio = 0.55
+	// cyqMinPeakDistance 最小峰距（档位）：两峰顶距离窄于此值时强制合并为同一峰
+	// 用于过滤"主峰肩部"等伪峰（如主峰37.61与肩部38.09仅距3档）
+	cyqMinPeakDistance = 6
+)
+
+// qualifiedPeak 通过三阶段过滤后的合格峰信息。
+type qualifiedPeak struct {
+	Idx       int     // 峰顶位置（XData 索引）
+	Height    float64 // 峰顶高度（筹码量）
+	LeftEdge  int     // 峰体左边界（含，半高点扩展后）
+	RightEdge int     // 峰体右边界（含，半高点扩展后）
+	Width     int     // 峰体宽度（档位数）= RightEdge - LeftEdge + 1
+}
+
 // CountPeaks 统计筹码分布中显著峰的数量。
-// 显著峰定义：局部最大值且高度 >= maxPeak * significanceRatio。
-// significanceRatio 默认 0.15（即峰高至少为最高峰的15%才算显著）。
+//
+// 判定条件（三道过滤）：
+//  1. 显著性：峰高 >= 全局最高 × significanceRatio（默认 15%）
+//  2. 峰宽：峰体宽度（半高以上区域）>= cyqMinPeakWidth 档（默认 3）
+//  3. 谷深：相邻两峰之间谷底 < 较低峰顶 × cyqValleyDepthRatio（默认 50%）
 func (r *CYQResult) CountPeaks(significanceRatio float64) int {
 	return len(r.findPeaks(significanceRatio))
 }
@@ -77,18 +104,77 @@ func (r *CYQResult) GetPeakPrices(significanceRatio float64) []float64 {
 	return prices
 }
 
+// GetMainPeakIdx 返回最高峰（按峰高排序第一个）的 Y 轴索引位置。
+// 用于判断峰位于价格区间的相对位置（高位/低位）。
+// 无显著峰时返回 -1。
+func (r *CYQResult) GetMainPeakIdx(significanceRatio float64) int {
+	peaks := r.findPeaks(significanceRatio)
+	if len(peaks) == 0 {
+		return -1
+	}
+	return peaks[0] // 已按峰高降序，第一个即最高峰
+}
+
+// GetAllPeakIdxs 返回所有显著峰的 Y 轴索引列表（按峰高降序）。
+// 无显著峰时返回 nil。
+func (r *CYQResult) GetAllPeakIdxs(significanceRatio float64) []int {
+	return r.findPeaks(significanceRatio)
+}
+
+// GetEffectiveYRange 基于 90% 成本区间返回有效筹码分布的 Y 轴索引范围 [lowIdx, highIdx, totalEffective]。
+// Cost90 已包含 [下限, 上限] 价格区间，转换为 YData 索引后即为有效范围。
+//
+// 返回 (lowIdx, highIdx, totalEffective)。无数据时返回 (0, 0, 0)。
+func (r *CYQResult) GetEffectiveYRange() (int, int, int) {
+	n := len(r.Cost90)
+	if n == 0 || len(r.YData) == 0 {
+		return 0, 0, 0
+	}
+
+	costLow := r.Cost90[n-1][0] // 最新日 90% 成本下限
+	costHigh := r.Cost90[n-1][1] // 最新日 90% 成本上限
+
+	lowIdx := r.priceToIdx(costLow)
+	highIdx := r.priceToIdx(costHigh)
+
+	return lowIdx, highIdx, highIdx - lowIdx + 1
+}
+
+// priceToIdx 将价格转换为 Y 轴索引。
+func (r *CYQResult) priceToIdx(price float64) int {
+	if r.Accuracy == 0 {
+		return 0
+	}
+	idx := int((price - r.MinPrice)/r.Accuracy)
+	if idx < 0 {
+		return 0
+	}
+	if idx >= len(r.YData) {
+		return len(r.YData) - 1
+	}
+	return idx
+}
+
 // findPeaks 在筹码分布 XData 中查找显著局部最大值的索引（按峰高降序）。
+//
+// 三阶段算法：
+//  阶段1 — 候选收集：扫描严格局部极大值 + 显著性阈值过滤
+//  阶段2 — 峰宽过滤：每个候选峰向两侧扩展至半高点，宽度不足者淘汰
+//  阶段3 — 谷深过滤：相邻峰对之间找谷底，谷太浅则合并（保留较高者）
 func (r *CYQResult) findPeaks(significanceRatio float64) []int {
 	if len(r.XData) < 3 {
 		return nil
 	}
 	if significanceRatio <= 0 {
-		significanceRatio = 0.15
+		significanceRatio = cyqSignificanceRatio
 	}
 
-	// 找全局最大值
+	data := r.XData
+	n := len(data)
+
+	// ---- 阶段1：显著性阈值 ----
 	maxVal := 0.0
-	for _, v := range r.XData {
+	for _, v := range data {
 		if v > maxVal {
 			maxVal = v
 		}
@@ -98,46 +184,164 @@ func (r *CYQResult) findPeaks(significanceRatio float64) []int {
 	}
 	threshold := maxVal * significanceRatio
 
-	// 查找局部最大值（显著峰）
-	type peakInfo = struct {
+	// 收集严格局部最大值
+	type candidate struct {
 		Idx    int
 		Height float64
 	}
-	var peaks []peakInfo
-	for i := 1; i < len(r.XData)-1; i++ {
-		if r.XData[i] > r.XData[i-1] && r.XData[i] > r.XData[i+1] && r.XData[i] >= threshold {
-			peaks = append(peaks, peakInfo{Idx: i, Height: r.XData[i]})
+	var cands []candidate
+	for i := 1; i < n-1; i++ {
+		if data[i] > data[i-1] && data[i] > data[i+1] && data[i] >= threshold {
+			cands = append(cands, candidate{Idx: i, Height: data[i]})
 		}
 	}
-	// 边界检测：第一个和最后一个元素
-	if len(r.XData) >= 2 {
-		if r.XData[0] > r.XData[1] && r.XData[0] >= threshold {
-			peaks = append(peaks, peakInfo{Idx: 0, Height: r.XData[0]})
+	// 边界检测
+	if n >= 2 {
+		if data[0] > data[1] && data[0] >= threshold {
+			cands = append(cands, candidate{Idx: 0, Height: data[0]})
 		}
-		last := len(r.XData) - 1
-		if r.XData[last] > r.XData[last-1] && r.XData[last] >= threshold {
-			peaks = append(peaks, peakInfo{Idx: last, Height: r.XData[last]})
+		last := n - 1
+		if data[last] > data[last-1] && data[last] >= threshold {
+			cands = append(cands, candidate{Idx: last, Height: data[last]})
 		}
 	}
 
-	// 按峰高降序排列
-	sortPeaksByHeight(peaks)
-	result := make([]int, len(peaks))
-	for i, p := range peaks {
+	if len(cands) == 0 {
+		return nil
+	}
+
+	// ---- 阶段2：峰宽过滤 ----
+	halfHeight := cyqPeakWidthRatio
+	var peaks []qualifiedPeak
+	for _, c := range cands {
+		left, right := c.Idx, c.Idx
+		// 向左扩展：直到值降到峰顶的 halfHeight 以下或到达边界
+		for left > 0 && data[left-1] >= c.Height*halfHeight {
+			left--
+		}
+		// 向右扩展
+		for right < n-1 && data[right+1] >= c.Height*halfHeight {
+			right++
+		}
+		width := right - left + 1
+		if width >= cyqMinPeakWidth {
+			peaks = append(peaks, qualifiedPeak{
+				Idx:       c.Idx,
+				Height:    c.Height,
+				LeftEdge:  left,
+				RightEdge: right,
+				Width:     width,
+			})
+		}
+	}
+
+	if len(peaks) <= 1 {
+		// 0 或 1 个峰，无需谷深过滤
+		result := make([]int, len(peaks))
+		for i, p := range peaks {
+			result[i] = p.Idx
+		}
+		sortPeaksByHeightIdx(data, result)
+		return result
+	}
+
+	// ---- 阶段2.5：重叠区按谷底切分（每档只属于一个峰） ----
+	sortPeaksByPosition(peaks)
+	for i := 1; i < len(peaks); i++ {
+		if peaks[i-1].RightEdge >= peaks[i].LeftEdge {
+			// 在重叠区内找密度最低的档位作为分界线(谷底)
+			valleyIdx := peaks[i].LeftEdge // 默认从当前峰左边界开始
+			minVal := data[valleyIdx]
+			for j := peaks[i-1].RightEdge + 1; j < peaks[i].LeftEdge; j++ {
+				if data[j] < minVal {
+					minVal = data[j]
+					valleyIdx = j
+				}
+			}
+			// 按谷底切分
+			peaks[i-1].RightEdge = valleyIdx - 1
+			peaks[i].LeftEdge = valleyIdx + 1
+		}
+	}
+	// 重新计算宽度
+	for i := range peaks {
+		peaks[i].Width = peaks[i].RightEdge - peaks[i].LeftEdge + 1
+	}
+
+	// ---- 阶段3：谷深过滤 + 最小峰距合并 ----
+	// 按位置排序以便检查相邻关系
+	sortPeaksByPosition(peaks)
+
+	valleyRatio := cyqValleyDepthRatio
+	minDist := cyqMinPeakDistance
+	filtered := make([]qualifiedPeak, 0, len(peaks))
+	filtered = append(filtered, peaks[0]) // 第一个峰先保留
+
+	for i := 1; i < len(peaks); i++ {
+		prev := filtered[len(filtered)-1]
+		curr := peaks[i]
+
+		// 先检查峰距：太近则强制合并（保留较高的）
+		if curr.Idx-prev.Idx < minDist {
+			if curr.Height > prev.Height {
+				filtered[len(filtered)-1] = curr
+			}
+			// 否则保留 prev，丢弃 curr
+			continue
+		}
+
+		// 找两个峰之间的谷底最低点
+		valleyMin := data[curr.LeftEdge] // 从当前峰左边界开始
+		for j := prev.RightEdge + 1; j < curr.LeftEdge; j++ {
+			if data[j] < valleyMin {
+				valleyMin = data[j]
+			}
+		}
+		// 较低峰的高度
+		lowerHeight := prev.Height
+		if curr.Height < lowerHeight {
+			lowerHeight = curr.Height
+		}
+
+		// 谷深判断：谷底是否足够低
+		if valleyMin <= lowerHeight*valleyRatio {
+			// 谷够深 → 两峰独立，保留当前
+			filtered = append(filtered, curr)
+		} else {
+			// 谷太浅 → 合并：保留较高的峰
+			if curr.Height > filtered[len(filtered)-1].Height {
+				filtered[len(filtered)-1] = curr
+			}
+			// 否则保留 prev（已在 filtered 中），丢弃 curr
+		}
+	}
+
+	// 按峰高降序返回索引
+	result := make([]int, len(filtered))
+	for i, p := range filtered {
 		result[i] = p.Idx
 	}
+	sortPeaksByHeightIdx(data, result)
 	return result
 }
 
-// sortPeaksByHeight 按峰高降序排列（冒泡排序，峰数量极少无需复杂排序）。
-func sortPeaksByHeight(peaks []struct {
-	Idx    int
-	Height float64
-}) {
+// sortPeaksByPosition 按峰位置（索引）升序排列。
+func sortPeaksByPosition(peaks []qualifiedPeak) {
 	for i := 0; i < len(peaks); i++ {
 		for j := i + 1; j < len(peaks); j++ {
-			if peaks[j].Height > peaks[i].Height {
+			if peaks[j].Idx < peaks[i].Idx {
 				peaks[i], peaks[j] = peaks[j], peaks[i]
+			}
+		}
+	}
+}
+
+// sortPeaksByHeightIdx 按峰高降序排列索引数组。
+func sortPeaksByHeightIdx(data []float64, idxs []int) {
+	for i := 0; i < len(idxs); i++ {
+		for j := i + 1; j < len(idxs); j++ {
+			if data[idxs[j]] > data[idxs[i]] {
+				idxs[i], idxs[j] = idxs[j], idxs[i]
 			}
 		}
 	}
@@ -166,15 +370,15 @@ func NewCyq() *Cyq {
 			indicator.ValBool, nil, nil,
 		)},
 		&signalCyqLowDense{indicator.NewBaseSignal(
-			"02", "低位密集", "90%筹码集中度<10%，筹码在狭窄价格区间高度集中",
+			"02", "低位密集", "单峰且主峰价<Cost90下限+区间宽×40%，筹码集中在低价区",
 			indicator.ValBool, nil, nil,
 		)},
 		&signalCyqDoublePeak{indicator.NewBaseSignal(
-			"03", "双峰密集", "筹码分布呈现两个显著峰，表明存在两股不同成本的筹码",
+			"03", "双峰密集", "2峰+峰距>Cost90宽×50%且峰高差比<20%，筹码分化为两组成本区",
 			indicator.ValBool, nil, nil,
 		)},
 		&signalCyqHighDense{indicator.NewBaseSignal(
-			"04", "高位密集", "获利比例>70%且90%集中度<10%，筹码在高位高度集中，出货风险极高",
+			"04", "高位密集", "单峰且主峰价>Cost90下限+区间宽×60%，筹码集中在高价区",
 			indicator.ValBool, nil, nil,
 		)},
 	})
@@ -580,11 +784,13 @@ func (s *signalCyqLowLock) Evaluate(result CYQResult, config *indicator.SignalCo
 }
 
 // ============================================================================
-//  Signal 02 (BuiltIn) — 低位密集
+//  Signal 02 (BuiltIn) — 低位密集（纯筹码峰形态）
 //
-//  判定规则（参考513战法严格确认思路）:
-//    90%集中度 < 10%
-//    90%筹码分布在极为狭窄的价格区间内，筹码高度集中
+//  判定规则:
+//    有效档位内仅有1个显著峰，且该峰价格 < Cost90下限 + Cost90宽度 × 40%。
+//    表明筹码高度集中在低价区，大量套牢盘。
+//
+//  有效档位 = 90%成本区间对应的Y轴范围 [Cost90下限, Cost90上限]
 // ============================================================================
 
 type signalCyqLowDense struct {
@@ -593,16 +799,34 @@ type signalCyqLowDense struct {
 
 func (s *signalCyqLowDense) Evaluate(result CYQResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
 	sId := config.SignalID
-	latestIdx := len(result.Conc90) - 1
-	if latestIdx < 0 {
+	n := len(result.YData)
+	if n == 0 {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId,
 			Message: "无筹码数据"}
 	}
 
-	conc90 := result.Conc90[latestIdx]
-	passed := conc90 < 0.10
+	peakCount := result.CountPeaks(0.15)
+	mainPeakIdx := result.GetMainPeakIdx(0.15)
 
-	msg := fmt.Sprintf("90%%集中度=%.2f%%", conc90*100)
+	// 分界线 = Cost90 下限 + 区间宽度 × 40%
+	costN := len(result.Cost90)
+	lowThreshold := 0.0
+	costRange := 0.0
+	costLow := 0.0
+	if costN > 0 {
+		costLow = result.Cost90[costN-1][0]
+		costRange = result.Cost90[costN-1][1] - costLow
+		lowThreshold = costLow + costRange*0.4
+	}
+	mainPeakPrice := 0.0
+	if mainPeakIdx >= 0 && mainPeakIdx < n {
+		mainPeakPrice = result.YData[mainPeakIdx]
+	}
+	// 单峰且峰价 < 低阈值（Cost90下限 + 区间宽×40%）→ 低位密集
+	passed := peakCount == 1 && mainPeakIdx >= 0 && mainPeakPrice < lowThreshold
+
+	msg := fmt.Sprintf("峰数=%d, 主峰价=%.2f, 低阈值=%.2f(C90下%.2f+宽%.2f×40%%), 区间宽=%.2f",
+		peakCount, mainPeakPrice, lowThreshold, costLow, costRange, costRange)
 
 	if config.Operator == indicator.OpNEQ {
 		if !passed {
@@ -620,9 +844,15 @@ func (s *signalCyqLowDense) Evaluate(result CYQResult, config *indicator.SignalC
 // ============================================================================
 //  Signal 03 (BuiltIn) — 双峰密集
 //
-//  判定规则:
-//    筹码分布中存在2个及以上显著峰
-//    表明有两组不同成本基础的投资者
+//  判定规则（纯筹码峰形态）:
+//    有效档位内存在2个显著峰，同时满足：
+//    a) 两峰之间的价格距离 > Cost90区间宽度 × 50%
+//    b) (高峰高度 - 低峰高度) / 高峰高度 < 20%（两峰筹码密度相差不大）
+//    表明筹码分化为两组力量相当的成本区。
+//
+//  有效档位 = 90%成本区间对应的Y轴范围 [Cost90下限, Cost90上限]
+//
+//  峰距条件说明: 两峰价格之差的绝对值 > (Cost90上限 - Cost90下限) × 0.5
 // ============================================================================
 
 type signalCyqDoublePeak struct {
@@ -631,11 +861,54 @@ type signalCyqDoublePeak struct {
 
 func (s *signalCyqDoublePeak) Evaluate(result CYQResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
 	sId := config.SignalID
+	n := len(result.YData)
+	if n == 0 {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId,
+			Message: "无筹码数据"}
+	}
 
-	peakCount := result.CountPeaks(0.15)
-	passed := peakCount >= 2
+	allPeaks := result.GetAllPeakIdxs(0.15)
 
-	msg := fmt.Sprintf("检测到%d个显著峰", peakCount)
+	// 90% 成本区间参数
+	costN := len(result.Cost90)
+	midPrice := 0.0
+	costRange := 0.0
+	if costN > 0 {
+		midPrice = (result.Cost90[costN-1][0] + result.Cost90[costN-1][1]) / 2
+		costRange = result.Cost90[costN-1][1] - result.Cost90[costN-1][0]
+	}
+	// 峰距阈值 = 区间宽度的50%
+	minPeakDist := costRange * 0.5
+
+	passed := false
+	var lowP, highP float64
+	var peakDist float64
+	var heightRatio float64
+
+	// 需要恰好2个峰，且峰距足够大 + 峰高比 >= 20%
+	if len(allPeaks) == 2 && costRange > 0 {
+		idx0, idx1 := allPeaks[0], allPeaks[1]
+		p0, p1 := result.YData[idx0], result.YData[idx1]
+		h0, h1 := result.XData[idx0], result.XData[idx1]
+		// 按价格排序，确保 lowP < highP
+		if p0 < p1 {
+			lowP, highP = p0, p1
+		} else {
+			lowP, highP = p1, p0
+		}
+		peakDist = math.Abs(highP - lowP)
+		// 峰高差比 = (较高峰 - 较低峰) / 较高峰
+		maxH := math.Max(h0, h1)
+		minH := math.Min(h0, h1)
+		if maxH > 0 {
+			heightRatio = (maxH - minH) / maxH
+		}
+		// 双峰条件：峰距够远 + 峰高差比 < 20%
+		passed = peakDist > minPeakDist && heightRatio < 0.20
+	}
+
+	msg := fmt.Sprintf("总峰=%d, 低峰价=%.2f, 高峰价=%.2f, 峰距=%.2f(限>%.2f), 峰高差比=%.2f(限<0.20), 区间中点=%.2f",
+		len(allPeaks), lowP, highP, peakDist, minPeakDist, heightRatio, midPrice)
 
 	if config.Operator == indicator.OpNEQ {
 		if !passed {
@@ -651,11 +924,13 @@ func (s *signalCyqDoublePeak) Evaluate(result CYQResult, config *indicator.Signa
 }
 
 // ============================================================================
-//  Signal 04 (BuiltIn) — 高位密集
+//  Signal 04 (BuiltIn) — 高位密集（纯筹码峰形态）
 //
-//  判定规则（参考513战法严格确认思路）:
-//    获利比例 > 70% 且 90%集中度 < 10%
-//    绝大多数筹码浮盈且高度集中，主力出货风险极高
+//  判定规则:
+//    有效档位内仅有1个显著峰，且该峰价格 > Cost90下限 + Cost90宽度 × 60%。
+//    表明筹码高度集中在高价区，大量获利盘。
+//
+//  有效档位 = 90%成本区间对应的Y轴范围 [Cost90下限, Cost90上限]
 // ============================================================================
 
 type signalCyqHighDense struct {
@@ -664,19 +939,34 @@ type signalCyqHighDense struct {
 
 func (s *signalCyqHighDense) Evaluate(result CYQResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
 	sId := config.SignalID
-	latestIdx := len(result.ProfitRatio) - 1
-	if latestIdx < 0 {
+	n := len(result.YData)
+	if n == 0 {
 		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId,
 			Message: "无筹码数据"}
 	}
 
-	profitRatio := result.ProfitRatio[latestIdx]
-	conc90 := result.Conc90[latestIdx]
+	peakCount := result.CountPeaks(0.15)
+	mainPeakIdx := result.GetMainPeakIdx(0.15)
 
-	// 高位密集条件：获利比例 > 70% 且 90%集中度 < 10%
-	passed := profitRatio > 0.7 && conc90 < 0.10
+	// 分界线 = Cost90 下限 + 区间宽度 × 60%
+	costN := len(result.Cost90)
+	highThreshold := 0.0
+	costRange := 0.0
+	costLow := 0.0
+	if costN > 0 {
+		costLow = result.Cost90[costN-1][0]
+		costRange = result.Cost90[costN-1][1] - costLow
+		highThreshold = costLow + costRange*0.6
+	}
+	mainPeakPrice := 0.0
+	if mainPeakIdx >= 0 && mainPeakIdx < n {
+		mainPeakPrice = result.YData[mainPeakIdx]
+	}
+	// 单峰且峰价 > 高阈值（Cost90下限 + 区间宽×60%）→ 高位密集
+	passed := peakCount == 1 && mainPeakIdx >= 0 && mainPeakPrice > highThreshold
 
-	msg := fmt.Sprintf("获利比例=%.2f%%, 90%%集中度=%.2f%%", profitRatio*100, conc90*100)
+	msg := fmt.Sprintf("峰数=%d, 主峰价=%.2f, 高阈值=%.2f(C90下%.2f+宽%.2f×60%%), 区间宽=%.2f",
+		peakCount, mainPeakPrice, highThreshold, costLow, costRange, costRange)
 
 	if config.Operator == indicator.OpNEQ {
 		if !passed {
