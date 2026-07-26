@@ -58,7 +58,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import type { ECharts } from 'echarts'
-import { fetchKLine, type KLineResponse, type KLineItem, type KLinePeriod } from '../api/kline'
+import { fetchKLine, type KLineResponse, type KLinePeriod, type MAData } from '../api/kline'
 
 // ========== Props ==========
 
@@ -153,11 +153,13 @@ function getHoverMa(idx: number): MAData | undefined {
 /** 获取 MA 显示值：优先用 hover 值，否则取最后一日 */
 function getDisplayMa(idx: number, key: keyof MAData): string {
   const hover = hoverMaMap.value.get(idx)
-  if (hover && hover[key] !== undefined && hover[key]![hover[key]!.length - 1] !== 0) {
-    return fmtMa(hover[key])
+  const hoverArr = hover?.[key]
+  if (hoverArr && hoverArr.length > 0 && hoverArr[hoverArr.length - 1] !== 0) {
+    return fmtMa(hoverArr)
   }
   const data = klineDataMap.value.get(props.stocks[idx]?.code ?? '')
-  return fmtMa(data?.indicators?.ma?.[key])
+  const maArr = data?.indicators?.ma?.[key]
+  return fmtMa(maArr ?? [])
 }
 
 /** 并发加载所有K线数据 */

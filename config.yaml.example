@@ -6,6 +6,7 @@ server:
   mode: debug                   # 运行模式: debug/release
   read_timeout: 30              # 读取超时(秒)
   write_timeout: 30             # 写入超时(秒)
+  static_dir: ""                # 前端静态文件目录（为空则使用内嵌资源，开发时可设为 web/dist）
 
 database:
   host: localhost               # MySQL 主机

@@ -43,6 +43,7 @@ type ServerConfig struct {
 	Mode         string `mapstructure:"mode"`
 	ReadTimeout  int    `mapstructure:"read_timeout"`
 	WriteTimeout int    `mapstructure:"write_timeout"`
+	StaticDir    string `mapstructure:"static_dir"` // 前端静态文件目录（为空时使用内嵌资源）
 }
 
 // DatabaseConfig 数据库配置
@@ -141,6 +142,7 @@ func setDefaults() {
 	viper.SetDefault("server.mode", "debug")
 	viper.SetDefault("server.read_timeout", 30)
 	viper.SetDefault("server.write_timeout", 30)
+	viper.SetDefault("server.static_dir", "")
 
 	// Database 默认值
 	viper.SetDefault("database.host", "localhost")

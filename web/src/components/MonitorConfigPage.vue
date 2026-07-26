@@ -280,12 +280,14 @@ const dailyChangeKeys = DailyChangeSubKeys as readonly { key: string; label: str
 const form = ref<{
   name: string
   scope: 'held' | 'custom'
+  rules: MonitorRule[]
   cooldown: MonitorCooldown
   template: string
   bot_ids: number[]
 }>({
   name: '',
   scope: 'held',
+  rules: [],
   cooldown: { ...DefaultCooldown },
   template: '',
   bot_ids: [],
@@ -418,7 +420,7 @@ async function confirmForm() {
         stocks,
         rule,
         cooldown: form.value.cooldown,
-        template: form.value.template || undefined,
+        template: form.value.template || '',
       })
       // 单独更新机器人关联
       if (form.value.bot_ids.length > 0) {

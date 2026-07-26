@@ -312,28 +312,6 @@ export function findSignalOperator(signal: SignalDef, op: CompareOperator): Sign
   return signal.operators.find(o => o.operator === op)
 }
 
-/** 查找信号参数定义中的 unit 字段 */
-function findParamUnit(ind: IndicatorMeta, paramKey: string): string | undefined {
-  for (const sig of ind.signals) {
-    for (const op of sig.operators) {
-      const p = op.params.find(p => p.key === paramKey)
-      if (p) return p.unit
-    }
-  }
-  return undefined
-}
-
-/** 查找信号参数定义中的 label 和 unit */
-function findParamMeta(ind: IndicatorMeta, paramKey: string): { label: string; unit: string } | undefined {
-  for (const sig of ind.signals) {
-    for (const op of sig.operators) {
-      const p = op.params.find(p => p.key === paramKey)
-      if (p) return { label: p.label, unit: p.unit }
-    }
-  }
-  return undefined
-}
-
 /** 将 SignalConfig 转为可读描述（用于 chip 显示） */
 export function formatSignalConfig(
   _signalId: string,
@@ -342,17 +320,17 @@ export function formatSignalConfig(
 ): string {
   switch (config.operator) {
     case 'gt':
-      return `${(config.params.threshold ?? '')}${indicator.unit}`
+      return `${(config.params?.threshold ?? '')}${indicator.unit}`
     case 'gte':
-      return `≥${(config.params.threshold ?? '')}${indicator.unit}`
+      return `≥${(config.params?.threshold ?? '')}${indicator.unit}`
     case 'lt':
-      return `<${(config.params.threshold ?? '')}${indicator.unit}`
+      return `<${(config.params?.threshold ?? '')}${indicator.unit}`
     case 'lte':
-      return `≤${(config.params.threshold ?? '')}${indicator.unit}`
+      return `≤${(config.params?.threshold ?? '')}${indicator.unit}`
     case 'between': case 'not_between':
-      return `[${config.params.min ?? ''}~${config.params.max ?? ''}]${indicator.unit}`
+      return `[${config.params?.min ?? ''}~${config.params?.max ?? ''}]${indicator.unit}`
     case 'in': case 'not_in':
-      return `{${(config.params.values as string[])?.join(',') || ''}}`
+      return `{${(config.params?.values as string[])?.join(',') || ''}}`
     case 'custom': {
       // 遍历信号定义中所有 param，拼接 label + value + unit
       const parts: string[] = []
@@ -360,17 +338,18 @@ export function formatSignalConfig(
         for (const op of sig.operators) {
           if (!op.params) continue
           for (const p of op.params) {
-            const val = config.params[p.key]
+            const val = config.params?.[p.key]
             const label = p.label || p.key
             const unit = p.unit || ''
             parts.push(`${label}${val ?? p.default ?? ''}${unit}`)
           }
         }
       }
-      return parts.length > 0 ? parts.join(', ') : Object.entries(config.params).map(([k, v]) => `${k}=${v}`).join(', ')
+      const params = config.params ?? {}
+      return parts.length > 0 ? parts.join(', ') : Object.entries(params).map(([k, v]) => `${k}=${v}`).join(', ')
     }
     default:
-      return Object.entries(config.params).map(([k, v]) => `${k}=${v}`).join(', ')
+      return Object.entries(config.params ?? {}).map(([k, v]) => `${k}=${v}`).join(', ')
   }
 }
 

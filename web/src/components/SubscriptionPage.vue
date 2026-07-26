@@ -232,13 +232,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import SearchSingleSelect from './SearchSingleSelect.vue'
 import SearchMultiSelect from './SearchMultiSelect.vue'
 import * as subApi from '../api/subscriptions'
 import type {
-  SubscriptionListItem, SubscriptionDetail,
-  MonitorScope, PresetType, BotInfo,
+  SubscriptionListItem,
+  MonitorScope, PresetType,
 } from '../api/subscriptions'
 import { ScopeLabels, PresetTypeLabels } from '../api/subscriptions'
 import * as pushApi from '../api/bot'
@@ -449,7 +449,7 @@ async function confirmForm() {
         strategy_id: form.value.strategy_id,
         scope: form.value.scope,
         preset_type: form.value.preset_type as PresetType,
-        cron_expr: form.value.cron_expr.trim() || undefined,
+        cron_expr: form.value.cron_expr.trim(),
         trading_hours_only: form.value.trading_hours_only,
       }
       if (form.value.scope === 'custom') {

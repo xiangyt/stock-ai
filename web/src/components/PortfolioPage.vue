@@ -367,7 +367,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import * as portfolioApi from '../api/portfolio'
 import type { PositionDetail, TradeConfig, PositionListResp } from '../api/portfolio'
 
@@ -386,14 +386,15 @@ const expandedId = ref<number | null>(null)
 const sortField = ref<string>('')
 const sortOrder = ref<'asc' | 'desc'>('asc')
 
-// 可排序字段定义
-const sortFields: Record<string, string> = {
+// 可排序字段定义（预留）
+const _sortFields: Record<string, string> = {
   stock_code: '股票代码',
   quantity: '数量',
   current_price: '现价',
   total_cost: '总成本',
   _profitAmount: '持仓盈亏',
 }
+void _sortFields
 
 // 弹窗控制
 const showOpenModal = ref(false)

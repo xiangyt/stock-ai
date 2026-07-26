@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 服务标识，全局唯一 -->
+    <key>Label</key>
+    <string>com.ai-stock-picker.server</string>
+
+    <!-- 服务描述 -->
+    <key>ProgramArguments</key>
+    <array>
+        <!-- 二进制路径：请替换为实际路径 -->
+        <string>/Users/xiangyt/WorkBuddy/Stock/ai-stock-picker/bin/server</string>
+        <!-- 配置文件路径：请替换为实际路径 -->
+        <string>-config</string>
+        <string>/Users/xiangyt/WorkBuddy/Stock/ai-stock-picker/config.yaml</string>
+    </array>
+
+    <!-- 工作目录 -->
+    <key>WorkingDirectory</key>
+    <string>/Users/xiangyt/WorkBuddy/Stock/ai-stock-picker</string>
+
+    <!-- 环境变量 -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>DB_PASSWORD</key>
+        <string>your_db_password</string>
+        <key>EM_COOKIE</key>
+        <string>your_em_cookie</string>
+    </dict>
+
+    <!-- 进程运行后即视为启动成功 -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- 进程退出后自动重启 -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- 10 秒后无响应则强制终止 -->
+    <key>ExitTimeOut</key>
+    <integer>10</integer>
+
+    <!-- 日志输出 -->
+    <key>StandardOutPath</key>
+    <string>/Users/xiangyt/WorkBuddy/Stock/ai-stock-picker/logs/launchd-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/xiangyt/WorkBuddy/Stock/ai-stock-picker/logs/launchd-stderr.log</string>
+</dict>
+</plist>

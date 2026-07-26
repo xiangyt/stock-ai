@@ -1,0 +1,4 @@
+# 忽略构建产物，仅保留 .gitkeep
+*
+!.gitignore
+!.gitkeep

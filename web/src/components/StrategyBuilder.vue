@@ -471,7 +471,7 @@
           <thead>
             <tr>
               <th class="col-cb">
-                <input type="checkbox" :checked="allSelected" :indeterminate="indeterminate" @change="toggleAll" />
+                <input type="checkbox" :checked="allSelected" :indeterminate="Boolean(someSelected)" @change="toggleAll" />
               </th>
               <th class="col-idx">序号</th>
               <th class="col-code">股票代码</th>

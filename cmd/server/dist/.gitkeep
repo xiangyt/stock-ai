@@ -1,0 +1,3 @@
+# This directory holds the frontend dist files to be embedded into the Go binary.
+# Placeholder ensures go build succeeds even before frontend is built.
+# During make build-all, web/dist/ is copied here, overwriting this file.

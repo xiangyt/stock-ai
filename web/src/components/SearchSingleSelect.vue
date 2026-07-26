@@ -59,7 +59,6 @@ const emit = defineEmits<{
 }>()
 
 const rootEl = ref<HTMLElement | null>(null)
-const inputEl = ref<HTMLInputElement | null>(null)
 const open = ref(false)
 const searchText = ref('')
 
