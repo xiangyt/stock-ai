@@ -12,6 +12,7 @@ __debug_bin*
 /sync-snapshot
 /sync-kline
 /server
+/bin/
 
 
 # Output of go coverage

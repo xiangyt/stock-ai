@@ -76,7 +76,7 @@ func (h *StrategyHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
 
-	resp, err := h.svc.List(getUID(c), isAdmin(c), keyword, page, size)
+	resp, err := h.svc.List(c.Request.Context(), getUID(c), isAdmin(c), keyword, page, size)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败: " + err.Error()})
 		return

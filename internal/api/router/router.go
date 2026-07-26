@@ -1,10 +1,14 @@
 package router
 
 import (
+	"log/slog"
+
 	"stock-ai/internal/api/handler"
 	"stock-ai/internal/backtest"
 	"stock-ai/internal/config"
 	"stock-ai/internal/datacollect"
+	applog "stock-ai/internal/log"
+	"stock-ai/internal/middleware"
 	"stock-ai/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -27,7 +31,15 @@ var BacktestHandlerRef *backtest.Handler
 
 // SetupRouter 创建路由并返回 gin.Engine 实例
 func SetupRouter(runner *datacollect.DataCollectRunner) *gin.Engine {
-	r := gin.Default()
+	// 将 gin 的 debug/错误输出接入 slog，统一日志格式与染色
+	if config.Get().Server.Mode == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+	gin.DefaultWriter = applog.NewSlogLineWriter(slog.LevelDebug)
+	gin.DefaultErrorWriter = applog.NewSlogLineWriter(slog.LevelError)
+
+	r := gin.New()
+	r.Use(gin.Recovery())
 
 	// CORS 中间件
 	r.Use(func(c *gin.Context) {
@@ -42,6 +54,10 @@ func SetupRouter(runner *datacollect.DataCollectRunner) *gin.Engine {
 
 		c.Next()
 	})
+
+	// TraceID 链路追踪 + 结构化访问日志（在 CORS 之后、业务路由之前注册）
+	r.Use(middleware.TraceID())
+	r.Use(middleware.GinLogger())
 
 	// 健康检查
 	r.GET("/health", handler.HealthCheck)

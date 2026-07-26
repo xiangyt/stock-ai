@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"stock-ai/internal/db"
@@ -89,7 +90,7 @@ type ListResp struct {
 	Size  int                    `json:"size"`
 }
 
-func (svc *StrategyService) List(uid uint, isAdmin bool, keyword string, page, pageSize int) (*ListResp, error) {
+func (svc *StrategyService) List(ctx context.Context, uid uint, isAdmin bool, keyword string, page, pageSize int) (*ListResp, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -100,7 +101,7 @@ func (svc *StrategyService) List(uid uint, isAdmin bool, keyword string, page, p
 		pageSize = 100
 	}
 
-	strategies, total, err := db.ListStrategies(uid, isAdmin, keyword, page, pageSize)
+	strategies, total, err := db.ListStrategies(ctx, uid, isAdmin, keyword, page, pageSize)
 	if err != nil {
 		return nil, err
 	}

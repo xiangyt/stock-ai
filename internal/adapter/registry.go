@@ -38,7 +38,6 @@ func (r *Registry) Register(ds DataSource) error {
 	}
 
 	r.adapters[name] = ds
-	fmt.Printf("✅ 已注册数据源: %s (%s)\n", name, ds.DisplayName())
 	return nil
 }
 

@@ -1,7 +1,8 @@
 package holiday
 
 import (
-	"log"
+	"context"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -26,8 +27,9 @@ func GetProvider() *Provider {
 	return defaultProvider
 }
 
-// Load 从数据库加载节假日数据并注册到 utils
-func (p *Provider) Load() error {
+// Load 从数据库加载节假日数据并注册到 utils。
+// ctx 用于透传 trace_id，便于在 SQL 日志中追踪节假日加载过程。
+func (p *Provider) Load(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -36,7 +38,7 @@ func (p *Provider) Load() error {
 	}
 
 	var holidays []model.TradingHoliday
-	if err := db.GetDB().Find(&holidays).Error; err != nil {
+	if err := db.GetDB().WithContext(ctx).Find(&holidays).Error; err != nil {
 		return err
 	}
 
@@ -48,12 +50,13 @@ func (p *Provider) Load() error {
 	// 注册到 utils 包
 	utils.RegisterHolidayProvider(p)
 
-	log.Printf("✅ 节假日数据已加载: %d 条", len(holidays))
+	slog.Info("节假日数据已加载", "count", len(holidays))
 	return nil
 }
 
-// Reload 重新从数据库加载节假日（用于数据更新后）
-func (p *Provider) Reload() error {
+// Reload 重新从数据库加载节假日（用于数据更新后）。
+// ctx 用于透传 trace_id。
+func (p *Provider) Reload(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -61,7 +64,7 @@ func (p *Provider) Reload() error {
 	p.loaded = false
 
 	var holidays []model.TradingHoliday
-	if err := db.GetDB().Find(&holidays).Error; err != nil {
+	if err := db.GetDB().WithContext(ctx).Find(&holidays).Error; err != nil {
 		return err
 	}
 
@@ -71,7 +74,7 @@ func (p *Provider) Reload() error {
 	p.loaded = true
 
 	utils.RegisterHolidayProvider(p)
-	log.Printf("✅ 节假日数据已重新加载: %d 条", len(holidays))
+	slog.Info("节假日数据已重新加载", "count", len(holidays))
 	return nil
 }
 

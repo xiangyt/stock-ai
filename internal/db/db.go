@@ -2,7 +2,8 @@ package db
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	"stock-ai/internal/config"
@@ -26,7 +27,7 @@ func Init(cfg *config.DatabaseConfig) error {
 	}
 
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logLevel),
+		Logger: NewGormLogger(logLevel),
 	})
 	if err != nil {
 		return fmt.Errorf("连接数据库失败: %w", err)
@@ -45,7 +46,7 @@ func Init(cfg *config.DatabaseConfig) error {
 	}
 
 	DB = db
-	log.Println("数据库连接成功")
+	slog.Info("数据库连接成功")
 	return nil
 }
 
@@ -85,7 +86,8 @@ func AutoMigrate() error {
 // GetDB 获取数据库实例
 func GetDB() *gorm.DB {
 	if DB == nil {
-		log.Fatal("数据库未初始化，请先调用 db.Init()")
+		slog.Error("数据库未初始化，请先调用 db.Init()")
+		os.Exit(1)
 	}
 	return DB
 }

@@ -1,6 +1,8 @@
 package db
 
 import (
+	"context"
+
 	"gorm.io/gorm"
 
 	"stock-ai/internal/model"
@@ -68,8 +70,8 @@ func GetStrategyByID(id uint) (*model.Strategy, error) {
 // 管理员：查看所有策略
 // 普通用户：查看自己的策略 + 公开策略（uid = ? OR is_public = true）
 // 通过关联子查询一次性填充订阅数量，避免 N+1 问题
-func ListStrategies(uid uint, isAdmin bool, keyword string, page, pageSize int) ([]model.Strategy, int64, error) {
-	base := GetDB().Model(&model.Strategy{})
+func ListStrategies(ctx context.Context, uid uint, isAdmin bool, keyword string, page, pageSize int) ([]model.Strategy, int64, error) {
+	base := GetDB().WithContext(ctx).Model(&model.Strategy{})
 
 	if !isAdmin {
 		base = base.Where("uid = ? OR is_public = ?", uid, true)

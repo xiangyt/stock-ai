@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -52,10 +53,11 @@ func UpdateDataCollectTask(id uint, updates map[string]interface{}) error {
 	return nil
 }
 
-// UpsertDataCollectTask 插入或更新任务（用于初始化数据）
-func UpsertDataCollectTask(task *model.DataCollectTask) error {
+// UpsertDataCollectTask 插入或更新任务（用于初始化数据）。
+// ctx 用于透传 trace_id。
+func UpsertDataCollectTask(ctx context.Context, task *model.DataCollectTask) error {
 	var existing model.DataCollectTask
-	err := GetDB().Where("id = ?", task.ID).First(&existing).Error
+	err := GetDB().WithContext(ctx).Where("id = ?", task.ID).First(&existing).Error
 	if err == nil {
 		// 已存在，跳过（初始化数据不应覆盖用户修改）
 		return nil
@@ -64,11 +66,12 @@ func UpsertDataCollectTask(task *model.DataCollectTask) error {
 		return err
 	}
 	// 不存在，创建
-	return GetDB().Create(task).Error
+	return GetDB().WithContext(ctx).Create(task).Error
 }
 
-// InitDataCollectTasks 初始化内置数据采集任务
-func InitDataCollectTasks() error {
+// InitDataCollectTasks 初始化内置数据采集任务。
+// ctx 用于透传 trace_id。
+func InitDataCollectTasks(ctx context.Context) error {
 	initTasks := model.GetInitialDataCollectTasks()
 	for _, t := range initTasks {
 		task := &model.DataCollectTask{
@@ -78,7 +81,7 @@ func InitDataCollectTasks() error {
 			Params:   t.Params,
 			IsActive: t.IsActive,
 		}
-		if err := UpsertDataCollectTask(task); err != nil {
+		if err := UpsertDataCollectTask(ctx, task); err != nil {
 			return fmt.Errorf("初始化任务 %d(%s) 失败: %w", t.ID, t.Name, err)
 		}
 	}

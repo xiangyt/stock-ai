@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	"stock-ai/internal/adapter"
 	"stock-ai/internal/db"
+	applog "stock-ai/internal/log"
 	"stock-ai/internal/model"
 	"stock-ai/internal/notifier"
 	"stock-ai/internal/subscription/watchlist"
@@ -95,7 +96,7 @@ func (s *subscriptionNotifier) Push(ctx context.Context, bots []model.PushBot, m
 			continue
 		}
 		if err := s.ntf.Send(ctx, &bot, message); err != nil {
-			log.Printf("[DataCollect] 推送失败 bot=%d(%s): %v", bot.ID, bot.Name, err)
+			slog.Error("推送失败", "bot_id", bot.ID, "name", bot.Name, "error", err)
 		}
 	}
 }
@@ -163,14 +164,14 @@ func (r *DataCollectRunner) Run(ctx context.Context, task *model.DataCollectTask
 	result, err := handler(ctx, task)
 	if err != nil {
 		msg := r.formatFailureMessage(task.Name, err, result)
-		log.Printf("[DataCollect] 任务 %d(%s) 执行失败: %v", task.ID, task.Name, err)
+		slog.Error("任务执行失败", "task_id", task.ID, "name", task.Name, "error", err)
 		if len(bots) > 0 {
 			r.notifier.Push(ctx, bots, msg)
 		}
 		return err
 	}
 
-	log.Printf("[DataCollect] 任务 %d(%s) 执行成功: %s", task.ID, task.Name, result.Summary)
+	slog.Info("任务执行成功", "task_id", task.ID, "name", task.Name, "summary", result.Summary)
 	if len(bots) > 0 && result.Summary != "" {
 		r.notifier.Push(ctx, bots, r.formatSuccessMessage(task.Name, result))
 	}
@@ -236,7 +237,7 @@ func (r *DataCollectRunner) handleStockDetailSync(ctx context.Context, task *mod
 		return nil, fmt.Errorf("获取数据源失败: %w", err)
 	}
 
-	log.Printf("[DataCollect] 开始股票列表同步, source=%s", adp.Name())
+	slog.Info("开始股票列表同步", "source", adp.Name())
 
 	allStocks, err := adp.GetStockList(ctx)
 	if err != nil {
@@ -250,7 +251,7 @@ func (r *DataCollectRunner) handleStockDetailSync(ctx context.Context, task *mod
 	for i, stock := range allStocks {
 		detail, detailErr := adp.GetStockDetail(ctx, stock.Code)
 		if detailErr != nil {
-			log.Printf("[DataCollect] 获取详情失败 [%s]: %v", stock.Code, detailErr)
+			slog.Error("获取详情失败", "code", stock.Code, "error", detailErr)
 			failCount++
 			failCodes = append(failCodes, stock.Code)
 			continue
@@ -266,7 +267,7 @@ func (r *DataCollectRunner) handleStockDetailSync(ctx context.Context, task *mod
 		}
 
 		if (i+1)%100 == 0 || i == total-1 {
-			log.Printf("[DataCollect] 详情进度: %d/%d (新增=%d, 更新=%d)", i+1, total, newCount, updCount)
+			slog.Info("详情进度", "progress", i+1, "total", total, "new", newCount, "updated", updCount)
 		}
 	}
 
@@ -432,8 +433,8 @@ func (r *DataCollectRunner) handleDividendKlineSync(ctx context.Context, task *m
 		for _, p := range periods {
 			if db.IsSamePeriod(p, today, dividend.ExDividendDate) {
 				hits = append(hits, dividendHit{code: stock.Code, period: p})
-				log.Printf("[DataCollect] 除权检测: %s(%s) 除权日=%d, 今日=%d, 周期=%s → 触发同步",
-					stock.Code, stock.Name, dividend.ExDividendDate, today, db.KLineLabel(p))
+				slog.Info("除权检测触发同步", "code", stock.Code, "name", stock.Name,
+					"ex_dividend_date", dividend.ExDividendDate, "today", today, "period", db.KLineLabel(p))
 			}
 		}
 	}
@@ -451,7 +452,7 @@ func (r *DataCollectRunner) handleDividendKlineSync(ctx context.Context, task *m
 		if sr.Error != nil {
 			fail++
 			failCodes = append(failCodes, h.code)
-			log.Printf("[DataCollect] 除权同步失败 %s(%s): %v", h.code, db.KLineLabel(h.period), sr.Error)
+			slog.Error("除权同步失败", "code", h.code, "period", db.KLineLabel(h.period), "error", sr.Error)
 		} else {
 			success++
 		}
@@ -689,7 +690,7 @@ func (s *schedulerImpl) Start() error {
 	}
 
 	s.cron.Start()
-	log.Printf("[DataCollect] 启动成功，已注册 %d 个任务", registered)
+	slog.Info("DataCollect 启动成功", "registered", registered)
 
 	// 启动变更监听 goroutine
 	go s.changeLoop()
@@ -705,7 +706,7 @@ func (s *schedulerImpl) Stop() {
 	if s.cron != nil {
 		ctx := s.cron.Stop()
 		<-ctx.Done()
-		log.Println("[DataCollect] 已停止")
+		slog.Info("DataCollect 已停止")
 	}
 	s.mu.Unlock()
 }
@@ -715,20 +716,20 @@ func (s *schedulerImpl) NotifyChange(change TaskChange) {
 	select {
 	case s.changeCh <- change:
 	default:
-		log.Printf("[DataCollect] 变更通道已满，丢弃事件: %s (id=%d)", change.Type, change.TaskID)
+		slog.Warn("变更通道已满，丢弃事件", "type", change.Type, "task_id", change.TaskID)
 	}
 }
 
 // changeLoop 消费变更事件，动态更新 cron 注册
 func (s *schedulerImpl) changeLoop() {
 	for change := range s.changeCh {
-		log.Printf("[DataCollect] 收到变更事件: %s (id=%d)", change.Type, change.TaskID)
+		slog.Info("收到变更事件", "type", change.Type, "task_id", change.TaskID)
 
 		switch change.Type {
 		case ChangeEnabled:
 			task, err := db.GetDataCollectTaskByID(change.TaskID)
 			if err != nil {
-				log.Printf("[DataCollect] 加载任务 %d 失败: %v", change.TaskID, err)
+				slog.Error("加载任务失败", "task_id", change.TaskID, "error", err)
 				continue
 			}
 			if task.IsActive {
@@ -740,7 +741,7 @@ func (s *schedulerImpl) changeLoop() {
 			s.removeTask(change.TaskID)
 			task, err := db.GetDataCollectTaskByID(change.TaskID)
 			if err != nil {
-				log.Printf("[DataCollect] 加载任务 %d 失败: %v", change.TaskID, err)
+				slog.Error("加载任务失败", "task_id", change.TaskID, "error", err)
 				continue
 			}
 			if task.IsActive {
@@ -757,7 +758,7 @@ func (s *schedulerImpl) changeLoop() {
 // 如果该 taskID 已存在，先移除旧的 cron entry 再重新注册（防止重复注册导致任务并行执行）
 func (s *schedulerImpl) addTask(task *model.DataCollectTask) bool {
 	if task.CronExpr == "" {
-		log.Printf("[DataCollect] 任务 %d(%s) cron 表达式为空，跳过", task.ID, task.Name)
+		slog.Warn("任务 cron 表达式为空，跳过", "task_id", task.ID, "name", task.Name)
 		return false
 	}
 
@@ -774,7 +775,7 @@ func (s *schedulerImpl) addTask(task *model.DataCollectTask) bool {
 		s.runTask(taskID)
 	})
 	if err != nil {
-		log.Printf("[DataCollect] 注册任务 %d(%s) cron 失败: %v (expr=%s)", task.ID, task.Name, err, task.CronExpr)
+		slog.Error("注册任务 cron 失败", "task_id", task.ID, "name", task.Name, "error", err, "cron", task.CronExpr)
 		return false
 	}
 
@@ -782,7 +783,7 @@ func (s *schedulerImpl) addTask(task *model.DataCollectTask) bool {
 	s.entryMap[task.ID] = entryID
 	s.mu.Unlock()
 
-	log.Printf("[DataCollect] 已注册任务 %d(%s), cron=%s", task.ID, task.Name, task.CronExpr)
+	slog.Info("已注册任务", "task_id", task.ID, "name", task.Name, "cron", task.CronExpr)
 	return true
 }
 
@@ -798,56 +799,55 @@ func (s *schedulerImpl) removeTask(taskID uint) {
 	}
 
 	s.cron.Remove(entryID)
-	log.Printf("[DataCollect] 已移除任务 %d", taskID)
+	slog.Info("已移除任务", "task_id", taskID)
 }
 
 // runTask 执行单次任务（cron job 回调）
 func (s *schedulerImpl) runTask(taskID uint) {
+	traceID := applog.NewTraceID()
+	ctx, cancel := context.WithTimeout(applog.WithTraceID(context.Background(), traceID), time.Hour)
+	defer cancel()
+
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("[DataCollect] 任务 %d 执行 panic 已恢复: %v", taskID, r)
+			slog.Error("任务执行 panic 已恢复", "trace_id", traceID, "task_id", taskID, "panic", r)
 		}
 	}()
 
 	// 从 DB 重新加载最新配置
 	task, err := db.GetDataCollectTaskByID(taskID)
 	if err != nil {
-		log.Printf("[DataCollect] 加载任务 %d 失败: %v", taskID, err)
+		slog.Error("加载任务失败", "trace_id", traceID, "task_id", taskID, "error", err)
 		return
 	}
 
 	// 检查 is_active
 	if !task.IsActive {
-		log.Printf("[DataCollect] 任务 %d 已禁用，跳过", taskID)
+		slog.Info("任务已禁用，跳过", "trace_id", traceID, "task_id", taskID)
 		return
 	}
 
 	// 加载关联机器人
 	bots, err := db.GetDataCollectBots(taskID)
 	if err != nil {
-		log.Printf("[DataCollect] 加载任务 %d 关联机器人失败: %v", taskID, err)
+		slog.Error("加载任务关联机器人失败", "trace_id", traceID, "task_id", taskID, "error", err)
 		bots = nil // 无机器人也继续执行
 	}
 
-	log.Printf("[DataCollect] 开始执行任务 %d(%s), params=%s", taskID, task.Name, task.Params)
+	slog.Info("开始执行任务", "trace_id", traceID, "task_id", taskID, "name", task.Name, "params", task.Params)
 
 	// 记录开始时间
 	startTime := time.Now()
 
 	// TODO: 记录执行日志到数据库（后续实现）
 
-	// 1小时超时
-	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
-	defer cancel()
-
 	if err := s.runner.Run(ctx, task, bots); err != nil {
-		log.Printf("[DataCollect] 任务 %d 执行失败: %v", taskID, err)
+		slog.Error("任务执行失败", "trace_id", traceID, "task_id", taskID, "name", task.Name, "error", err)
 		// TODO: 记录失败日志
 		return
 	}
 
-	elapsed := time.Since(startTime)
-	log.Printf("[DataCollect] 任务 %d 执行完成, 耗时 %v", taskID, elapsed)
+	slog.Info("任务执行完成", "trace_id", traceID, "task_id", taskID, "name", task.Name, "elapsed_ms", time.Since(startTime).Milliseconds())
 
 	// TODO: 记录成功日志
 }

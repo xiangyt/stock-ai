@@ -9,6 +9,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -144,7 +145,7 @@ func initAll(cfgPath string) *indicator.Registry {
 	log.Println("[INFO] 数据库连接成功")
 
 	// 加载节假日数据
-	if err := holiday.GetProvider().Load(); err != nil {
+	if err := holiday.GetProvider().Load(context.Background()); err != nil {
 		log.Printf("[WARN] 节假日数据加载失败（将仅排除周末）: %v", err)
 	}
 

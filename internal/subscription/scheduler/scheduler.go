@@ -3,11 +3,12 @@ package scheduler
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
 	"stock-ai/internal/db"
+	applog "stock-ai/internal/log"
 	"stock-ai/internal/model"
 	"stock-ai/internal/subscription/runner"
 	"stock-ai/utils"
@@ -162,7 +163,7 @@ func (s *schedulerImpl) Start() error {
 
 	// 启动 cron
 	s.cron.Start()
-	log.Printf("[Scheduler] 启动成功，已注册 %d 个订阅 job", registered)
+	slog.Info("Scheduler 启动成功", "registered", registered)
 
 	// 启动变更监听 goroutine
 	go s.changeLoop()
@@ -179,7 +180,7 @@ func (s *schedulerImpl) Stop() {
 	if s.cron != nil {
 		ctx := s.cron.Stop()
 		<-ctx.Done()
-		log.Println("[Scheduler] 已停止，所有 job 执行完毕")
+		slog.Info("Scheduler 已停止，所有 job 执行完毕")
 	}
 	s.mu.Unlock()
 }
@@ -189,21 +190,21 @@ func (s *schedulerImpl) NotifyChange(change SubscriptionChange) {
 	select {
 	case s.changeCh <- change:
 	default:
-		log.Printf("[Scheduler] 变更通道已满，丢弃事件: %s (id=%d)", change.Type, change.ID)
+		slog.Warn("变更通道已满，丢弃事件", "type", change.Type, "id", change.ID)
 	}
 }
 
 // changeLoop 消费变更事件，动态更新 cron 注册
 func (s *schedulerImpl) changeLoop() {
 	for change := range s.changeCh {
-		log.Printf("[Scheduler] 收到变更事件: %s (id=%d)", change.Type, change.ID)
+		slog.Info("收到变更事件", "type", change.Type, "id", change.ID)
 
 		switch change.Type {
 		case ChangeCreated, ChangeEnabled:
 			// 从 DB 加载并注册
 			sub, err := loadByID(change.ID)
 			if err != nil {
-				log.Printf("[Scheduler] 加载订阅 %d 失败: %v", change.ID, err)
+				slog.Error("加载订阅失败", "id", change.ID, "error", err)
 				continue
 			}
 			if sub.IsActive {
@@ -216,7 +217,7 @@ func (s *schedulerImpl) changeLoop() {
 
 			sub, err := loadByID(change.ID)
 			if err != nil {
-				log.Printf("[Scheduler] 加载订阅 %d 失败: %v", change.ID, err)
+				slog.Error("加载订阅失败", "id", change.ID, "error", err)
 				continue
 			}
 			if sub.IsActive {
@@ -234,7 +235,7 @@ func (s *schedulerImpl) changeLoop() {
 func (s *schedulerImpl) addSubscription(sub *SubscriptionLoadResult) bool {
 	cronExprs := resolveCronExpr(model.PresetType(sub.PresetType), sub.CronExpr)
 	if len(cronExprs) == 0 {
-		log.Printf("[Scheduler] 订阅 %d(%s) cron 表达式为空，跳过", sub.ID, sub.Name)
+		slog.Warn("订阅 cron 表达式为空，跳过", "sub_id", sub.ID, "name", sub.Name)
 		return false
 	}
 
@@ -246,12 +247,12 @@ func (s *schedulerImpl) addSubscription(sub *SubscriptionLoadResult) bool {
 			s.runSubscription(subID)
 		})
 		if addErr != nil {
-			log.Printf("[Scheduler] 注册订阅 %d(%s) cron 失败: %v", sub.ID, sub.Name, addErr)
+			slog.Error("注册订阅 cron 失败", "sub_id", sub.ID, "name", sub.Name, "error", addErr)
 			continue
 		}
 
 		entries = append(entries, entryID)
-		log.Printf("[Scheduler] 已注册订阅 %d(%s), cron=%s", sub.ID, sub.Name, cronExpr)
+		slog.Info("已注册订阅", "sub_id", sub.ID, "name", sub.Name, "cron", cronExpr)
 	}
 
 	if len(entries) == 0 {
@@ -278,38 +279,42 @@ func (s *schedulerImpl) removeSubscription(subscriptionID uint) {
 	for _, entryID := range entries {
 		s.cron.Remove(entryID)
 	}
-	log.Printf("[Scheduler] 已移除订阅 %d（共 %d 个 job）", subscriptionID, len(entries))
+	slog.Info("已移除订阅", "sub_id", subscriptionID, "jobs", len(entries))
 }
 
 // runSubscription 执行单次订阅（cron job 回调）
 func (s *schedulerImpl) runSubscription(subscriptionID uint) {
+	traceID := applog.NewTraceID()
+	ctx, cancel := context.WithTimeout(applog.WithTraceID(context.Background(), traceID), 10*time.Minute)
+	defer cancel()
+
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("[Scheduler] 订阅 %d 执行 panic 已恢复: %v", subscriptionID, r)
+			slog.Error("订阅执行 panic 已恢复", "trace_id", traceID, "sub_id", subscriptionID, "panic", r)
 		}
 	}()
 
 	// 从 DB 重新加载订阅配置（热更新）
 	sub, err := loadByID(subscriptionID)
 	if err != nil {
-		log.Printf("[Scheduler] 加载订阅 %d 失败: %v", subscriptionID, err)
+		slog.Error("加载订阅失败", "trace_id", traceID, "sub_id", subscriptionID, "error", err)
 		return
 	}
 
 	// 检查 is_active
 	if !sub.IsActive {
-		log.Printf("[Scheduler] 订阅 %d 已停用，跳过", subscriptionID)
+		slog.Info("订阅已停用，跳过", "trace_id", traceID, "sub_id", subscriptionID)
 		return
 	}
 
 	// 检查 trading_hours_only
 	if sub.TradingHoursOnly {
 		if !utils.IsTradingDay() {
-			log.Printf("[Scheduler] 今日非交易日，跳过订阅 %d", subscriptionID)
+			slog.Info("今日非交易日，跳过订阅", "trace_id", traceID, "sub_id", subscriptionID)
 			return
 		}
 		if !utils.IsTradingHours() {
-			log.Printf("[Scheduler] 当前非交易时段，跳过订阅 %d", subscriptionID)
+			slog.Info("当前非交易时段，跳过订阅", "trace_id", traceID, "sub_id", subscriptionID)
 			return
 		}
 	}
@@ -317,18 +322,14 @@ func (s *schedulerImpl) runSubscription(subscriptionID uint) {
 	// 转换为 model.Subscription 供 runner 使用
 	modelSub := toModelSubscription(sub)
 
-	// 单次扫描总体超时 10 分钟
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-
-	log.Printf("[Scheduler] 开始执行订阅 %d(%s)", subscriptionID, sub.Name)
+	slog.Info("开始执行订阅", "trace_id", traceID, "sub_id", subscriptionID, "name", sub.Name)
 	result, runErr := s.runner.Run(ctx, modelSub)
 	if runErr != nil {
-		log.Printf("[Scheduler] 订阅 %d 执行失败: %v", subscriptionID, runErr)
+		slog.Error("订阅执行失败", "trace_id", traceID, "sub_id", subscriptionID, "name", sub.Name, "error", runErr)
 		return
 	}
-	log.Printf("[Scheduler] 订阅 %d 执行完成: 扫描 %d 只, 匹配 %d 只, 耗时 %dms, 状态 %s",
-		subscriptionID, result.TotalScanned, result.MatchCount, result.DurationMs, result.Status)
+	slog.Info("订阅执行完成", "trace_id", traceID, "sub_id", subscriptionID, "name", sub.Name,
+		"scanned", result.TotalScanned, "matched", result.MatchCount, "elapsed_ms", result.DurationMs, "status", result.Status)
 }
 
 // ============================================================================
