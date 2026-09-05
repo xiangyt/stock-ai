@@ -104,11 +104,11 @@ func (s *Signal513) Evaluate(klines []*model.DailyKline, config *indicator.Signa
 			Message: indicator.DataEmptyError("513 kline").Error()}
 	}
 
-	if klines[key2].Volume > klines[key2+1].Volume*2 { // key2天前那天成交量大于2倍4天前成交量
+	if klines[key2].Volume > klines[key2+1].Volume*2 { // key2天前那天成交量大于2倍3天前成交量
 		maxRate := float64((klines[key2].High - klines[key2+1].Close)) / float64(klines[key2+1].Close) * 100
 		rate1 := float64((klines[key2].High - klines[key2].Close)) / float64(klines[key2+1].Close) * 100
 		rate2 := float64((klines[key2].Close - klines[key2].Open)) / float64(klines[key2+1].Close) * 100
-		if !(maxRate > 5 && rate1 > 1 && rate2 > 3) { //异动当天最高至少涨8%，回落超过1%，阳线高度至少3%
+		if !(maxRate > 5 && rate1 > 1 && rate2 > 3) { //异动当天最高至少涨5%，回落超过1%，阳线高度至少3%
 			return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID,
 				Message: "未出现异动阳线"}
 		}
@@ -117,12 +117,12 @@ func (s *Signal513) Evaluate(klines []*model.DailyKline, config *indicator.Signa
 			Message: "未出现异动阳线"}
 	}
 	for i := key2; i < key2+key1; i++ {
-		if !(klines[i].Close >= klines[i].Open && klines[i].Close >= klines[i+1].Close) {
+		if !(klines[i].Close >= klines[i].Open) {
 			return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID, Message: "至少5连阳"}
 		}
 	}
 	for i := 0; i < key2; i++ {
-		if klines[i].Open < klines[key2].Open {
+		if klines[i].Close < klines[key2].Open {
 			return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: config.SignalID,
 				Message: "股价（收盘价）不能跌破那根异动阳线的开盘价"}
 		} else if klines[i].Volume > klines[key2].Volume {
@@ -243,7 +243,7 @@ func (s *SignalMildVolumeIncrease) Evaluate(klines []*model.DailyKline, config *
 				return &indicator.EvaluatedStock{
 					Result:   indicator.ResultRejected,
 					SignalID: config.SignalID,
-					Message:  fmt.Sprintf("距今日%d天 (%d) 成交量 %d < 前一日 (%d) %d 的 90%%",
+					Message: fmt.Sprintf("距今日%d天 (%d) 成交量 %d < 前一日 (%d) %d 的 90%%",
 						i, k.TradeDate, k.Volume, klines[i+1].TradeDate, klines[i+1].Volume),
 				}
 			}
@@ -255,7 +255,7 @@ func (s *SignalMildVolumeIncrease) Evaluate(klines []*model.DailyKline, config *
 		return &indicator.EvaluatedStock{
 			Result:   indicator.ResultRejected,
 			SignalID: config.SignalID,
-			Message:  fmt.Sprintf("最新 (%d，%d天前) 成交量 %d < 窗口最早 (%d，%d天前) 成交量 %d",
+			Message: fmt.Sprintf("最新 (%d，%d天前) 成交量 %d < 窗口最早 (%d，%d天前) 成交量 %d",
 				klines[end].TradeDate, end, klines[end].Volume, klines[start].TradeDate, start, klines[start].Volume),
 		}
 	}
