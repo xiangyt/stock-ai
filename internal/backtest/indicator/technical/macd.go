@@ -32,7 +32,7 @@ import (
 type MACDResult struct {
 	DIF        []float64 // DIF快线（从旧到新）
 	DEA        []float64 // DEA慢线（从旧到新）
-	MACD  []float64 // MACD柱 2*(DIF-DEA)（从旧到新）
+	MACD       []float64 // MACD柱 2*(DIF-DEA)（从旧到新）
 	ClosePrice []float64 // 收盘价（元，从旧到新）
 }
 
@@ -195,7 +195,7 @@ func buildMACD(klines []*model.DailyKline) MACDResult {
 	return MACDResult{
 		DIF:        dif,
 		DEA:        dea,
-		MACD:  hist,
+		MACD:       hist,
 		ClosePrice: closePrices,
 	}
 }
@@ -364,9 +364,10 @@ func macdValOps() []indicator.OperatorOption {
 }
 
 // macdValIdx 根据 days 参数计算取值索引，返回索引和可能的错误。
+// 仅接受 daysAgo >= 0（数据不足/负数 days 均视为越界），保证返回值落在 [0, dataLen) 内。
 func macdValIdx(dataLen, daysAgo int) (int, error) {
 	idx := dataLen - 1 - daysAgo
-	if idx < 0 {
+	if idx < 0 || idx >= dataLen {
 		return 0, fmt.Errorf("往前第 %d 天超出数据范围（共 %d 天）", daysAgo, dataLen)
 	}
 	return idx, nil
