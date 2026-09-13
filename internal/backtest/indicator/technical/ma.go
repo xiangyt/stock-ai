@@ -81,9 +81,11 @@ func NewMa() *Ma {
 		NewSignalMaBullish2("02"), // 多头排列2 (MA10/20/30/60)
 		NewSignalMaBullish3("03"), // 多头排列3 (MA10/20/30)
 		// 04~05 预留
-		NewSignalMaSticky("06"),      // 均线粘合
-		NewSignalPriceAboveMA5("10"), // 站上5日线
-		// 07~09, 11~19 预留
+		NewSignalMaSticky("06"),       // 均线粘合
+		NewSignalPriceAboveMA5("10"),  // 股价站上5日线
+		NewSignalPriceAboveMA10("11"), // 股价站上10日线
+		NewSignalPriceAboveMA20("12"), // 股价站上20日线
+		// 07~09, 13~19 预留
 
 	}
 	builtInSigs = append(builtInSigs, buildMaCrossSignals(maCrossDefs)...)
@@ -92,11 +94,13 @@ func NewMa() *Ma {
 
 	// 自定义信号：非交叉信号 + 交叉信号配置表循环生成
 	customSigs := []indicator.Signal{
-		NewSignalMaBullish("01"),     // 多头排列
-		NewSignalMaBullish2("02"),    // 多头排列2
-		NewSignalMaBullish3("03"),    // 多头排列3
-		NewSignalMaSticky("06"),      // 均线粘合
-		NewSignalPriceAboveMA5("10"), // 站上5日线
+		NewSignalMaBullish("01"),      // 多头排列
+		NewSignalMaBullish2("02"),     // 多头排列2
+		NewSignalMaBullish3("03"),     // 多头排列3
+		NewSignalMaSticky("06"),       // 均线粘合
+		NewSignalPriceAboveMA5("10"),  // 股价站上5日线
+		NewSignalPriceAboveMA10("11"), // 股价站上10日线
+		NewSignalPriceAboveMA20("12"), // 股价站上20日线
 	}
 	customSigs = append(customSigs, buildMaCrossSignals(customMaCrossDefs)...)
 	customSigs = append(customSigs,
@@ -666,25 +670,29 @@ func (s *SignalMaSticky) Evaluate(lines MALines, config *indicator.SignalConfig)
 }
 
 // ============================================================================
-//  SignalPriceAboveMA5 — 股价站上5日线
+//  SignalPriceAboveMA5 — 股价站上均线（MA5/MA10/MA20 共用同一 struct）
 //
 //  判定规则:
-//    在 [lookback_start, lookback_end] 窗口内，每日收盘价 > MA5
+//    在 [lookback_start, lookback_end] 窗口内，每日收盘价 > MA
 //    默认 start=0, end=0，即检查今天
+//
+//  内置信号: 股价站上5日线(seq 10)、站上10日线(seq 11)、站上20日线(seq 12)
+//  目标均线由构造函数指定，Evaluate 统一按 s.MA 取线
 //
 //  语义：窗口内所有日均需满足（AND 逻辑），任一日不满足即拒绝
 // ============================================================================
 
 type SignalPriceAboveMA5 struct {
 	indicator.BaseSignal
+	MA maLineSelector // 目标均线：maLine5/maLine10/maLine20
 }
 
-func NewSignalPriceAboveMA5(seq string) *SignalPriceAboveMA5 {
+func newSignalPriceAboveMA(seq string, ma maLineSelector) *SignalPriceAboveMA5 {
 	return &SignalPriceAboveMA5{
 		BaseSignal: indicator.NewBaseSignal(
 			seq,
-			"股价站上5日线",
-			"窗口内每日收盘价>MA5",
+			"股价站上"+ma.cnLabel(),
+			"窗口内每日收盘价>"+ma.label(),
 			indicator.ValSeries,
 			[]indicator.OperatorOption{
 				{
@@ -704,7 +712,23 @@ func NewSignalPriceAboveMA5(seq string) *SignalPriceAboveMA5 {
 				},
 			},
 		),
+		MA: ma,
 	}
+}
+
+// NewSignalPriceAboveMA5 创建「股价站上5日线」信号
+func NewSignalPriceAboveMA5(seq string) *SignalPriceAboveMA5 {
+	return newSignalPriceAboveMA(seq, maLine5)
+}
+
+// NewSignalPriceAboveMA10 创建「股价站上10日线」信号
+func NewSignalPriceAboveMA10(seq string) *SignalPriceAboveMA5 {
+	return newSignalPriceAboveMA(seq, maLine10)
+}
+
+// NewSignalPriceAboveMA20 创建「股价站上20日线」信号
+func NewSignalPriceAboveMA20(seq string) *SignalPriceAboveMA5 {
+	return newSignalPriceAboveMA(seq, maLine20)
 }
 
 func (s *SignalPriceAboveMA5) Evaluate(lines MALines, klines []*model.DailyKline, config *indicator.SignalConfig) *indicator.EvaluatedStock {
@@ -728,12 +752,12 @@ func (s *SignalPriceAboveMA5) Evaluate(lines MALines, klines []*model.DailyKline
 
 	for i := end; i <= start; i++ {
 		price := float64(klines[i].Close)
-		ma5 := floorMA(lines.MA5[i])
-		if price <= ma5 {
+		maVal := floorMA(s.MA.get(lines, i))
+		if price <= maVal {
 			return &indicator.EvaluatedStock{
 				Result:   indicator.ResultRejected,
 				SignalID: config.SignalID,
-				Message:  fmt.Sprintf("%d天前收盘价(%.2f)未站上MA5(%.2f)", i, price/100, ma5/100),
+				Message:  fmt.Sprintf("%d天前收盘价(%.2f)未站上%s(%.2f)", i, price/100, s.MA.label(), maVal/100),
 			}
 		}
 	}
@@ -898,6 +922,18 @@ func (s maLineSelector) label() string {
 		return "MA10"
 	default:
 		return "MA20"
+	}
+}
+
+// cnLabel 返回中文线名（如 "10日线"），用于信号名称展示
+func (s maLineSelector) cnLabel() string {
+	switch s {
+	case maLine5:
+		return "5日线"
+	case maLine10:
+		return "10日线"
+	default:
+		return "20日线"
 	}
 }
 
