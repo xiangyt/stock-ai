@@ -10,21 +10,21 @@ import (
 
 // Config 全局配置
 type Config struct {
-	Server     ServerConfig      `mapstructure:"server"`
-	Database   DatabaseConfig    `mapstructure:"database"`
-	Auth       AuthConfig        `mapstructure:"auth"`
-	MCP        MCPConfig         `mapstructure:"mcp"`
-	Log        LogConfig         `mapstructure:"log"`
+	Server      ServerConfig     `mapstructure:"server"`
+	Database    DatabaseConfig   `mapstructure:"database"`
+	Auth        AuthConfig       `mapstructure:"auth"`
+	MCP         MCPConfig        `mapstructure:"mcp"`
+	Log         LogConfig        `mapstructure:"log"`
 	DataSources []DataSourceItem `mapstructure:"data_sources"` // 多数据源列表
 }
 
 // DataSourceItem 单个数据源配置
 type DataSourceItem struct {
-	Name     string            `mapstructure:"name"`               // 数据源名称（唯一标识）
-	Enabled  bool              `mapstructure:"enabled"`            // 是否启用
-	Provider string            `mapstructure:"provider"`           // 提供商类型: eastmoney/ths
-	Cookie   string            `mapstructure:"cookie"`            // Cookie（东方财富等需要）
-	Extra    map[string]string `mapstructure:"extra,omitempty"`   // 扩展参数（各数据源自定义）
+	Name     string            `mapstructure:"name"`            // 数据源名称（唯一标识）
+	Enabled  bool              `mapstructure:"enabled"`         // 是否启用
+	Provider string            `mapstructure:"provider"`        // 提供商类型: eastmoney/ths
+	Cookie   string            `mapstructure:"cookie"`          // Cookie（东方财富等需要）
+	Extra    map[string]string `mapstructure:"extra,omitempty"` // 扩展参数（各数据源自定义）
 }
 
 // GetDataSourceByName 按名称获取数据源配置
@@ -60,11 +60,14 @@ type DatabaseConfig struct {
 }
 
 // MCPConfig MCP 配置
+//
+// 传输方式固定为 Streamable HTTP，监听 Port 指定的端口，
+// 端点路径固定为 /mcp（见 internal/mcp.EndpointPath）。
 type MCPConfig struct {
-	Enabled   bool   `mapstructure:"enabled"`
-	Name      string `mapstructure:"name"`
-	Version   string `mapstructure:"version"`
-	Transport string `mapstructure:"transport"`
+	Enabled bool   `mapstructure:"enabled"` // 是否启用 MCP Server
+	Port    int    `mapstructure:"port"`    // MCP HTTP 监听端口
+	Name    string `mapstructure:"name"`    // Server 名称
+	Version string `mapstructure:"version"` // Server 版本
 }
 
 // LogConfig 日志配置
@@ -154,11 +157,11 @@ func setDefaults() {
 	viper.SetDefault("database.max_open_conns", 100)
 	viper.SetDefault("database.conn_max_lifetime", 3600)
 
-	// MCP 默认值
-	viper.SetDefault("mcp.enabled", true)
-	viper.SetDefault("mcp.name", "stock-ai")
+	// MCP 默认值（固定 Streamable HTTP 传输）
+	viper.SetDefault("mcp.enabled", false)
+	viper.SetDefault("mcp.port", 9101)
+	viper.SetDefault("mcp.name", "ai-stock-picker")
 	viper.SetDefault("mcp.version", "1.0.0")
-	viper.SetDefault("mcp.transport", "stdio")
 
 	// Log 默认值
 	viper.SetDefault("log.level", "info")

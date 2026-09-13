@@ -19,7 +19,7 @@
 | 后端 | Go 1.25+ / Gin / GORM / MySQL / Wire (DI) |
 | 前端 | Vue 3.5+ / TypeScript / Vite 8 / ECharts 6 |
 | 数据源 | 同花顺 / 东方财富 / 腾讯股票 |
-| 协议 | REST API + MCP (stdio/SSE) |
+| 协议 | REST API + MCP (Streamable HTTP) |
 
 ## 项目结构
 
@@ -164,8 +164,8 @@ data_sources:
     cookie: ""                   # 或 THS_COOKIE 环境变量
 
 mcp:
-  enabled: true
-  transport: stdio               # stdio / sse
+  enabled: true                  # 是否启用 MCP Server（固定 Streamable HTTP）
+  port: 9101                     # MCP HTTP 监听端口（端点路径 /mcp）
 
 auth:
   jwt_secret: "change-me"        # 生产环境务必修改

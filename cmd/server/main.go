@@ -22,6 +22,7 @@ import (
 	"stock-ai/internal/db"
 	"stock-ai/internal/holiday"
 	applog "stock-ai/internal/log"
+	"stock-ai/internal/mcp"
 	"stock-ai/internal/service"
 	"stock-ai/internal/subscription/monitor"
 	subsched "stock-ai/internal/subscription/scheduler"
@@ -259,6 +260,29 @@ func main() {
 	}
 
 	// ====================================================================
+	//  7.5 启动 MCP Server（固定 Streamable HTTP 传输）
+	//      放在依赖注入之后，确保共享的持仓服务已持有 QuoteCache/Watchlist
+	// ====================================================================
+	var mcpSrv *mcp.StockMCPServer
+	if cfg.MCP.Enabled {
+		if router.PortfolioServiceRef == nil {
+			logger.Error("MCP 服务未启动：持仓服务未初始化")
+		} else {
+			mcpSrv = mcp.NewStockMCPServer(cfg.MCP, router.PortfolioServiceRef)
+			go func() {
+				if err := mcpSrv.Start(); err != nil && err != http.ErrServerClosed {
+					logger.Error("MCP 服务异常退出", "error", err)
+				}
+			}()
+			logger.Info("MCP 服务已启动",
+				"transport", "streamable-http",
+				"url", fmt.Sprintf("http://localhost:%d%s", cfg.MCP.Port, mcp.EndpointPath))
+		}
+	} else {
+		logger.Info("MCP 服务未启用")
+	}
+
+	// ====================================================================
 	//  8. 注册前端静态文件（SPA fallback）
 	// ====================================================================
 	serveStatic(app.Router, cfg.Server.StaticDir)
@@ -305,6 +329,14 @@ func main() {
 		if app.Monitor != nil {
 			logger.Info("正在停止 Monitor...")
 			app.Monitor.Stop()
+		}
+
+		// 停止 MCP Server
+		if mcpSrv != nil {
+			logger.Info("正在停止 MCP 服务...")
+			if err := mcpSrv.Shutdown(ctx); err != nil {
+				logger.Error("MCP 服务关闭错误", "error", err)
+			}
 		}
 
 		if err := srv.Shutdown(ctx); err != nil {

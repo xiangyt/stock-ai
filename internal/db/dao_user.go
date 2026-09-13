@@ -1,8 +1,13 @@
 package db
 
 import (
-	"stock-ai/internal/model"
+	"errors"
+	"fmt"
 	"time"
+
+	"gorm.io/gorm"
+
+	"stock-ai/internal/model"
 )
 
 // CreateUser 创建用户
@@ -26,6 +31,23 @@ func GetUserByID(id uint) (*model.User, error) {
 	err := GetDB().Where("id = ? AND status = 1", id).First(&u).Error
 	if err != nil {
 		return nil, err
+	}
+	return &u, nil
+}
+
+// GetUserByWeworkID 根据企业微信用户ID查询用户。
+//
+// 仅返回启用状态（status=1）的用户；未关联或已禁用时返回 ErrRecordNotFound。
+//
+//	user, err := GetUserByWeworkID("zhangsan")
+func GetUserByWeworkID(weworkID string) (*model.User, error) {
+	var u model.User
+	err := GetDB().Where("wework_id = ? AND status = 1", weworkID).First(&u).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrRecordNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query user by wework_id %s: %w", weworkID, err)
 	}
 	return &u, nil
 }

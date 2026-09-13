@@ -51,6 +51,24 @@ func FindStockByCode(code string) (model.Stock, error) {
 	return stock, err
 }
 
+// GetStockNamesByCodes 批量查询股票简称，返回 code → name 映射（查不到的 code 不出现在结果中）
+func GetStockNamesByCodes(codes []string) (map[string]string, error) {
+	names := make(map[string]string, len(codes))
+	if len(codes) == 0 {
+		return names, nil
+	}
+
+	var stocks []model.Stock
+	err := GetDB().Select("code", "name").Where("code IN ?", codes).Find(&stocks).Error
+	if err != nil {
+		return nil, err
+	}
+	for i := range stocks {
+		names[stocks[i].Code] = stocks[i].Name
+	}
+	return names, nil
+}
+
 // CountStocks 统计股票总数
 func CountStocks() int64 {
 	var count int64

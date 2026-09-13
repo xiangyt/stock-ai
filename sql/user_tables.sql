@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     username      VARCHAR(50)     NOT NULL COMMENT '登录用户名',
     password      VARCHAR(32)     NOT NULL COMMENT '密码(MD5,32位hex)',
     nickname      VARCHAR(50)     NOT NULL DEFAULT '' COMMENT '昵称/显示名',
+    wework_id     VARCHAR(64)     DEFAULT NULL COMMENT '企业微信用户ID(通讯录UserID, MCP 调用按此关联用户)',
     avatar        VARCHAR(255)    NOT NULL DEFAULT '' COMMENT '头像URL',
     role          VARCHAR(20)     NOT NULL DEFAULT 'user' COMMENT '角色: user/admin',
     status        TINYINT         NOT NULL DEFAULT 1 COMMENT '状态: 0=禁用 1=正常',
@@ -19,8 +20,14 @@ CREATE TABLE IF NOT EXISTS users (
 
     PRIMARY KEY (id),
     UNIQUE INDEX idx_username (username),
+    UNIQUE INDEX idx_wework_id (wework_id),
     INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='用户表';
+
+-- 存量库升级（新库无需执行）：
+-- ALTER TABLE users
+--     ADD COLUMN wework_id VARCHAR(64) DEFAULT NULL COMMENT '企业微信用户ID(通讯录UserID, MCP 调用按此关联用户)' AFTER nickname,
+--     ADD UNIQUE INDEX idx_wework_id (wework_id);
 
 -- 默认管理员账号（密码: admin123）
 -- hash = MD5("admin123") = 0192023a7bbd73250516f069df18b500
