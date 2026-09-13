@@ -29,10 +29,12 @@ import (
 //    02 跌破下轨 — 收盘价从上方下穿下轨
 //    03 顶背离   — 价格创新高但上轨未创新高
 //    04 底背离   — 价格创新低但下轨未创新低
+//    05 布林带平行度（20天）— 内置快捷判定：近 20 天上下轨回归斜率相对差 < 阈值
 //  自定义信号:
 //    01 布林带位置(%B) — N天前 (Close-DN)/(UP-DN) 与阈值比较
 //    02 布林带宽(BBW)  — N天前 (UP-DN)/MB 与阈值比较（衡量市场波动状态）
 //    03 带宽比值(BBW)  — BBW(N天前) ÷ BBW(N+1天前) 与阈值比较（>1=开口扩大）
+//    04 布林带平行度   — 自定义窗口内上下轨回归斜率相对差与阈值比较（与 05 共用 struct）
 // ============================================================================
 
 // BOLLResult BOLL 预计算结果，供该指标下所有信号复用。
@@ -60,6 +62,15 @@ const (
 // paramK — 标准差倍数参数 key
 const paramK = "k"
 
+// paramParallel — 布林带平行度信号（自定义窗口内上下轨斜率相对差阈值）参数 key
+const paramParallel = "parallel"
+
+// 布林带平行度信号默认值
+const (
+	bollParallelDefaultWindow = 20 // 内置信号默认窗口起点（更早的 N 天前），截止默认 0 天前
+	bollParallelDefaultThresh = 0.05
+)
+
 type Boll struct {
 	indicator.BaseIndicator
 }
@@ -80,12 +91,14 @@ func NewBoll() *Boll {
 		NewSignalBollBreakBelow(),       // 02 跌破下轨
 		NewSignalBollTopDivergence(),    // 03 顶背离
 		NewSignalBollBottomDivergence(), // 04 底背离
+		NewSignalBollParallelBuiltIn(),  // 05 布林带平行度（20天，内置快捷）
 	})
 
 	i.SetCustomSignals([]indicator.Signal{
 		NewSignalBollPosition(),       // 自定义 01 布林带位置（%B）
 		NewSignalBollBandWidth(),      // 自定义 02 布林带宽（BBW）
 		NewSignalBollBandWidthRatio(), // 自定义 03 布林带宽比值（BBW）
+		NewSignalBollParallel(),       // 自定义 04 布林带平行度（共用 struct）
 	})
 	return i
 }
@@ -132,6 +145,8 @@ func (i *Boll) Evaluate(stock indicator.StockSource, configs []*indicator.Signal
 			case *sigBollBw:
 				res = v.Evaluate(result, cfg)
 			case *sigBollBwRatio:
+				res = v.Evaluate(result, cfg)
+			case *sigBollParallel:
 				res = v.Evaluate(result, cfg)
 			default:
 				return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: cfg.SignalID,
@@ -722,4 +737,194 @@ func (s *sigBollBwRatio) Evaluate(result BOLLResult, config *indicator.SignalCon
 	ratio := near / far
 	label := fmt.Sprintf("BBW(%d天前)÷BBW(%d天前)带宽比值", days, days+1)
 	return signalutil.EvalNumberOp(ratio, label, "%.4f", "%.4f", sId, config)
+}
+
+// ============================================================================
+//  sigBollParallel — 布林带平行度（相对斜率差）判定信号
+//
+//  判定规则:
+//    在 [start天前, end天前] 窗口内分别对中轨 MB 与上轨 UP 做一元线性回归
+//    (最小二乘法，X = 索引 0..n-1)，得到两条拟合直线的斜率 slope_mb / slope_up，
+//    再计算相对斜率差:
+//      diff = |slope_up − slope_mb| / max(|slope_up|, |slope_mb|)
+//    当 diff < threshold 时判定为"平行"（上下轨走势一致 → 布林带相对收窄/蓄势）。
+//
+//  入参:
+//    - 时间区间: ParamKeyLookbackStart / ParamKeyLookbackEnd（N 天前）
+//    - 平行度:   paramParallel （相对斜率差阈值，默认 0.05）
+//
+//  共用说明:
+//    自定义信号（"04"）与内置信号（"05"）共用本 struct，
+//    默认配置完全一致：窗口均取近 20 天、平行度阈值均取 0.05。
+// ============================================================================
+
+// bollParallelOps 公共操作符定义：时间区间（lookback 窗口）+ 平行度阈值。
+func bollParallelOps() []indicator.OperatorOption {
+	return []indicator.OperatorOption{
+		{
+			Operator: indicator.OpCustom,
+			Label:    "平行度判定",
+			Params: []indicator.ParamDef{
+				signalutil.ParamLookbackStart(float64(bollParallelDefaultWindow), "天前"),
+				signalutil.ParamLookbackEnd(0, "天前"),
+				{Key: paramParallel, Label: "平行度阈值", Type: "number", Required: false, Default: bollParallelDefaultThresh, Min: 0, Max: 1, Step: 0.01},
+			},
+		},
+	}
+}
+
+type sigBollParallel struct {
+	indicator.BaseSignal
+}
+
+// newSignalBollParallel 创建布林带平行度信号（内置 05 与自定义 04 共用）。
+// 两者默认配置完全一致：窗口近 20 天、平行度阈值 0.05。
+func newSignalBollParallel(seq, name, desc string) *sigBollParallel {
+	return &sigBollParallel{
+		BaseSignal: indicator.NewBaseSignal(
+			seq,
+			name,
+			desc,
+			indicator.ValSeries,
+			bollParallelOps(),
+			&indicator.SignalConfig{
+				Operator: indicator.OpCustom,
+				Params: map[string]any{
+					indicator.ParamKeyLookbackStart: float64(bollParallelDefaultWindow),
+					indicator.ParamKeyLookbackEnd:   float64(0),
+					paramParallel:                   bollParallelDefaultThresh,
+				},
+			},
+		),
+	}
+}
+
+// NewSignalBollParallel 创建布林带平行度自定义信号（默认近 20 天，阈值 0.05）。
+func NewSignalBollParallel() *sigBollParallel {
+	return newSignalBollParallel(
+		"04",
+		"布林带平行度",
+		"在指定窗口内对中轨 MB 与上轨 UP 做最小二乘法拟合，比较二者斜率相对差：小于阈值即判定为平行（与内置 05 共用实现与默认参数）",
+	)
+}
+
+// NewSignalBollParallelBuiltIn 创建布林带平行度内置快捷信号（默认近 20 天，阈值 0.05）。
+func NewSignalBollParallelBuiltIn() *sigBollParallel {
+	return newSignalBollParallel(
+		"05",
+		"布林带近20天平行度",
+		"近 20 天内中轨 MB 与上轨 UP 的最小二乘法斜率相对差 < 阈值时判定为平行（默认阈值 0.05）",
+	)
+}
+
+// Evaluate 平行度信号评估入口
+func (s *sigBollParallel) Evaluate(result BOLLResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	sId := config.SignalID
+	if !config.IsCustom() {
+		config = s.DefaultConfig()
+	}
+
+	// 用户未显式配置窗口起点时，沿用默认 20 天窗口
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, float64(bollParallelDefaultWindow)))
+	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, 0))
+	threshold := config.GetFloat64(paramParallel, bollParallelDefaultThresh)
+
+	return evalBollParallel(sId, result, start, end, threshold)
+}
+
+// evalBollParallel 在窗口内对 MB / UP 子序列拟合并判定平行度。
+func evalBollParallel(sId string, result BOLLResult, start, end int, threshold float64) *indicator.EvaluatedStock {
+	if len(result.MB) != len(result.UP) {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId,
+			Message: fmt.Sprintf("MB(%d) 与 UP(%d) 序列长度不一致，无法判定平行", len(result.MB), len(result.UP))}
+	}
+	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(result.MB))
+	if err != nil {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId, Message: err.Error()}
+	}
+
+	midLine := result.MB[idxStart:idxEnd]
+	upperLine := result.UP[idxStart:idxEnd]
+
+	slopeMid, okMid := leastSquaresSlope(midLine)
+	if !okMid {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId,
+			Message: fmt.Sprintf("[%d天前,%d天前]窗口内中轨MB含无效值或为空", start, end)}
+	}
+	slopeUp, okUp := leastSquaresSlope(upperLine)
+	if !okUp {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sId,
+			Message: fmt.Sprintf("[%d天前,%d天前]窗口内上轨UP含无效值或为空", start, end)}
+	}
+
+	diff := bollParallelRelativeSlopeDiff(slopeMid, slopeUp)
+	label := fmt.Sprintf("[%d天前,%d天前]上下轨相对斜率差", start, end)
+	if diff < threshold {
+		return &indicator.EvaluatedStock{
+			Result:   indicator.ResultPassed,
+			SignalID: sId,
+			Message:  fmt.Sprintf("%s=%.4f < %.2f ✓ 判定平行", label, diff, threshold),
+		}
+	}
+	return &indicator.EvaluatedStock{
+		Result:   indicator.ResultRejected,
+		SignalID: sId,
+		Message:  fmt.Sprintf("%s=%.4f ≥ %.2f", label, diff, threshold),
+	}
+}
+
+// leastSquaresSlope 对 y = [y0, y1, ..., y_{n-1}] 做最小二乘法线性回归，
+// 返回斜率 slope = dy/dx（x 取 0,1,2,...,n-1）。
+//
+// 异常场景:
+//
+//	n == 0               → 0, false（无法拟合）
+//	任意 y 为 NaN         → 0, false（视为无效数据）
+//	n == 1               → 0, true （单点 slope 视为 0）
+func leastSquaresSlope(y []float64) (float64, bool) {
+	n := len(y)
+	if n == 0 {
+		return 0, false
+	}
+	if n == 1 {
+		return 0, true
+	}
+	for _, v := range y {
+		if math.IsNaN(v) {
+			return 0, false
+		}
+	}
+	// 等差数列 X = 0..n-1 的闭合求和: ΣX = n(n-1)/2, ΣX² = n(n-1)(2n-1)/6
+	nf := float64(n)
+	sumX := nf * (nf - 1) / 2
+	sumX2 := nf * (nf - 1) * (2*nf - 1) / 6
+	var sumY, sumXY float64
+	for i, v := range y {
+		sumY += v
+		sumXY += float64(i) * v
+	}
+	denom := nf*sumX2 - sumX*sumX
+	if denom == 0 {
+		// n≥2 时 denom 严格 > 0；此处仅为数学保护
+		return 0, true
+	}
+	return (nf*sumXY - sumX*sumY) / denom, true
+}
+
+// bollParallelRelativeSlopeDiff 计算上下轨斜率相对差:
+//
+//	diff = |slope_up − slope_mb| / max(|slope_up|, |slope_mb|)
+//
+// 若两斜率绝对值均为 0（两条水平线），按 0 处理（视作完全平行）。
+func bollParallelRelativeSlopeDiff(slopeMid, slopeUp float64) float64 {
+	absMid := math.Abs(slopeMid)
+	absUp := math.Abs(slopeUp)
+	maxAbs := absMid
+	if absUp > maxAbs {
+		maxAbs = absUp
+	}
+	if maxAbs == 0 {
+		return 0
+	}
+	return math.Abs(slopeUp-slopeMid) / maxAbs
 }

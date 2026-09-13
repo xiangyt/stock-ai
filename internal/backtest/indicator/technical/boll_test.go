@@ -389,3 +389,127 @@ func posClose(latest, day1, day2 float64) []float64 {
 	c[7] = day2
 	return c
 }
+
+// newParallelTestResult 构造平行度测试专用 BOLLResult，自定义 MB/UP 序列。
+// 收盘价/DN 仅占位（不影响平行度评估），但需保持与 MB/UP 等长以便 calcBollDerived 派生 %B/BBW。
+func newParallelTestResult(mb, up []float64) BOLLResult {
+	if len(mb) != len(up) {
+		panic("newParallelTestResult: mb 与 up 长度不一致")
+	}
+	n := len(mb)
+	cp := make([]float64, n)
+	dn := make([]float64, n)
+	for i := range cp {
+		if math.IsNaN(mb[i]) {
+			cp[i] = math.NaN()
+			dn[i] = math.NaN()
+		} else {
+			cp[i] = mb[i]
+			dn[i] = mb[i] - 0.5
+		}
+	}
+	pB, bw := calcBollDerived(cp, mb, up, dn)
+	return BOLLResult{
+		MB: mb, UP: up, DN: dn, ClosePrice: cp, PercentB: pB, BandWidth: bw,
+	}
+}
+
+// TestSigBollParallel 覆盖布林带平行度信号的内置/自定义构造、平行与非平行判定、
+// 阈值生效、NaN 数据与越界窗口等场景。
+func TestSigBollParallel(t *testing.T) {
+	const n = 30
+	// 全常数线（两条水平线 → 斜率差 = 0 → 平行）
+	flat := make([]float64, n)
+	for i := range flat {
+		flat[i] = 10.0
+	}
+	// 上轨单调上升线（中轨水平 → 斜率差最大）
+	upUp := make([]float64, n)
+	for i := range upUp {
+		upUp[i] = 10.0 + float64(i)
+	}
+	// 全 NaN 序列（验证 NaN 拒绝）
+	flatNaN := make([]float64, n)
+	for i := range flatNaN {
+		flatNaN[i] = math.NaN()
+	}
+
+	// 1) 内置信号：默认 20 天窗口 + 阈值 0.05，水平线应通过
+	sigBuilt := NewSignalBollParallelBuiltIn()
+	cfgBuilt := &indicator.SignalConfig{
+		SignalID: "01007005",
+		Operator: indicator.OpCustom,
+		Params:   map[string]any{},
+	}
+	resFlat := newParallelTestResult(flat, flat)
+	gotBuilt := sigBuilt.Evaluate(resFlat, cfgBuilt)
+	assert.Equal(t, indicator.ResultPassed, gotBuilt.Result,
+		"内置 20 天窗口 + 水平线应通过：%s", gotBuilt.Message)
+	assert.Contains(t, gotBuilt.Message, "判定平行")
+
+	// 2) 自定义信号：默认配置与内置一致 —— 窗口近 20 天、阈值 0.05，水平线 slope=0 → 通过
+	sigCust := NewSignalBollParallel()
+	dc := sigCust.DefaultConfig()
+	assert.InDelta(t, float64(bollParallelDefaultWindow), dc.GetFloat64(indicator.ParamKeyLookbackStart, 0), 0,
+		"自定义信号默认窗口应为 20 天")
+	assert.InDelta(t, bollParallelDefaultThresh, dc.GetFloat64(paramParallel, 0), 0,
+		"自定义信号默认平行度阈值应为 0.05")
+	cfgCust := &indicator.SignalConfig{
+		SignalID: "01007104",
+		Operator: indicator.OpCustom,
+		Params:   map[string]any{},
+	}
+	gotCust := sigCust.Evaluate(resFlat, cfgCust)
+	assert.Equal(t, indicator.ResultPassed, gotCust.Result,
+		"自定义默认窗口 + 水平线应通过：%s", gotCust.Message)
+
+	// 3) 自定义：窗口 10~0 天，水平中轨 + 上升上轨 → 拒绝
+	resUp := newParallelTestResult(flat, upUp)
+	cfgRange := &indicator.SignalConfig{
+		SignalID: "01007104",
+		Operator: indicator.OpCustom,
+		Params: map[string]any{
+			indicator.ParamKeyLookbackStart: float64(10),
+			indicator.ParamKeyLookbackEnd:   float64(0),
+		},
+	}
+	gotUp := sigCust.Evaluate(resUp, cfgRange)
+	assert.Equal(t, indicator.ResultRejected, gotUp.Result,
+		"水平中轨 + 上升上轨应拒绝：%s", gotUp.Message)
+	assert.Contains(t, gotUp.Message, "相对斜率差")
+
+	// 4) 阈值放宽到 1.5（diff=1.0 时严格 < 1.5）→ 通过
+	cfgLoose := &indicator.SignalConfig{
+		SignalID: "01007104",
+		Operator: indicator.OpCustom,
+		Params: map[string]any{
+			indicator.ParamKeyLookbackStart: float64(10),
+			indicator.ParamKeyLookbackEnd:   float64(0),
+			paramParallel:                   1.5,
+		},
+	}
+	gotLoose := sigCust.Evaluate(resUp, cfgLoose)
+	assert.Equal(t, indicator.ResultPassed, gotLoose.Result,
+		"阈值=1.5 应放宽通过：%s", gotLoose.Message)
+
+	// 5) 窗口内含 NaN → 拒绝（须 n≥2 才能命中 leastSquaresSlope 的 NaN 分支）
+	resNaN := newParallelTestResult(flatNaN, flatNaN)
+	gotNaN := sigCust.Evaluate(resNaN, cfgRange)
+	assert.Equal(t, indicator.ResultRejected, gotNaN.Result,
+		"窗口内 NaN 应拒绝：%s", gotNaN.Message)
+	assert.Contains(t, gotNaN.Message, "MB含无效值")
+
+	// 6) 窗口完全超出数据范围 → NormalizeLookback 返回错误 → 拒绝
+	cfgEmpty := &indicator.SignalConfig{
+		SignalID: "01007104",
+		Operator: indicator.OpCustom,
+		Params: map[string]any{
+			indicator.ParamKeyLookbackStart: float64(200),
+			indicator.ParamKeyLookbackEnd:   float64(150),
+		},
+	}
+	gotEmpty := sigCust.Evaluate(resFlat, cfgEmpty)
+	assert.Equal(t, indicator.ResultRejected, gotEmpty.Result,
+		"超出数据范围的窗口应拒绝：%s", gotEmpty.Message)
+	assert.Contains(t, gotEmpty.Message, "窗口")
+}
