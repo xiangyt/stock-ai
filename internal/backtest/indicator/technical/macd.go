@@ -76,6 +76,8 @@ func NewMacd() *Macd {
 		newSigMacdVal(macdValHist, "03", "MACD柱", "MACD柱线数值比较", indicator.OpGT),
 		newSignalMacdCross("04", "金叉", "DIF上穿DEA（不区分水上水下，支持时间区间）", true, false, false, indicator.OpCustom, "参数设置"),
 		newSignalMacdCross("05", "死叉", "DIF下穿DEA（不区分水上水下，支持时间区间）", false, false, false, indicator.OpCustom, "参数设置"),
+		newSignalMacdTrend("06", "区间上升", "MACD柱在时间区间内每日均高于前一日（严格连续上升）", true, indicator.OpRising),
+		newSignalMacdTrend("07", "区间下降", "MACD柱在时间区间内每日均低于前一日（严格连续下降）", false, indicator.OpFalling),
 	})
 	return i
 }
@@ -115,6 +117,8 @@ func (i *Macd) Evaluate(stock indicator.StockSource, configs []*indicator.Signal
 				res = v.Evaluate(result, klines, cfg)
 			case *SignalMacdBottomDivergence:
 				res = v.Evaluate(result, klines, cfg)
+			case *SignalMacdTrend:
+				res = v.Evaluate(result, cfg)
 			case *sigMacdVal:
 				res = v.Evaluate(result, cfg)
 			default:
@@ -319,6 +323,135 @@ func (s *SignalMacdCross) Evaluate(result MACDResult, _ []*model.DailyKline, con
 		SignalID: config.SignalID,
 		Message:  fmt.Sprintf("在[%d天前, %d天前]窗口内未检测到%s", start, end, name),
 	}
+}
+
+// ============================================================================
+//  SignalMacdTrend — MACD柱区间内连续上升/下降（共用）
+//
+//  上升 (Rising=true):
+//    区间 [A天前, B天前] 内每个交易日的 MACD柱 严格大于前一日，
+//    即 EVERY(MACD > REF(MACD, 1), N)。
+//  下降 (Rising=false):
+//    每个交易日的 MACD柱 严格小于前一日，即 EVERY(MACD < REF(MACD, 1), N)。
+//
+//  区间至少需要 2 个交易日才能比较，否则返回 rejected。
+//  仅比较窗口内部的相邻两日，窗口外的走势不参与判定。
+// ============================================================================
+
+// macdTrend 默认时间窗口参数
+const (
+	macdTrendDefaultStart = 5 // 默认窗口起点（天前）
+	macdTrendDefaultEnd   = 0 // 默认窗口终点（天前）
+)
+
+// macdTrendMinPoints 判定趋势所需的最少交易点数（至少 2 点才能比较前后两日）
+const macdTrendMinPoints = 2
+
+type SignalMacdTrend struct {
+	indicator.BaseSignal
+	Rising bool // true=连续上升, false=连续下降
+}
+
+// newSignalMacdTrend 创建 MACD柱趋势信号的工厂函数。
+// op 取 indicator.OpRising / indicator.OpFalling，二者共用同一份评估逻辑，仅方向不同。
+func newSignalMacdTrend(id, name, desc string, rising bool, op indicator.CompareOperator) *SignalMacdTrend {
+	return &SignalMacdTrend{
+		BaseSignal: indicator.NewBaseSignal(
+			id, name, desc,
+			indicator.ValSeries,
+			[]indicator.OperatorOption{
+				{
+					Operator: op,
+					Label:    "参数设置",
+					Params: []indicator.ParamDef{
+						signalutil.ParamLookbackStart(macdTrendDefaultStart, "天前"),
+						signalutil.ParamLookbackEnd(macdTrendDefaultEnd, "天前"),
+					},
+				},
+			},
+			&indicator.SignalConfig{
+				Operator: op,
+				Params: map[string]any{
+					indicator.ParamKeyLookbackStart: float64(macdTrendDefaultStart),
+					indicator.ParamKeyLookbackEnd:   float64(macdTrendDefaultEnd),
+				},
+			},
+		),
+		Rising: rising,
+	}
+}
+
+// Evaluate 判断 MACD柱 在时间区间内是否严格连续上升/下降。
+//
+// 遍历窗口 [idxStart, idxEnd)（oldest-first），逐日与前一日比较，
+// 任一日不满足方向即判定失败；全部满足则通过。
+func (s *SignalMacdTrend) Evaluate(result MACDResult, config *indicator.SignalConfig) *indicator.EvaluatedStock {
+	if !config.IsCustom() {
+		config = s.DefaultConfig()
+	}
+	sID := config.SignalID
+
+	start := int(config.GetFloat64(indicator.ParamKeyLookbackStart, macdTrendDefaultStart))
+	end := int(config.GetFloat64(indicator.ParamKeyLookbackEnd, macdTrendDefaultEnd))
+
+	idxStart, idxEnd, err := signalutil.NormalizeLookback(start, end, len(result.MACD))
+	if err != nil {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sID, Message: err.Error()}
+	}
+
+	points := idxEnd - idxStart
+	if points < macdTrendMinPoints {
+		return &indicator.EvaluatedStock{
+			Result:   indicator.ResultRejected,
+			SignalID: sID,
+			Message: fmt.Sprintf("区间[%d天前, %d天前]仅 %d 个交易日，无法判断%s（至少需 %d 个）",
+				start, end, points, s.trendName(), macdTrendMinPoints),
+		}
+	}
+
+	msg := s.checkTrend(result.MACD, idxStart, idxEnd, start, end)
+	if msg != "" {
+		return &indicator.EvaluatedStock{Result: indicator.ResultRejected, SignalID: sID, Message: msg}
+	}
+
+	return &indicator.EvaluatedStock{
+		Result:   indicator.ResultPassed,
+		SignalID: sID,
+		Message: fmt.Sprintf("MACD柱 %.4f→%.4f，区间[%d天前, %d天前]连续%s",
+			result.MACD[idxStart], result.MACD[idxEnd-1], start, end, s.trendName()),
+	}
+}
+
+// checkTrend 逐日校验方向，返回非空表示首个破坏连续性的位置描述。
+func (s *SignalMacdTrend) checkTrend(data []float64, idxStart, idxEnd, start, end int) string {
+	dataLen := len(data)
+	for i := idxStart + 1; i < idxEnd; i++ {
+		broken := data[i] <= data[i-1]
+		if !s.Rising {
+			broken = data[i] >= data[i-1]
+		}
+		if broken {
+			return fmt.Sprintf("MACD柱在%d天前 %.4f %s 前一日 %.4f，区间[%d天前, %d天前]未连续%s",
+				dataLen-1-i, data[i], s.brokenOp(), data[i-1], start, end, s.trendName())
+		}
+	}
+	return ""
+}
+
+// trendName 返回趋势方向的中文名
+func (s *SignalMacdTrend) trendName() string {
+	if s.Rising {
+		return "上升"
+	}
+	return "下降"
+}
+
+// brokenOp 返回破坏连续性时的比较符号
+func (s *SignalMacdTrend) brokenOp() string {
+	if s.Rising {
+		return "≤"
+	}
+	return "≥"
 }
 
 // ============================================================================
