@@ -17,9 +17,9 @@ import (
 	"runtime"
 	"strings"
 
+	"stock-ai/internal/backtest/indicator/technical"
 	"stock-ai/internal/config"
 	"stock-ai/internal/db"
-	"stock-ai/internal/backtest/indicator/technical"
 	"stock-ai/utils"
 )
 
@@ -28,7 +28,7 @@ import (
 // ============================================================================
 
 // stockCode 目标股票代码（6位数字，如 600519 = 茅台）
-var stockCode = "000895"
+var stockCode = "001225"
 
 // outputPath 输出 HTML 文件路径，空 = cmd/cyq-chart/cyq-<code>.html
 var outputPath = ""

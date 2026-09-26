@@ -13,13 +13,13 @@ import (
 	"log"
 	"os"
 
-	"stock-ai/internal/config"
-	"stock-ai/internal/db"
 	"stock-ai/internal/backtest/indicator"
 	"stock-ai/internal/backtest/indicator/financial"
 	"stock-ai/internal/backtest/indicator/fundamental"
 	"stock-ai/internal/backtest/indicator/market"
 	"stock-ai/internal/backtest/indicator/technical"
+	"stock-ai/internal/config"
+	"stock-ai/internal/db"
 	"stock-ai/internal/model"
 	"stock-ai/utils"
 )
@@ -28,8 +28,8 @@ import (
 //  调试配置 — 直接修改下面的变量
 // ============================================================================
 
-// stockCode 测试目标股票代码（6位数字，如 600519 = 茅台）
-var stockCode = "300484"
+// stockCodes 测试目标股票代码列表（6位数字，如 600519 = 茅台），支持多只依次调试
+var stockCodes = []string{"600610"}
 
 // signalIDs 要测试的信号列表（8位完整 SignalID）
 //
@@ -41,7 +41,7 @@ var stockCode = "300484"
 //	基本面: 03001001 主板上市
 //	财务面: 04001001 PE-TTM大于 / 04002002 PB小于 / 04004001 ROE大于
 var signalIDs = []string{
-	"01007001", // KDJ
+	"01006002", // 筹码收集后放量启动
 }
 
 // tradeDate 交易日期 YYYYMMDD，0 = 自动取当前日期
@@ -68,29 +68,35 @@ func main() {
 	configs := buildConfigs(reg, signalIDs)
 
 	date := resolveDate(tradeDate)
-
-	fmt.Println("\n========== 调试信息 ==========")
-	fmt.Printf("  股票:    %s\n", stockCode)
-	fmt.Printf("  信号数:  %d\n", len(configs))
-	fmt.Printf("  日期:    %d\n", date)
-	for _, c := range configs {
-		fmt.Printf("    → %s\n", c.SignalID)
-	}
-	fmt.Println("==============================\n")
-
-	// 构造数据源（全部从 DB 加载，日K 按 tradeDate 截断）
-	src := newEagerSource(stockCode, date)
-	src.printLoadReport()
-	fmt.Println()
-
-	// 执行选股引擎
-	stocks := []indicator.StockSource{src}
 	engine := reg.Engine()
-	results := engine.Execute(stocks, configs, maxConcurrency)
+	passed := 0
 
-	printResults(results)
+	for _, stockCode := range stockCodes {
+		fmt.Println("\n========== 调试信息 ==========")
+		fmt.Printf("  股票:    %s\n", stockCode)
+		fmt.Printf("  信号数:  %d\n", len(configs))
+		fmt.Printf("  日期:    %d\n", date)
+		for _, c := range configs {
+			fmt.Printf("    → %s\n", c.SignalID)
+		}
+		fmt.Println("==============================")
+		fmt.Println()
 
-	if len(results) == 0 || results[0].Result != indicator.ResultPassed {
+		// 构造数据源（全部从 DB 加载，日K 按 tradeDate 截断）
+		src := newEagerSource(stockCode, date)
+		src.printLoadReport()
+		fmt.Println()
+
+		// 执行选股引擎
+		results := engine.Execute([]indicator.StockSource{src}, configs, maxConcurrency)
+		printResults(results)
+
+		if len(results) > 0 && results[0].Result == indicator.ResultPassed {
+			passed++
+		}
+	}
+
+	if passed == 0 {
 		os.Exit(1)
 	}
 }
