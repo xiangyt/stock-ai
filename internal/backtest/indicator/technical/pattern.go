@@ -37,6 +37,7 @@ func NewPattern() *Pattern {
 	i.SetBuiltInSignals([]indicator.Signal{
 		NewSignal513(),
 		NewSignalChipAccumulation(),
+		NewSignalVolumeShrinkLimitDown(),
 	})
 
 	i.SetCustomSignals([]indicator.Signal{
@@ -66,6 +67,12 @@ func (i *Pattern) Evaluate(stock indicator.StockSource, config []*indicator.Sign
 					return res
 				}
 			case *SignalChipAccumulation:
+				if res := vv.Evaluate(klines, v); res.Result == indicator.ResultPassed {
+					continue
+				} else {
+					return res
+				}
+			case *SignalVolumeShrinkLimitDown:
 				if res := vv.Evaluate(klines, v); res.Result == indicator.ResultPassed {
 					continue
 				} else {
