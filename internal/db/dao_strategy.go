@@ -2,11 +2,22 @@ package db
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"gorm.io/gorm"
 
 	"stock-ai/internal/model"
 )
+
+// condUsingStrategy "用户已订阅且订阅处于启用状态" 的 SQL 条件，
+// 占位符依次为订阅用户ID、is_active。
+const condUsingStrategy = `EXISTS (
+	SELECT 1 FROM strategy_subscriptions
+	WHERE strategy_subscriptions.strategy_id = strategies.id
+	  AND strategy_subscriptions.uid = ?
+	  AND strategy_subscriptions.is_active = ?
+	  AND strategy_subscriptions.deleted_at IS NULL)`
 
 // CreateStrategy 创建策略
 func CreateStrategy(s *model.Strategy) error {
@@ -104,6 +115,62 @@ func ListStrategies(ctx context.Context, uid uint, isAdmin bool, keyword string,
 		Find(&strategies).Error
 
 	return strategies, total, err
+}
+
+// ListSubscribedStrategyIDs 查询用户已订阅的策略ID列表（可能重复，按订阅记录顺序）。
+//
+// activeOnly 为 true 时仅返回启用中（is_active）订阅对应的策略ID。
+func ListSubscribedStrategyIDs(uid uint, activeOnly bool) ([]uint, error) {
+	q := GetDB().Model(&model.Subscription{}).Where("uid = ?", uid)
+	if activeOnly {
+		q = q.Where("is_active = ?", true)
+	}
+
+	var ids []uint
+	if err := q.Pluck("strategy_id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("list subscribed strategy ids(uid=%d, activeOnly=%v): %w", uid, activeOnly, err)
+	}
+	return ids, nil
+}
+
+// ListUserStrategies 查询用户可见的策略列表，按更新时间倒序。
+//
+// 可见范围：管理员可见全部策略；普通用户可见自己创建的（uid）与公开的（is_public）策略。
+// usingOnly 为 true 时，仅返回该用户已订阅且订阅处于启用状态的策略。
+func ListUserStrategies(ctx context.Context, uid uint, isAdmin, usingOnly bool) ([]model.Strategy, error) {
+	q := GetDB().WithContext(ctx).Model(&model.Strategy{})
+	switch {
+	case usingOnly:
+		q = q.Where(condUsingStrategy, uid, true)
+	case !isAdmin:
+		q = q.Where("strategies.uid = ? OR strategies.is_public = ?", uid, true)
+	}
+
+	var strategies []model.Strategy
+	if err := q.Order("strategies.updated_at DESC").Find(&strategies).Error; err != nil {
+		return nil, fmt.Errorf("list user strategies(uid=%d, usingOnly=%v): %w", uid, usingOnly, err)
+	}
+	return strategies, nil
+}
+
+// GetVisibleStrategyByID 按ID查询用户可见的策略。
+//
+// 可见范围：管理员可见全部策略；普通用户可见自己创建的（uid）与公开的（is_public）策略。
+// 策略不存在或不可见时返回 ErrRecordNotFound。
+func GetVisibleStrategyByID(ctx context.Context, uid uint, isAdmin bool, id uint) (*model.Strategy, error) {
+	q := GetDB().WithContext(ctx).Model(&model.Strategy{}).Where("strategies.id = ?", id)
+	if !isAdmin {
+		q = q.Where("strategies.uid = ? OR strategies.is_public = ?", uid, true)
+	}
+
+	var strategy model.Strategy
+	if err := q.First(&strategy).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrRecordNotFound
+		}
+		return nil, fmt.Errorf("get visible strategy(uid=%d, id=%d): %w", uid, id, err)
+	}
+	return &strategy, nil
 }
 
 // UpdateStrategy 更新策略

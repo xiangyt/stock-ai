@@ -268,7 +268,12 @@ func main() {
 		if router.PortfolioServiceRef == nil {
 			logger.Error("MCP 服务未启动：持仓服务未初始化")
 		} else {
-			mcpSrv = mcp.NewStockMCPServer(cfg.MCP, router.PortfolioServiceRef)
+			mcpSrv = mcp.NewStockMCPServer(
+				cfg.MCP,
+				router.PortfolioServiceRef,
+				router.ScreenServiceRef,
+				router.IndicatorRegistryRef,
+			)
 			go func() {
 				if err := mcpSrv.Start(); err != nil && err != http.ErrServerClosed {
 					logger.Error("MCP 服务异常退出", "error", err)

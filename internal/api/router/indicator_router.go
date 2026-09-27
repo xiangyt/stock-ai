@@ -13,6 +13,9 @@ func RegisterIndicatorRoutes(apiV1 *gin.RouterGroup, authSvc *service.AuthServic
 	h := handler.NewIndicatorHandler(screenSvc)
 	authMiddleware := middleware.AuthRequired(authSvc)
 
+	// 保存指标注册表引用，供 main.go 注入 MCP 复用到选股工具
+	IndicatorRegistryRef = h.Registry()
+
 	indicators := apiV1.Group("/indicators")
 	indicators.Use(authMiddleware)
 	{

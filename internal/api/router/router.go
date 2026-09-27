@@ -5,6 +5,7 @@ import (
 
 	"stock-ai/internal/api/handler"
 	"stock-ai/internal/backtest"
+	"stock-ai/internal/backtest/indicator"
 	"stock-ai/internal/config"
 	"stock-ai/internal/datacollect"
 	applog "stock-ai/internal/log"
@@ -25,6 +26,12 @@ var MonitorConfigServiceRef *service.MonitorConfigService
 
 // PortfolioServiceRef 保存路由层创建的持仓服务引用，供 main.go 注入 QuoteCache
 var PortfolioServiceRef *service.PortfolioService
+
+// ScreenServiceRef 保存路由层创建的选股服务引用，供 main.go 注入 MCP
+var ScreenServiceRef *service.ScreenService
+
+// IndicatorRegistryRef 保存路由层创建的指标注册表引用，供 main.go 注入 MCP
+var IndicatorRegistryRef *indicator.Registry
 
 // BacktestHandlerRef 保存路由层创建的回测 Handler 引用，供 main.go 注入依赖
 var BacktestHandlerRef *backtest.Handler
@@ -76,6 +83,7 @@ func SetupRouter(runner *datacollect.DataCollectRunner) *gin.Engine {
 	DataCollectServiceRef = dcSvc
 	MonitorConfigServiceRef = monitorCfgSvc
 	PortfolioServiceRef = portfolioSvc
+	ScreenServiceRef = screenSvc
 
 	// API v1 路由组
 	apiV1 := r.Group("/api/v1")
