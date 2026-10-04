@@ -16,7 +16,11 @@ flowchart TD
     J --> K[从 DB 重新加载订阅配置 热更新]
     K --> L{is_active?}
     L -->|false| M[跳过此订阅]
-    L -->|true| N[调用 runner.Run]
+    L -->|true| L2{IsTradingDay?}
+    L2 -->|false| M2[今日非交易日 跳过]
+    L2 -->|true| L3{trading_hours_only 且非交易时段?}
+    L3 -->|是| M3[当前非交易时段 跳过]
+    L3 -->|否| N[调用 runner.Run]
     N --> O[记录执行日志]
     O --> I
 

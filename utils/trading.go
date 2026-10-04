@@ -58,14 +58,30 @@ func IsTradingHours() bool {
 		return holidayProvider.IsTradingHours(time.Now())
 	}
 	// 降级模式：排除周末 + 基础交易时段检查
-	now := time.Now()
-	wd := now.Weekday()
+	wd := time.Now().Weekday()
 	if wd == time.Saturday || wd == time.Sunday {
 		return false
 	}
-	totalMinutes := now.Hour()*60 + now.Minute()
-	return (totalMinutes >= 9*60+30 && totalMinutes <= 11*60+30) ||
-		(totalMinutes >= 13*60 && totalMinutes <= 15*60)
+	return IsTradingSession()
+}
+
+// IsTradingSession 判断当前时刻是否落在 A 股交易时段（9:30-11:30, 13:00-15:00）。
+//
+// 仅判断时刻，不判断是否交易日。调用方若已先行判断过交易日，
+// 应使用本函数避免重复判定；需要与交易日一起判断时用 IsTradingHours。
+func IsTradingSession() bool {
+	return isTradingSessionAt(time.Now())
+}
+
+// isTradingSessionAt 判断指定时刻是否落在交易时段，供 IsTradingSession 及单测使用
+func isTradingSessionAt(t time.Time) bool {
+	totalMinutes := t.Hour()*60 + t.Minute()
+	// 上午盘 9:30-11:30
+	if totalMinutes >= 9*60+30 && totalMinutes <= 11*60+30 {
+		return true
+	}
+	// 下午盘 13:00-15:00
+	return totalMinutes >= 13*60 && totalMinutes <= 15*60
 }
 
 // IsPriceUpdateTime 判断当前是否在「可更新现价」时段：交易日 10:00~19:00

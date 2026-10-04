@@ -307,16 +307,17 @@ func (s *schedulerImpl) runSubscription(subscriptionID uint) {
 		return
 	}
 
-	// 检查 trading_hours_only
-	if sub.TradingHoursOnly {
-		if !utils.IsTradingDay() {
-			slog.Info("今日非交易日，跳过订阅", "trace_id", traceID, "sub_id", subscriptionID)
-			return
-		}
-		if !utils.IsTradingHours() {
-			slog.Info("当前非交易时段，跳过订阅", "trace_id", traceID, "sub_id", subscriptionID)
-			return
-		}
+	// 检查交易日（所有订阅统一生效，非交易日不执行）
+	if !utils.IsTradingDay() {
+		slog.Info("今日非交易日，跳过订阅", "trace_id", traceID, "sub_id", subscriptionID)
+		return
+	}
+
+	// 检查 trading_hours_only：开启时仅在交易时段执行
+	// 上游已判定交易日，此处只判时段，避免重复判定
+	if sub.TradingHoursOnly && !utils.IsTradingSession() {
+		slog.Info("当前非交易时段，跳过订阅", "trace_id", traceID, "sub_id", subscriptionID)
+		return
 	}
 
 	// 转换为 model.Subscription 供 runner 使用

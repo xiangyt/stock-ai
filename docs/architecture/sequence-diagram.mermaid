@@ -13,7 +13,7 @@ sequenceDiagram
     DB-->>S: Subscription, []PushBot
     S->>R: Run(subscription)
 
-    alt trading_hours_only && 非交易时段
+    alt 非交易日 || (trading_hours_only && 非交易时段)
         R-->>S: 跳过执行
     end
 

@@ -305,7 +305,7 @@ sequenceDiagram
     DB-->>S: Subscription, []PushBot
     S->>R: Run(subscription)
 
-    alt trading_hours_only && 非交易时段
+    alt 非交易日 || (trading_hours_only && 非交易时段)
         R-->>S: 跳过执行
     end
 
@@ -533,7 +533,8 @@ flowchart TD
   - `runSubscription(subscriptionID uint)`：cron job 回调函数
     1. 从 DB 重新加载订阅配置（热更新）
     2. 检查 `is_active`
-    3. 检查 `trading_hours_only` + `IsTradingDay()` + `IsTradingHours()`
+    3. 检查 `IsTradingDay()`，非交易日直接跳过（所有订阅统一生效）
+    4. 若 `trading_hours_only` 开启，检查 `IsTradingSession()`，非交易时段跳过
     4. 调用 `runner.Run(ctx, sub)`
   - `presetTypeToCron(preset PresetType) string`：预设映射函数
   - `IsTradingDay() bool`：判断今天是否交易日（排除周末，内置节假日列表，未来可扩展）
