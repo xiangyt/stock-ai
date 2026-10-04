@@ -5,8 +5,8 @@
 
 import { getToken } from '../utils/auth'
 
-const BASE = 'http://localhost:9100/api/v1/positions'
-const CONFIG_BASE = 'http://localhost:9100/api/v1/user/trade-config'
+const BASE = '/api/v1/positions'
+const CONFIG_BASE = '/api/v1/user/trade-config'
 
 // ========== 类型定义 ==========
 

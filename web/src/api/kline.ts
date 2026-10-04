@@ -5,7 +5,7 @@
 
 import { getToken } from '../utils/auth'
 
-const BASE = 'http://localhost:9100/api/v1/kline'
+const BASE = '/api/v1/kline'
 
 // ========== 类型定义 ==========
 

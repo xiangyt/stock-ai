@@ -3,7 +3,7 @@
  * 对应后端: /api/v1/auth/software-configs
  */
 
-const BASE = 'http://localhost:9100/api/v1/auth/software-configs'
+const BASE = '/api/v1/auth/software-configs'
 
 // ========== 类型定义 ==========
 

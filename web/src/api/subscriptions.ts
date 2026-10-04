@@ -1,6 +1,6 @@
 import { getToken } from '../utils/auth'
 
-const BASE = 'http://localhost:9100/api/v1/subscriptions'
+const BASE = '/api/v1/subscriptions'
 
 // ========== 请求封装 ==========
 

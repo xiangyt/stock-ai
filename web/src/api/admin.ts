@@ -1,6 +1,6 @@
 import { getToken } from '../utils/auth'
 
-const BASE = 'http://localhost:9100/api/v1/auth/admin'
+const BASE = '/api/v1/auth/admin'
 
 function request(url: string, options?: RequestInit): Promise<any> {
   const token = getToken()

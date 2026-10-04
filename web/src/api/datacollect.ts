@@ -1,6 +1,6 @@
 import { getToken } from '../utils/auth'
 
-const BASE = 'http://localhost:9100/api/v1/datacollect'
+const BASE = '/api/v1/datacollect'
 
 // ========== 请求封装 ==========
 

@@ -8,7 +8,7 @@
 
 import { getToken } from '../utils/auth'
 
-const BASE = 'http://localhost:9100/api/v1/strategies'
+const BASE = '/api/v1/strategies'
 
 // ========== 类型定义 ==========
 
@@ -146,7 +146,7 @@ export async function copyStrategy(id: number): Promise<StrategyDetail> {
 
 // ========== 回测 API ==========
 
-const BACKTEST_BASE = 'http://localhost:9100/api/v1'
+const BACKTEST_BASE = '/api/v1'
 
 // --- 回测类型 ---
 

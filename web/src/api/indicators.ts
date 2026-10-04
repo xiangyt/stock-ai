@@ -18,7 +18,7 @@
 
 import { getToken } from '../utils/auth'
 
-const BASE = 'http://localhost:9100/api/v1/indicators'
+const BASE = '/api/v1/indicators'
 
 // ============================================================================
 //  类型定义（与后端 ToAPIMeta 输出对齐）
