@@ -290,6 +290,37 @@ func FindDailyKlinesAfterDate(code string, afterDate, limit int) ([]*model.Daily
 	return list, err
 }
 
+// FindDailyKlinesFromDate 按 trade_date ASC 取某股票自指定日期起（含当日）的日K线（最多 limit 条）。
+// 用于计算「选股日 + 之后 N 个交易日」的涨跌走势。
+func FindDailyKlinesFromDate(code string, fromDate, limit int) ([]*model.DailyKline, error) {
+	var list []*model.DailyKline
+	if limit <= 0 {
+		limit = 250
+	}
+	err := GetDB().Where("stock_code = ? AND trade_date >= ?", code, fromDate).
+		Order("trade_date ASC").
+		Limit(limit).
+		Find(&list).Error
+	return list, err
+}
+
+// FindDailyTradeDatesInRange 取 daily_kline 中 [startDate, endDate] 区间内有数据的交易日列表（YYYYMMDD，升序去重）。
+// limit > 0 时限制返回条数。
+func FindDailyTradeDatesInRange(startDate, endDate int, limit int) ([]int, error) {
+	var dates []int
+	q := GetDB().Model(&model.DailyKline{}).
+		Distinct("trade_date").
+		Where("trade_date BETWEEN ? AND ?", startDate, endDate).
+		Order("trade_date ASC")
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	if err := q.Pluck("trade_date", &dates).Error; err != nil {
+		return nil, fmt.Errorf("find trade dates in [%d, %d]: %w", startDate, endDate, err)
+	}
+	return dates, nil
+}
+
 // FindWeeklyKlines 按 trade_date DESC 取最近 limit 条周K
 func FindWeeklyKlines(code string, tradeDate, limit int) ([]*model.WeeklyKline, error) {
 	var list []*model.WeeklyKline

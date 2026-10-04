@@ -90,3 +90,32 @@ async function request<T>(url: string): Promise<T> {
 export async function fetchKLine(code: string, period: KLinePeriod = 'daily', limit = 250): Promise<KLineResponse> {
   return request<KLineResponse>(`${BASE}/${code}?period=${period}&limit=${limit}`)
 }
+
+// ========== 指数日线 ==========
+
+/** 指数单日行情（价格单位：元） */
+export interface IndexDailyPoint {
+  date: string
+  open: number
+  high: number
+  low: number
+  close: number
+}
+
+/** 指数日线查询结果 */
+export interface IndexDailyResult {
+  code: string          // 指数代码，如 000001
+  name: string          // 指数名称，如 上证指数
+  items: IndexDailyPoint[]
+}
+
+/**
+ * 获取指数日线（默认上证指数）
+ * @param start 起始日期 YYYY-MM-DD
+ * @param end 结束日期 YYYY-MM-DD
+ * @param code 指数代码，默认 000001（上证指数）
+ */
+export async function fetchIndexDaily(start: string, end: string, code = '000001'): Promise<IndexDailyResult> {
+  const search = new URLSearchParams({ code, start, end })
+  return request<IndexDailyResult>(`/api/v1/index-kline?${search.toString()}`)
+}

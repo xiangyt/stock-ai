@@ -19,6 +19,11 @@ func allBuiltins() []indicator.Indicator {
 	return AllBuiltins()
 }
 
+// NewIndicatorRegistry 创建包含全部内置指标的注册表（供 router / 其他Handler复用）
+func NewIndicatorRegistry() *indicator.Registry {
+	return indicator.NewRegistry(AllBuiltins())
+}
+
 // AllBuiltins 聚合所有内置指标实例（导出版本，供 main.go 使用）
 func AllBuiltins() []indicator.Indicator {
 	var result []indicator.Indicator

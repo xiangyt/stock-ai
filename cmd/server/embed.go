@@ -18,7 +18,15 @@ var embeddedStatic embed.FS
 // serveStatic 配置静态文件服务。
 //
 // staticDir: 开发模式下指定磁盘目录（如 web/dist），为空则使用内嵌资源。
+// 若未配置且工作目录下存在 web/dist/index.html（开发环境从项目根启动），
+// 自动改用磁盘模式，前端改动无需重新编译 Go 二进制。
 func serveStatic(r *gin.Engine, staticDir string) {
+	if staticDir == "" {
+		if devDir := detectDevStaticDir(); devDir != "" {
+			staticDir = devDir
+			log.Printf("检测到开发环境，自动使用磁盘静态文件: %s", devDir)
+		}
+	}
 	if staticDir != "" {
 		log.Printf("使用磁盘静态文件: %s", staticDir)
 		setupStaticFromDisk(r, staticDir)
@@ -26,6 +34,16 @@ func serveStatic(r *gin.Engine, staticDir string) {
 		log.Println("使用内嵌静态文件")
 		setupStaticFromEmbed(r)
 	}
+}
+
+// detectDevStaticDir 检测开发环境的磁盘静态目录：工作目录下存在 web/dist/index.html 时返回 web/dist。
+func detectDevStaticDir() string {
+	const devDir = "web/dist"
+	index := filepath.Join(devDir, "index.html")
+	if info, err := os.Stat(index); err == nil && !info.IsDir() {
+		return devDir
+	}
+	return ""
 }
 
 // setupStaticFromEmbed 从内嵌的 embed.FS 提供静态文件服务。

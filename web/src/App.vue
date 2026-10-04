@@ -44,6 +44,11 @@
         <BacktestPage :default-strategy-id="pendingStrategyId" @goBack="onBackFromBacktest" @goToEdit="onGoToEditFromBacktest" />
       </div>
 
+      <!-- ====== 选股复盘页面 ====== -->
+      <div v-else-if="currentPage === 'strategy-picks'" class="page pick-page-wrapper">
+        <PickAnalysisPage />
+      </div>
+
       <!-- ====== 策略订阅页面 ====== -->
       <div v-else-if="currentPage === 'strategy-subscribe'" class="page">
         <SubscriptionPage />
@@ -96,6 +101,7 @@ import SubscriptionPage from './components/SubscriptionPage.vue'
 import MonitorConfigPage from './components/MonitorConfigPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import PortfolioPage from './components/PortfolioPage.vue'
+import PickAnalysisPage from './components/PickAnalysisPage.vue'
 import * as strategyApi from './api/strategies'
 import * as authApi from './api/auth'
 import { getToken, removeToken, isLoggedIn as checkIsLoggedIn } from './utils/auth'
@@ -373,13 +379,22 @@ body {
 /* ===== 布局 ===== */
 .app-layout {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 .main-content {
   flex: 1;
+  min-height: 0;
   padding: 20px 24px;
   overflow-y: auto;
   max-width: calc(100vw - 180px);
+}
+/* 选股复盘页：整页撑满视口，滚动交给卡片内部 */
+.pick-page-wrapper {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ===== 页面通用 ===== */

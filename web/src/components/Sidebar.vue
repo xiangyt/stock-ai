@@ -83,6 +83,7 @@ const menuItems = computed(() => {
   const base: { key: string; label: string; icon: string }[] = [
     { key: 'strategy-list', label: '策略列表', icon: '📂' },
     { key: 'strategy-backtest', label: '策略回测', icon: '📊' },
+    { key: 'strategy-picks', label: '选股复盘', icon: '🔍' },
   ]
   if (!isAdmin) {
     base.push({ key: 'strategy-subscribe', label: '策略订阅', icon: '🔔' })

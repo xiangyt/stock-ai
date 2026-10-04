@@ -33,8 +33,7 @@ type IndicatorHandler struct {
 
 // NewIndicatorHandler 创建指标 Handler（初始化全部内置指标）
 func NewIndicatorHandler(screenSvc *service.ScreenService) *IndicatorHandler {
-	reg := indicator.NewRegistry(allBuiltins())
-	return &IndicatorHandler{registry: reg, screenSvc: screenSvc}
+	return &IndicatorHandler{registry: NewIndicatorRegistry(), screenSvc: screenSvc}
 }
 
 // Registry 返回底层指标注册表（供命令行工具等非 HTTP 场景使用）

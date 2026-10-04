@@ -143,8 +143,8 @@ func setDefaults() {
 	// Server 默认值
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.mode", "debug")
-	viper.SetDefault("server.read_timeout", 30)
-	viper.SetDefault("server.write_timeout", 30)
+	viper.SetDefault("server.read_timeout", 60)
+	viper.SetDefault("server.write_timeout", 300)
 	viper.SetDefault("server.static_dir", "")
 
 	// Database 默认值

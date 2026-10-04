@@ -13,4 +13,8 @@ func RegisterKLineRoutes(apiV1 *gin.RouterGroup) {
 	{
 		kline.GET("/:code", h.GetKLine)
 	}
+
+	// 指数日线：/api/v1/index-kline?code=000001&start=...&end=...
+	indexH := handler.NewIndexKLineHandler()
+	apiV1.GET("/index-kline", indexH.Daily)
 }

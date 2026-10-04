@@ -662,6 +662,7 @@ import type {
   SignalDef, SignalConfig, SignalOperatorOption, ParamDef, EnumOption,
 } from '../api/indicators'
 import { categoryLabels as catLabels, operatorSymbols, isCustomSignal } from '../api/indicators'
+import { getExchangePrefix, getEastMoneyUrl, getTHSUrl, getTencentUrl } from '../utils/stockLinks'
 
 // ========== Props ==========
 interface BuilderProps {
@@ -1638,27 +1639,6 @@ function hideKLine() {
 /** 弹窗mouseenter时取消隐藏 */
 function onKLineEnter() {
   if (klineHideTimer) { clearTimeout(klineHideTimer); klineHideTimer = null }
-}
-
-/** 根据纯数字代码推导交易所前缀 */
-function getExchangePrefix(code: string): string {
-  const c = code.charAt(0)
-  if (c === '6') return 'sh'
-  if (c === '0' || c === '3') return 'sz'
-  if (c === '8' || c === '9') return 'bj'
-  return 'sz'
-}
-
-function getEastMoneyUrl(code: string): string {
-  return `https://quote.eastmoney.com/concept/${getExchangePrefix(code)}${code}.html#chart-k-cyq`
-}
-
-function getTHSUrl(code: string): string {
-  return `https://www.iwencai.com/screener/result?w=${code}&querytype=stock&sign=1781436668603`
-}
-
-function getTencentUrl(code: string): string {
-  return `https://gu.qq.com/${getExchangePrefix(code)}${code}/gp`
 }
 
 /** 先过滤，后排序 */

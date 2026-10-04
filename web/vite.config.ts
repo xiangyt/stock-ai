@@ -14,6 +14,8 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:9100',
         changeOrigin: true,
+        timeout: 5 * 60 * 1000,      // 入站请求超时（选股复盘较慢）
+        proxyTimeout: 5 * 60 * 1000, // 转发到后端的响应超时
       },
     },
   },
@@ -24,6 +26,8 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:9100',
         changeOrigin: true,
+        timeout: 5 * 60 * 1000,
+        proxyTimeout: 5 * 60 * 1000,
       },
     },
   },
